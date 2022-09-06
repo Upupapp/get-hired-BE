@@ -11,6 +11,6 @@ const router = express.Router();
 
 router.post("/jobs/create", createJobs);
 router.put("/jobs/updateJobs", updateJob);
-router.delete("/auth/delete", deleteJob);
+router.delete("/jobs/delete", deleteJob);
 
 export default router;
