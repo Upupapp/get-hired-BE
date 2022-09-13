@@ -5,6 +5,9 @@ import env from "./env.js";
 import compression from "compression";
 
 import userRoutes from "./routes/userRoutes";
+import applicationRoutes from "./routes/applicationRoute";
+import cvRoutes from "./routes/cvRoutes";
+import jobsRoutes from "./routes/jobsRoute";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -30,6 +33,9 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.enable("trust proxy");
 
 app.use("/api", userRoutes);
+app.use("/api", applicationRoutes);
+app.use("/api", cvRoutes);
+app.use("/api", jobsRoutes);
 
 app.get("/", (req, res) => res.send("Welcome to Get Hired API"));
 
