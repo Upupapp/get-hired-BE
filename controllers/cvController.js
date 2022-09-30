@@ -1,5 +1,8 @@
-import dbQuery from "../dbQuery";
+import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helper/status";
+import env from "../env";
+
+const dbSchema = env.schema;
 
 const createCV = async (req, res) => {
   const {
@@ -18,7 +21,7 @@ const createCV = async (req, res) => {
 
   console.log(req.body);
   try {
-    const insertQuery = `INSERT INTO eucannajobs.cv
+    const insertQuery = `INSERT INTO ${dbSchema}.cv
       (user_id ,name ,title,contactnumber,location,category, description, skills, cvstatus,experience,education,createddate)
       values ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10,$11,current_timestamp) returning *;`;
 
@@ -82,7 +85,7 @@ const updateCV = async (req, res) => {
   } = req.body;
 
   try {
-    const updateQuery = `UPDATE eucannajobs.cv
+    const updateQuery = `UPDATE ${dbSchema}.cv
         SET user_id=$1, name=$2, title=$3, contactnumber=$4, location=$5, category=$6, description=$7, skills=$8, cvstatus=$9, experience=$10, education=$11
         WHERE cv_id =$12 returning *;`;
 
@@ -118,7 +121,7 @@ const updateCV = async (req, res) => {
 
 const deleteCV = async (req, res) => {
   const { cvId } = req.body;
-  const deleteQuery = `DELETE FROM eucannajobs.cv
+  const deleteQuery = `DELETE FROM ${dbSchema}.cv
   WHERE cv_id='${cvId}'`;
   try {
     const { rows } = await dbQuery.query(deleteQuery, []);
@@ -133,7 +136,7 @@ const deleteCV = async (req, res) => {
 
 const getUserCVlist = async (req, res) => {
   const { userid } = req.query;
-  const searchQuery = `SELECT * from eucannajobs.cv where user_id = $1;`;
+  const searchQuery = `SELECT * from ${dbSchema}.cv where user_id = $1;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [userid]);
@@ -148,7 +151,7 @@ const getUserCVlist = async (req, res) => {
 
 const getCvById = async (req, res) => {
   const { id } = req.query;
-  const searchQuery = `SELECT * from eucannajobs.cv where cv_id = $1;`;
+  const searchQuery = `SELECT * from ${dbSchema}.cv where cv_id = $1;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [id]);

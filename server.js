@@ -4,10 +4,12 @@ import cors from "cors";
 import env from "./env.js";
 import compression from "compression";
 
-import userRoutes from "./routes/userRoutes";
+import userRoutes from "./routes/userRoute";
 import applicationRoutes from "./routes/applicationRoute";
 import cvRoutes from "./routes/cvRoutes";
 import jobsRoutes from "./routes/jobsRoute";
+import companiesRoute from "./routes/companiesRoute";
+import employerRoute from "./routes/employerRoute";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -36,6 +38,8 @@ app.use("/api", userRoutes);
 app.use("/api", applicationRoutes);
 app.use("/api", cvRoutes);
 app.use("/api", jobsRoutes);
+app.use("/api", companiesRoute);
+app.use("/api", employerRoute);
 
 app.get("/", (req, res) => res.send("Welcome to Get Hired API"));
 

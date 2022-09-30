@@ -1,5 +1,6 @@
-import dbQuery from "../dbQuery";
+import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helper/status";
+import env from "../env";
 const dbSchema = env.schema;
 
 const createApplication = async (req, res) => {
