@@ -1,10 +1,11 @@
 import dbQuery from "../db/dbQuery";
 
 import { successMessage, errorMessage, status } from "../helpers/status";
-
+import env from '../env';
 import dotenv from 'dotenv';
 
 dotenv.config();
+const dbSchema = env.schema;
 
 /**
  * Verify Roles
@@ -19,7 +20,7 @@ const verifyRoles = (allowedRoles) => async(req, res, next) => {
 
     try {
         const searchQuery = `SELECT uid, role
-        FROM gwana.user_credentials where uid = $1;`;
+        FROM ${dbSchema}.user_credentials where uid = $1;`;
 
         const { rows } = await dbQuery.query(searchQuery, [uid]);
 

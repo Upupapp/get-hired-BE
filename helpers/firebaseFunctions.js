@@ -5,10 +5,12 @@ import {
   confirmPasswordReset,
   applyActionCode,
   updateProfile,
+  createUserWithEmailAndPassword,
+  signOut,
+  sendEmailVerification,
 } from "firebase/auth";
 
 import env from "../env";
-import request from "request";
 
 const signInUserAndGetTokeninFirebase = async (email, password) => {
   try {
@@ -45,7 +47,7 @@ const getForgetPwLinkInFirebase = async (email) => {
     const url = await auth.generatePasswordResetLink(email);
     return url;
   } catch (err) {
-    // console.log(err);
+    console.log(err);
     throw Error(err);
   }
 };
@@ -74,6 +76,26 @@ const registerNewUserInFirebase = async (user) => {
     });
 };
 
+const registerNewUserInFirebaseWithEmail = async (creds) => {
+  const auth = getAuth();
+  const userInFirebase = await createUserWithEmailAndPassword(
+    auth,
+    creds.email,
+    creds.password
+  );
+  const { user } = await signInWithEmailAndPassword(
+    auth,
+    creds.email,
+    creds.password
+  );
+
+  if (userInFirebase && user) {
+    sendEmailVerification(auth.currentUser);
+    signOut(auth);
+    return user;
+  }
+};
+
 const sendEmailVerificationFirebase = async (email) => {
   try {
     const link = await firebaseAdmin
@@ -81,7 +103,7 @@ const sendEmailVerificationFirebase = async (email) => {
       .generateEmailVerificationLink(email);
     return link;
   } catch (err) {
-    throw "Email Error:" + err;
+    throw "Email " + err;
   }
 };
 
@@ -143,6 +165,65 @@ const disabledUserInFirebase = async (userId) => {
   }
 };
 
+const verifyFCMToken = async (token) => {
+  try {
+    const checker = await firebaseAdmin.messaging().send(
+      {
+        token: token,
+      },
+      true
+    );
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+const firebaseSendNotif = async (title, body, token, category, id) => {
+  try {
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      token: token,
+      data: {
+        category: category,
+        id: id,
+      },
+    };
+    const notif = firebaseAdmin.messaging().send(message);
+    return notif;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const firebaseSendGroupNotif = async (title, body, token, category, id) => {
+  try {
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      tokens: token,
+      data: {
+        category: category,
+        id: id,
+      },
+    };
+
+    const notif = firebaseAdmin.messaging().sendMulticast(message);
+    return notif;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteUserAccountInFirebaseById = async(uid) => {
+  return firebaseAdmin.auth().deleteUser(uid);
+};
+
 export {
   signInUserAndGetTokeninFirebase,
   getForgetPwLinkInFirebase,
@@ -155,4 +236,9 @@ export {
   getRefreshTokenFirebase,
   updateUserProfileInFirebase,
   disabledUserInFirebase,
+  verifyFCMToken,
+  firebaseSendNotif,
+  firebaseSendGroupNotif,
+  registerNewUserInFirebaseWithEmail,
+  deleteUserAccountInFirebaseById
 };
