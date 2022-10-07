@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helper/status";
+import { successMessage, errorMessage, status } from "../helpers/status";
 import uploadInStorage from "./uploadController";
 import env from "../env";
 

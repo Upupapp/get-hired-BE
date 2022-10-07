@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helper/status";
+import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
 
 const dbSchema = env.schema;
