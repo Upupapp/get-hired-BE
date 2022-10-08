@@ -8,14 +8,14 @@ import {
 } from "../helpers/validation";
 
 import dbQuery from "../db/dbQuery";
-import "firebase/compat/auth";
 import { send } from "../helpers/mailer";
 import {
-  checkEmailIfExist,
   getUserRoleByEmail,
   getUserNameByEmail,
   getUserCredentialsByEmail,
 } from "../helpers/userDetails";
+
+import uploadInStorage from "../helpers/uploader";
 
 import {
   revokeTokenInFirebase,
@@ -28,11 +28,12 @@ import {
   verifyPwResetInFirebase,
   getForgetPwLinkInFirebase,
   updateUserProfileInFirebase,
+  registerNewUserInFirebaseWithEmail,
+  deleteUserAccountInFirebaseById,
 } from "../helpers/firebaseFunctions";
 import env from "../env";
 
 const dbSchema = env.schema;
-
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
@@ -99,7 +100,11 @@ const registerUser = async (req, res) => {
       return res.status(status.error).send(errorMessage);
     }
 
+    // Use this if we have different mailer
     const userData = await registerNewUserInFirebase(user);
+
+    // Use this if we need firebase mailer
+    // const userData = await registerNewUserInFirebaseWithEmail(user);
 
     const dbData = {
       uid: userData.uid,
@@ -145,13 +150,10 @@ const logout = async (req, res) => {
 };
 
 const resendVerification = async (req, res) => {
-  const { email, name } = req.body;
-  let firstName = name;
+  const { email } = req.query;
 
   try {
-    if (!name || name == "") {
-      firstName = await getUserNameByEmail(email);
-    }
+    const firstName = await getUserNameByEmail(email);
 
     const isVerified = await getVerification(email, firstName);
     if (!isVerified) {
@@ -181,6 +183,17 @@ const verifyEmail = async (req, res) => {
   }
 };
 
+const getRefreshToken = async (req, res) => {
+  try {
+    const auth = await getRefreshTokenFirebase();
+    successMessage.data = auth;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "" + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const passwordResetLink = async (req, res) => {
   const { email } = req.query;
   try {
@@ -188,16 +201,11 @@ const passwordResetLink = async (req, res) => {
     const name = await getUserNameByEmail(email);
     const userRole = await getUserRoleByEmail(email);
 
-    const emailUser = send({ email, name }, "pw_reset", {
+    send(email, "pw_reset", {
       url: pwRequestLink + `&role=${userRole}&email=${email}`,
-      name,
-      email,
+      first_name: name,
+      email
     });
-
-    // console.log(emailUser);
-    // if (!emailUser) {
-    //   throw Error("Failed to send email");
-    // }
 
     successMessage.data = "Link Send to your provided Email";
     return res.status(status.success).send(successMessage);
@@ -207,11 +215,63 @@ const passwordResetLink = async (req, res) => {
   }
 };
 
-const createUser = async (user) => {
+const changePw = async (req, res) => {
+  const { oobCode, pw, email } = req.body;
+
+  const hashPw = hashPassword(pw);
+
+  try {
+    const changePWinFirebase = await verifyPwResetInFirebase(oobCode, pw);
+    const changeInDB = await changePWinDB(email, hashPw);
+
+    if (!changeInDB) {
+      throw Error("Failed to change password in Database");
+    }
+
+    successMessage.data = "Password Successfuly Change";
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getUserCredentials = async (req, res) => {
+  const { email } = req.query;
+  try {
+    const dbCredentials = await getUserCredentialsByEmail(email);
+
+    if (!dbCredentials) {
+      throw Error("User does not exist");
+    }
+
+    const getToken = await getRefreshTokenFirebase();
+
+    const credentials = {
+      id: dbCredentials.uid,
+      email: dbCredentials.email,
+      firstName: dbCredentials.firstname,
+      middleName: dbCredentials.middlename,
+      lastName: dbCredentials.lastname,
+      role: dbCredentials.role,
+      photoUrl: dbCredentials.photourl,
+      token: getToken.token,
+      refreshToken: getToken.refreshToken,
+    };
+
+    successMessage.data = credentials;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const updateProfile = async (user) => {
+  let rawUrl = "";
+
   const {
-    adminCreate,
-    email,
-    role,
+    uid,
     firstName,
     middleName,
     lastName,
@@ -224,70 +284,216 @@ const createUser = async (user) => {
     dateOfBirth,
     addressB,
     gender,
+    avatar,
   } = user;
 
+  const updateQuery = `UPDATE ${dbSchema}.users
+    SET firstname=$1, middlename=$2, lastname=$3, address=$4, city=$5, zip=$6,
+    phone_number=$7, cellnumber=$8, photourl=$9, date_of_birth=$10, address_b=$11, is_profile_updated=true,
+    last_update = $12, gender=$13
+    WHERE uid=$14 returning *`;
+
   try {
-    const userCred = {
-      email,
-      password: "p@ssw0rd",
+    if (avatar && avatar != "" && !photoUrl) {
+      rawUrl = await uploadInStorage("profile", `${uid}-thumb`, avatar);
+    }
+
+    const profileInFirebase = await updateUserProfileInFirebase(user);
+    const { rows } = await dbQuery.query(updateQuery, [
       firstName,
+      middleName,
       lastName,
-      role,
-    };
+      address,
+      city,
+      zip,
+      phoneNumber,
+      cellNumber,
+      rawUrl,
+      dateOfBirth,
+      addressB,
+      new Date(),
+      gender,
+      uid,
+    ]);
 
-    // check user if exist
-    const userInFirebase = await checkUserIfExistInFirebase(email);
+    const dbResponse = userMap({ uid, ...rows[0] });
+    return dbResponse;
+  } catch (error) {
+    throw "Failed to update User profile. " + error;
+  }
+};
 
-    if (userInFirebase && userInFirebase.length !== 0) {
-      throw "User is already Registered. Please login instead.";
+const registerUserInDB = async (user) => {
+  let roleBaseQuery = "";
+  const insertQueryInCredentials = `Insert into ${dbSchema}.user_credentials
+  (uid, email, "password", "role", createddate) values ($1, $2, $3, $4, current_timestamp) returning *;`;
+
+  const insertQueryInProfile = `
+      Insert into ${dbSchema}.users 
+        (uid, email, firstname, lastname) 
+      values 
+        ($1, $2, $3, $4) returning *;`;
+
+  try {
+    const { rows } = await dbQuery.query(insertQueryInCredentials, [
+      user.uid,
+      user.email,
+      user.password,
+      user.role,
+    ]);
+
+    const dbResponse = rows[0];
+
+    const rows_profile = await dbQuery.query(insertQueryInProfile, [
+      user.uid,
+      user.email,
+      user.firstname,
+      user.lastname,
+    ]);
+
+    const profileResponse = rows_profile.rows[0];
+
+    if (!dbResponse || !profileResponse) {
+      throw Error("User not save in DB");
     }
 
-    // Create user in Firebase
-    const userData = await registerNewUserInFirebase(userCred);
-
-    const dbData = {
-      uid: userData.uid,
-      email: userData.email,
-      password: hashPassword(userCred.password),
-      firstname: user.firstName,
-      lastname: user.lastName,
-      role,
-      adminCreate,
+    const credentials = {
+      id: profileResponse.uid,
+      email: profileResponse.email,
+      firstName: profileResponse.firstname,
+      lastName: profileResponse.lastname,
+      role: dbResponse.role,
+      createdDate: dbResponse.createddate,
     };
 
-    // Create user in DB
-    const dbRegister = await registerUserInDB(dbData);
-
-    if (!userData || !dbRegister) {
-      throw "Failed to create in Firecase/Database";
-    }
-
-    //get verification Link
-    const verify = await sendEmailVerificationFirebase(email);
-
-    // Create profile
-    const profile = await updateProfile({
-      uid: userData.uid,
-      ...user,
-    });
-
-    return {
-      uid: userData.uid,
-      ...dbRegister,
-      ...profile,
-      verificationLink: verify,
-    };
+    return credentials;
   } catch (error) {
     throw error;
   }
+};
+
+const loginUserInDBAndFirebase = async (email, password) => {
+  try {
+    const dbCredentials = await getUserCredentialsByEmail(email);
+
+    if (!dbCredentials) {
+      throw Error("User does not exist");
+    }
+
+    if (!comparePassword(dbCredentials.password, password)) {
+      throw Error("Please enter a valid Password");
+    }
+
+    const firebaseUser = await signInUserAndGetTokeninFirebase(email, password);
+
+    const credentials = {
+      id: firebaseUser.uid,
+      email: dbCredentials.email,
+      firstName: dbCredentials.firstname,
+      middleName: dbCredentials.middlename,
+      lastName: dbCredentials.lastname,
+      role: dbCredentials.role,
+      photoUrl: dbCredentials.photourl,
+      isProfileUpdated: dbCredentials.is_profile_updated,
+      token: firebaseUser.token,
+      refreshToken: firebaseUser.refreshToken,
+    };
+
+    return credentials;
+  } catch (error) {
+    throw Error(error);
+  }
+};
+
+const changePWinDB = async (email, password) => {
+  const updateQuery = `UPDATE ${dbSchema}.user_credentials SET password=$1 where email=$2 returning *;`;
+
+  try {
+    const { rows } = await dbQuery.query(updateQuery, [password, email]);
+    const newPw = rows[0];
+
+    return newPw;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getVerification = async (email, firstName) => {
+  const verify = await sendEmailVerificationFirebase(email);
+
+  if (!verify) {
+    throw Error("Failed Verification");
+  }
+
+  const userRole = await getUserRoleByEmail(email);
+
+  send(email, "verify_email", {
+    verification_url: verify + `&role=${userRole}`,
+    first_name: firstName,
+    email,
+  });
+
+  return "Verification Link Sent";
+};
+
+const deleteAccountById = async (req, res) => {
+  const { uid } = req.query;
+
+  try {
+    const account = await deleteUserAccount(uid);
+    successMessage.data = account;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const deleteUserAccount = async (uid) => {
+  const deleteQuery = `DELETE from ${dbSchema}.user_credentials where uid=$1`;
+
+  try {
+    const deleteInFirebase = await deleteUserAccountInFirebaseById(uid);
+    const { rows } = await dbQuery.query(deleteQuery, [uid]);
+    return "User deleted";
+  } catch (error) {
+    throw error;
+  }
+};
+
+const userMap = (raw) => {
+  return {
+    uid: raw.uid,
+    firstName: raw.firstname,
+    middleName: raw.middlename,
+    lastName: raw.lastname,
+    createdDate: raw.createddate,
+    dateOfBirth: raw.date_of_birth,
+    age: raw.age,
+    email: raw.email,
+    gender: raw.gender,
+    phoneNumber: raw.phone_number,
+    cellNumber: raw.cellnumber,
+    photoURL: raw.photourl,
+    address: raw.address,
+    zip: raw.zip,
+    city: raw.city,
+    isProfileUpdated: raw.is_profile_updated,
+    lastUpdate: raw.last_update,
+    addressB: raw.address_b,
+  };
 };
 
 export {
   loginUser,
   registerUser,
   resendVerification,
+  updateProfile,
   logout,
   verifyEmail,
+  getRefreshToken,
   passwordResetLink,
-  createUser,
+  changePw,
+  getUserCredentials,
+  deleteAccountById
 };
