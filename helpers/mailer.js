@@ -27,7 +27,8 @@ const send = (recipient, templateToUse, data) => {
   sgMail.send(msg).then(() => {
       return 'Email sent!';
   }, error => {
-      console.log(error);
+      console.log(error.response.body);
+      throw Error('Failed Sending Email');
   });
 }
 

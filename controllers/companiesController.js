@@ -1,6 +1,6 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
-import uploadInStorage from "./uploadController";
+import uploadInStorage from "../helpers/uploader";
 import env from "../env";
 
 const dbSchema = env.schema;
@@ -23,7 +23,7 @@ const createCompany = async (req, res) => {
   } = req.body;
 
   if (logo && logo.length !== 0) {
-    logoURL = await uploadInStorage("images", logoName, logo);
+    logoURL = await uploadInStorage("Company-logo", logoName, logo);
   }
 
   try {

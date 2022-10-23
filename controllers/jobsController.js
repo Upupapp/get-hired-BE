@@ -1,7 +1,10 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
+
 const dbSchema = env.schema;
+const now = Date.now();
+
 const createJobs = async (req, res) => {
   const {
     jobTitle,
@@ -150,6 +153,90 @@ const updateJob = async (req, res) => {
   }
 };
 
+const getIndustryList = async (req, res) => {
+  const searchQuery = `SELECT industry_id, industry_name FROM ${dbSchema}.industry;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getBadgeList = async (req, res) => {
+  const searchQuery = `SELECT badge_id, badge_name, badge_icon FROM ${dbSchema}.badge;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getJobRoleList = async (req, res) => {
+  const searchQuery = `SELECT job_role_id, job_role_name FROM ${dbSchema}.job_role;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getSetupList = async (req, res) => {
+  const searchQuery = `SELECT job_setup_id, job_setup_name FROM ${dbSchema}.job_setup;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getTypeList = async (req, res) => {
+  const searchQuery = `SELECT job_type_id, job_type_name FROM ${dbSchema}.job_type;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getLevelList = async (req, res) => {
+  const searchQuery = `SELECT level_id, level_name FROM ${dbSchema}.levels;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const getJobList = async (companyId) => {
   const selectQuery = `
     SELECT 
@@ -225,4 +312,14 @@ const mapJobs = (job) => {
   };
 };
 
-export { createJobs, deleteJob, updateJob };
+export {
+  createJobs,
+  deleteJob,
+  updateJob,
+  getIndustryList,
+  getBadgeList,
+  getJobRoleList,
+  getSetupList,
+  getTypeList,
+  getLevelList
+};

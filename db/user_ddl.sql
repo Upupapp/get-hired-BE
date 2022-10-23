@@ -52,3 +52,15 @@ CREATE TABLE gethired.users (
 );
 
 ALTER TABLE gethired.users ADD CONSTRAINT users_fk FOREIGN KEY (uid) REFERENCES gethired.user_credentials(uid) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE gethired.user_credentials RENAME COLUMN createddate TO created_date;
+ALTER TABLE gethired.user_credentials ADD is_archive boolean NOT NULL DEFAULT false;
+ALTER TABLE gethired.users DROP COLUMN email;
+ALTER TABLE gethired.users RENAME COLUMN cellnumber TO cell_number;
+ALTER TABLE gethired.users RENAME COLUMN photourl TO photo_url;
+ALTER TABLE gethired.users DROP COLUMN age;
+ALTER TABLE gethired.users RENAME COLUMN last_update TO updated_at;
+ALTER TABLE gethired.users DROP COLUMN address_b;
+ALTER TABLE gethired.users ADD civil_status varchar NULL;
+ALTER TABLE gethired.users ADD state varchar NULL;
+ALTER TABLE gethired.users ADD country varchar NULL;
+
