@@ -4,7 +4,9 @@
   "description": "",
   "main": "start.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node start.js",
+    "deploy": "gcloud app deploy app.yaml --project get-hired-363107"
   },
   "repository": {
     "type": "git",
