@@ -6,6 +6,7 @@ import {
   logout,
   verifyEmail,
   passwordResetLink,
+  changePw
 } from "../controllers/userController";
 
 import { send } from "../helpers/mailer";
@@ -18,5 +19,6 @@ router.post("/auth/resendverificationlink", resendVerification);
 router.post("/auth/logout", logout);
 router.post("/auth/verifyemail", verifyEmail);
 router.get("/auth/getpwresetlink", passwordResetLink);
+router.post("/auth/changepassword", changePw);
 
 export default router;

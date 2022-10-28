@@ -84,8 +84,9 @@ const checkEmailIfExist = async (email) => {
 const getUserCredentialsByEmail = async (email) => {
   const searchQuery = `
   Select 
-    c.uid, c.email, c.password, u.firstname, u.lastname, c.role, c.createddate, u.photourl, 
-    u.is_profile_updated, u.cellnumber
+    c.uid, c.password, c.role, u.firstname, u.middlename, u.lastname, u.address, 
+    u.city, u.zip, u.phone_number, u.cell_number, u.photo_url, u.date_of_birth,
+    u.is_profile_updated, u.updated_at, u.gender, u.civil_status, u.state, u.country, c.email
   from ${dbSchema}.user_credentials c
   left join ${dbSchema}.users u 
   on c.uid  = u.uid 
