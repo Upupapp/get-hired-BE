@@ -158,7 +158,13 @@ const getIndustryList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows;
+    const dbResponse = rows.map(list => {
+      return {
+        id: list.industry_id,
+        name: list.industry_name
+      }
+    });
+
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -172,7 +178,14 @@ const getBadgeList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows;
+    const dbResponse = rows.map(list => {
+      return {
+        id: list.badge_id,
+        name: list.badge_name,
+        icon: list.badge_icon
+      }
+    });
+    
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -186,7 +199,12 @@ const getJobRoleList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows;
+    const dbResponse = rows.map(list => {
+      return {
+        id: list.job_role_id,
+        name: list.job_role_name
+      }
+    });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -200,7 +218,12 @@ const getSetupList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows;
+    const dbResponse = rows.map(list => {
+      return {
+        id: list.job_setup_id,
+        name: list.job_setup_name
+      }
+    });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -214,7 +237,12 @@ const getTypeList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows;
+    const dbResponse = rows.map(list => {
+      return {
+        id: list.job_type_id,
+        name: list.job_type_name
+      }
+    });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -228,7 +256,12 @@ const getLevelList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows;
+    const dbResponse = rows.map(list => {
+      return {
+        id: list.level_id,
+        name: list.level_name
+      }
+    });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {

@@ -1,20 +1,20 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
+import idGenerator from "../helpers/randomNumberForId";
+import { getUserCompany } from "./companiesController";
+import { getUserProfileById } from "../helpers/userDetails";
 
 const dbSchema = env.schema;
+const now = new Date();
 
 const getEmployerCompany = async (req, res) => {
-  const userId = req.query.userId;
-  const searchQuery = `
-    Select company_id from ${dbSchema}.company_employer ce
-    where employer_id = $1`;
+  const { id } = req.query;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, [userId]);
-    const dbResponse = rows[0];
+    const userCompany = await getUserCompany(id);
 
-    successMessage.data = dbResponse || "";
+    successMessage.data = userCompany;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.data = "Operation was not successful. " + error;
@@ -22,4 +22,18 @@ const getEmployerCompany = async (req, res) => {
   }
 };
 
-export { getEmployerCompany };
+const getEmployerProfile = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const user = await getUserProfileById(id);
+
+    successMessage.data = user;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+export { getEmployerCompany, getEmployerProfile };

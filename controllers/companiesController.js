@@ -1,342 +1,177 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import uploadInStorage from "../helpers/uploader";
+import idGenerator from "../helpers/randomNumberForId";
+
 import env from "../env";
 
 const dbSchema = env.schema;
+const now = new Date();
 
-const createCompany = async (req, res) => {
-  const logo = req.body.logoFile;
-  const logoName = "logo-" + req.body.companyCode;
-  let logoURL = "";
-  const {
-    companyName,
-    description,
-    companyCode,
-    city,
-    country,
-    natureOfBusiness,
-    contactNumber,
-    creator_id,
-    contactPerson,
-    companyEmail,
-  } = req.body;
-
-  if (logo && logo.length !== 0) {
-    logoURL = await uploadInStorage("Company-logo", logoName, logo);
-  }
+const createInitialCompany = async (req, res) => {
+  const details = req.body;
+  const {uid} = req.user;
+console.log(details);
 
   try {
-    const userRole = await getUserRole(creator_id);
+    const company = await createCompany(details, uid);
 
-    const insertQuery = `INSERT INTO ${dbSchema}.company
-    (companyname, description, companycode, city, country, natureofbusiness, contactnumber, creator_id, createddate, logourl, contactperson, company_email)
-    values ($1, $2, $3, $4, $5, $6, $7, $8, current_timestamp, $9, $10, $11) returning *;`;
-
-    const { rows } = await dbQuery.query(insertQuery, [
-      companyName,
-      description,
-      companyCode,
-      city,
-      country,
-      natureOfBusiness,
-      contactNumber,
-      creator_id,
-      logoURL,
-      contactPerson,
-      companyEmail,
-    ]);
-
-    const dbResponse = rows[0];
-
-    if (!dbResponse) {
-      errorMessage.error = "Failed to Create Company";
-      return res.status(status.error).send(errorMessage);
+    if (!company) {
+      throw "No company created";
     }
 
-    if (userRole.roleid == 2) {
-      const assign = await assignCompany(dbResponse.company_id, creator_id);
+    const assigned = await assignEmployeeToCompany(
+      company.companyId,
+      uid,
+      uid
+    );
 
-      if (!assign) {
-        errorMessage.data = "Failed to save company to your Account";
-        return res.status(status.error).send(errorMessage);
-      }
-
-      successMessage.data = [assign ? await mappedCompany(assign) : assign];
-      return res.status(status.success).send(successMessage);
+    if (!assigned) {
+      throw "Failed to assign Creator as Employee";
     }
-
-    const companies = await getUsersCompanies(creator_id);
-
-    successMessage.data = companies;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-const getAllCreatedCompanies = async (req, res) => {
-  const user_id = req.query.user_id;
-
-  try {
-    const companies = await getUsersCompanies(user_id);
-
-    const dbResponse = companies;
-
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-const getSpecificCompany = async (req, res) => {
-  const company_id = req.params.company_id;
-  try {
-    const company = await getCompanyDetails(company_id);
 
     successMessage.data = company;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
   }
 };
 
-const updateCompany = async (req, res) => {
-  const logo = req.body.logoFile;
-  const logoName = "logo-" + req.body.companyCode;
-  let logoURL = "";
+const getUserCompany = async (id) => {
+  const searchQuery = `select c.*, ce.employee_id from ${dbSchema}.company_employees ce 
+    left join ${dbSchema}.companies c 
+    on c.company_id = ce.company_id 
+    where ce.employee_uuid = $1`;
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [id]);
 
-  const {
-    companyName,
-    description,
-    city,
-    country,
-    natureOfBusiness,
-    contactNumber,
-    contactPerson,
-    companyEmail,
-    companyId,
-    creator_id,
-  } = req.body;
+    if(!rows || rows.length == 0) {
+        return [];
+    }
 
-  if (logo && logo.length !== 0) {
-    logoURL = await uploadInStorage("images", logoName, logo);
-  } else {
-    logoURL = req.body.logoURL;
+    const dbResponse = {
+      ...mappedCompany(rows[0]),
+      employeedCompanyId: rows[0].employee_id,
+    };
+    return dbResponse;
+  } catch (error) {
+    throw error;
   }
+};
+
+const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
+  const insertQuery = `INSERT INTO ${dbSchema}.company_employees
+    (employee_id, company_id, employee_uuid, assigned_at, updated_at, position_id, assigned_by)
+    VALUES($1, $2, $3, $4, $5, $6, $7) returning *;`;
+
+  const employeeId = idGenerator(6, "EMP");
 
   try {
-    const updateQuery = `UPDATE ${dbSchema}.company
-        SET companyname=$1, description=$2, city=$3, country=$4, natureofbusiness=$5, contactnumber=$6, logourl=$7, contactperson=$8, company_email=$9
-        WHERE company_id =$10 returning *;`;
-
-    const { rows } = await dbQuery.query(updateQuery, [
-      companyName,
-      description,
-      city,
-      country,
-      natureOfBusiness,
-      contactNumber,
-      logoURL,
-      contactPerson,
-      companyEmail,
+    const { rows } = await dbQuery.query(insertQuery, [
+      employeeId,
       companyId,
+      uid,
+      now,
+      now,
+      0, // TODO to change if position is available
+      assignedBy,
     ]);
 
-    const dbResponse = rows[0];
-
-    if (!dbResponse) {
-      errorMessage.error = "Failed to Update Company";
-      return res.status(status.error).send(errorMessage);
+    if (rows && rows.length == 0) {
+      throw "Failed to assign employee to the company";
     }
-
-    const companies = await getUsersCompanies(creator_id);
-    successMessage.data = companies;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-const deleteCompany = async (req, res) => {
-  const { companyId, creatorId } = req.query;
-  const deleteQuery = `DELETE FROM ${dbSchema}.company WHERE company_id = $1`;
-
-  try {
-    const company = await getCompanyDetails(companyId);
-
-    if (!company || company.length == 0) {
-      errorMessage.data = "Company does not exist";
-      return res.status(status.error).send(data);
-    }
-
-    const { rows } = await dbQuery.query(deleteQuery, [companyId]);
-
-    const companies = await getUsersCompanies(creatorId);
-
-    successMessage.data = companies;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.data = "Operation was not successful. " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-const changeCompanyLogo = async (req, res) => {
-  const { logoFile, companyId, companyCode } = req.body;
-  const logoName = "logo-" + companyCode;
-  let logoURL = "";
-
-  const updateQuery = `
-    UPDATE ${dbSchema}.company
-    SET logourl=$1
-    WHERE company_id=$2`;
-
-  try {
-    if (logoFile && logoFile.length !== 0) {
-      logoURL = await uploadInStorage("images", logoName, logoFile);
-    }
-
-    const { rows } = await dbQuery.query(updateQuery, [logoURL, companyId]);
-
-    if (!rows) {
-      errorMessage.data = "Failed to update logo";
-      return res.status(status.error).send(errorMessage);
-    }
-
-    successMessage.data = logoURL;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.data = "Operation was not successful. " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-/** Helper Functions */
-
-// User as admin
-const getUsersCompanies = async (userId) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.company where creator_id = $1`;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, [userId]);
-    const dbResponse =
-      rows.length > 0
-        ? rows.map((dbResponse) => mappedCompany(dbResponse))
-        : rows;
-
-    const companies = dbResponse;
-    return companies;
-  } catch (error) {
-    throw Error("Failed to retrieve Companies");
-  }
-};
-
-const assignCompany = async (companyId, userId) => {
-  const insertQuery = `Insert into ${dbSchema}.company_employer(company_id, employer_id) values($1, $2) returning *`;
-
-  try {
-    const { rows } = await dbQuery.query(insertQuery, [companyId, userId]);
-
-    const dbResponse = rows.length > 0 ? await mappedCompany(rows[0]) : rows;
-
-    return dbResponse;
-  } catch (error) {
-    throw Error("Failed to create Company");
-  }
-};
-
-const getCompanyDetails = async (companyId) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.company where company_id = $1`;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, [companyId]);
-    const dbResponse = rows.length > 0 ? await mappedCompany(rows[0]) : rows;
-
-    return dbResponse;
-  } catch (err) {
-    throw Error("Company: " + err);
-  }
-};
-
-const mappedCompany = (dbResponse) => {
-  if (dbResponse) {
-    return {
-      companyId: dbResponse.company_id,
-      companyName: dbResponse.companyname,
-      description: dbResponse.description,
-      companyCode: dbResponse.companycode,
-      city: dbResponse.city,
-      country: dbResponse.country,
-      natureOfBusiness: dbResponse.natureofbusiness,
-      contactNumber: dbResponse.contactnumber,
-      creator_id: dbResponse.creator_id,
-      logoURL: dbResponse.logourl,
-      contactPerson: dbResponse.contactperson,
-      companyEmail: dbResponse.company_email,
-      createdDate: dbResponse.createddate,
-    };
-  }
-
-  return dbResponse;
-};
-
-const getUserRole = async (userId) => {
-  const searchQuery = `Select roleid from ${dbSchema}.usercredentials where user_id = $1`;
-  try {
-    const { rows } = await dbQuery.query(searchQuery, [userId]);
 
     const dbResponse = rows[0];
-
     return dbResponse;
   } catch (error) {
-    throw Error("Failed to create Company");
+    throw error;
   }
 };
 
-const getNumberOfCompanies = async (req, res) => {
-  const creatorId = req.body.creatorId;
-  const searchQuery = `SELECT * FROM ${dbSchema}.company where creator_id = $1`;
+const createCompany = async (company, uid) => {
+  console.log(company)
+  let rawUrl = "";
+  const companyId = idGenerator(6, "COM");
+
+  const insertQuery = `INSERT INTO ${dbSchema}.companies
+  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_date, created_by)
+  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *;`;
+
+  const {
+    companyLogoFile,
+    companyName,
+    companyDetails,
+    industryId,
+    workSetupId,
+    numberOfEmployee,
+    companyEmail,
+    companyCity,
+    companyContactNumber,
+    companyCountry,
+    companyAddress,
+  } = company;
+
+  if (companyLogoFile && companyLogoFile != "") {
+    rawUrl = await uploadInStorage(
+      "Company-Logo",
+      `${companyId}-Logo`,
+      companyLogoFile
+    );
+  }
+
   try {
-    const { rows } = await dbQuery.query(searchQuery, [creatorId]);
-    const dbResponse = rows.map((dbResponse) => mappedCompany(dbResponse));
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    const { rows } = await dbQuery.query(insertQuery, [
+      companyId,
+      rawUrl,
+      companyName,
+      companyDetails,
+      industryId,
+      workSetupId,
+      numberOfEmployee,
+      companyEmail,
+      companyCity,
+      companyContactNumber,
+      companyCountry,
+      companyAddress,
+      now,
+      uid,
+    ]);
+
+    if (rows && rows.length == 0) {
+      throw "Failed to create Company";
+    }
+
+    const dbResponse = mappedCompany(rows[0]);
+    return dbResponse;
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
-    return res.status(status.error).send(errorMessage);
+    throw error;
   }
 };
 
-const getAllCompanies = async (req, res) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.company`;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map((row) => mappedCompany(row));
-
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
+const mappedCompany = (raw) => {
+  return {
+    companyId: raw.company_id,
+    companyLogoUrl: raw.company_logo,
+    companyName: raw.company_name,
+    companyDetails: raw.company_details,
+    industryId: raw.industry_id,
+    workSetupId: raw.work_setup_id,
+    numberOfEmployee: raw.number_of_employee,
+    companyEmail: raw.company_email,
+    companyCity: raw.company_city,
+    companyContactNumber: raw.company_contact_number,
+    companyCountry: raw.company_country,
+    companyAddress: raw.company_address,
+    createdAt: raw.created_at,
+    createdBy: raw.created_by,
+    updatedAt: raw.updated_at
+  };
 };
 
 export {
   createCompany,
-  getAllCreatedCompanies,
-  getSpecificCompany,
-  deleteCompany,
-  updateCompany,
-  changeCompanyLogo,
-  getUsersCompanies,
-  assignCompany,
-  getAllCompanies,
-  getNumberOfCompanies,
+  assignEmployeeToCompany,
+  createInitialCompany,
+  getUserCompany,
 };

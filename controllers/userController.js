@@ -15,6 +15,7 @@ import {
   getUserCredentialsByEmail,
 } from "../helpers/userDetails";
 
+import { getUserCompany } from './companiesController';
 import uploadInStorage from "../helpers/uploader";
 
 import {
@@ -34,6 +35,7 @@ import {
 import env from "../env";
 
 const dbSchema = env.schema;
+
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
@@ -49,6 +51,7 @@ const loginUser = async (req, res) => {
 
   try {
     const firebaseAuthentication = await checkUserIfExistInFirebase(email);
+
     if (firebaseAuthentication.length === 0) {
       errorMessage.error = "User does not exist. Please Register.";
       return res.status(status.notfound).send(errorMessage);
@@ -62,8 +65,11 @@ const loginUser = async (req, res) => {
 
     // user logged in new DB
     const credentials = await loginUserInDBAndFirebase(email, password);
-
-    successMessage.data = credentials;
+    const userCompany = await getUserCompany(credentials.id);
+    successMessage.data = {
+      ...credentials,
+      withCompany: userCompany && userCompany.length != 0
+    };
     return res.status(status.success).send(successMessage);
   } catch (err) {
     errorMessage.error = "Operation Not Successful. " + err;
@@ -112,7 +118,7 @@ const registerUser = async (req, res) => {
       password: hashPassword(password),
       firstname: user.firstName,
       lastname: user.lastName,
-      role,
+      role
     };
 
     const dbRegister = await registerUserInDB(dbData);
@@ -326,7 +332,7 @@ const updateProfile = async (user) => {
 const registerUserInDB = async (user) => {
   let roleBaseQuery = "";
   const insertQueryInCredentials = `Insert into ${dbSchema}.user_credentials
-  (uid, email, "password", "role", createddate) values ($1, $2, $3, $4, current_timestamp) returning *;`;
+  (uid, email, "password", "role", created_date) values ($1, $2, $3, $4, current_timestamp) returning *;`;
 
   const insertQueryInProfile = `
       Insert into ${dbSchema}.users 
@@ -363,7 +369,7 @@ const registerUserInDB = async (user) => {
       firstName: profileResponse.firstname,
       lastName: profileResponse.lastname,
       role: dbResponse.role,
-      createdDate: dbResponse.createddate,
+      createdDate: dbResponse.created_date,
     };
 
     return credentials;
@@ -375,7 +381,7 @@ const registerUserInDB = async (user) => {
 const loginUserInDBAndFirebase = async (email, password) => {
   try {
     const dbCredentials = await getUserCredentialsByEmail(email);
-
+    console.log(dbCredentials);
     if (!dbCredentials) {
       throw Error("User does not exist");
     }
@@ -393,7 +399,7 @@ const loginUserInDBAndFirebase = async (email, password) => {
       middleName: dbCredentials.middlename,
       lastName: dbCredentials.lastname,
       role: dbCredentials.role,
-      photoUrl: dbCredentials.photourl,
+      photoUrl: dbCredentials.photo_url,
       isProfileUpdated: dbCredentials.is_profile_updated,
       token: firebaseUser.token,
       refreshToken: firebaseUser.refreshToken,
@@ -418,7 +424,7 @@ const changePWinDB = async (email, password) => {
   }
 };
 
-const getVerification = async (email, firstName) => {
+const getVerification = async (email) => {
   const verify = await sendEmailVerificationFirebase(email);
 
   if (!verify) {
@@ -426,9 +432,10 @@ const getVerification = async (email, firstName) => {
   }
 
   const userRole = await getUserRoleByEmail(email);
+  const firstName = await getUserNameByEmail(email);
 
   send(email, "verify_email", {
-    verification_url: verify + `&role=${userRole}`,
+    verify_url: verify + `&role=${userRole}`,
     first_name: firstName,
     email,
   });
