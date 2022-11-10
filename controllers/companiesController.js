@@ -34,6 +34,58 @@ const createInitialCompany = async (req, res) => {
   }
 };
 
+const updateCompany = async(req, res) => {
+  const updateQuery = `UPDATE gethired.companies
+  SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11
+  WHERE company_id=$12 returning *;`
+  const rawUrl = '';
+
+  const {
+    companyId,
+    companyEmail,
+    companyContactNumber,
+    companyAddress,
+    companyCity,
+    companyCountry,
+    companyLogoUrl,
+    companyName,
+    companyDetails,
+    industryId,
+    workSetupId,
+    numberOfEmployee,
+    companyLogoFile
+  } = req.body;
+
+  try {
+    if (companyLogoFile && companyLogoFile != "") {
+      rawUrl = await uploadInStorage(
+        "Company-Logo",
+        `${companyId}-Logo`,
+        companyLogoFile
+      );
+    } else {
+      rawUrl = companyLogoUrl;
+    }
+
+  const { rows } = await dbQuery.query(updateQuery, [
+    rawUrl, companyName, companyDetails, industryId, workSetupId, 
+    numberOfEmployee, companyEmail, companyCity, companyContactNumber, companyCountry, 
+    companyAddress, companyId
+  ]);
+
+  if(!rows && rows.length == 0) {
+    throw "Failed to Update";
+  }
+
+  const dbResponse = mappedCompany(rows[0]);
+  successMessage.data = dbResponse;
+  return res.status(status.success).send(successMessage);
+  } catch(error) {
+  errorMessage.error = 'ERROR: ' + error;
+  return res.status(status.error).send(errorMessage);
+  }
+}
+
 const getUserCompany = async (id) => {
   const searchQuery = `select c.*, ce.employee_id from ${dbSchema}.company_employees ce 
     left join ${dbSchema}.companies c 
@@ -205,4 +257,5 @@ export {
   createInitialCompany,
   getUserCompany,
   getSpecificCompany,
+  updateCompany
 };

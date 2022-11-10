@@ -1,11 +1,11 @@
 import express from "express";
 import {
   createInitialCompany,
-  getSpecificCompany
+  getSpecificCompany,
 //   getSpecificCompany,
 //   getAllCreatedCompanies,
 //   deleteCompany,
-//   updateCompany,
+  updateCompany,
 //   changeCompanyLogo,
 //   getNumberOfCompanies,
 //   assignCompany,
@@ -16,6 +16,7 @@ import verifyAuth from '../middleware/verifyAuth';
 const router = express.Router();
 
 router.post('/company/createcompany', verifyAuth, createInitialCompany);
+router.put("/company/update", updateCompany);
 router.get('/company/details', verifyAuth, getSpecificCompany)
 // router.get("/company/numbercompanies", getNumberOfCompanies);
 // router.get("/company/allcompanies", getAllCompanies);
@@ -23,7 +24,6 @@ router.get('/company/details', verifyAuth, getSpecificCompany)
 // router.get("/company/usercompanies", getAllCreatedCompanies);
 // router.get("/company/:company_id", getSpecificCompany);
 // router.delete("/company/delete", deleteCompany);
-// router.put("/company/update", updateCompany);
 // router.post("/company/changelogo", changeCompanyLogo);
 // router.post("/company/assigncompany", assignCompany);
 

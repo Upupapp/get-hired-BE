@@ -51,7 +51,6 @@ const loginUser = async (req, res) => {
 
   try {
     const firebaseAuthentication = await checkUserIfExistInFirebase(email);
-
     if (firebaseAuthentication.length === 0) {
       errorMessage.error = "User does not exist. Please Register.";
       return res.status(status.notfound).send(errorMessage);
