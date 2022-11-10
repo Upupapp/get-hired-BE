@@ -40,4 +40,6 @@ const getEmployerProfile = async (req, res) => {
   }
 };
 
+
+
 export { getEmployerCompany, getEmployerProfile };

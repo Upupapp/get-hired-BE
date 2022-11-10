@@ -34,11 +34,11 @@ const createInitialCompany = async (req, res) => {
   }
 };
 
-const updateCompany = async(req, res) => {
+const updateCompany = async (req, res) => {
   const updateQuery = `UPDATE gethired.companies
   SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11
-  WHERE company_id=$12 returning *;`
-  const rawUrl = '';
+  WHERE company_id=$12 returning *;`;
+  let rawUrl = "";
 
   const {
     companyId,
@@ -53,7 +53,7 @@ const updateCompany = async(req, res) => {
     industryId,
     workSetupId,
     numberOfEmployee,
-    companyLogoFile
+    companyLogoFile,
   } = req.body;
 
   try {
@@ -67,24 +67,33 @@ const updateCompany = async(req, res) => {
       rawUrl = companyLogoUrl;
     }
 
-  const { rows } = await dbQuery.query(updateQuery, [
-    rawUrl, companyName, companyDetails, industryId, workSetupId, 
-    numberOfEmployee, companyEmail, companyCity, companyContactNumber, companyCountry, 
-    companyAddress, companyId
-  ]);
+    const { rows } = await dbQuery.query(updateQuery, [
+      rawUrl,
+      companyName,
+      companyDetails,
+      industryId,
+      workSetupId,
+      numberOfEmployee,
+      companyEmail,
+      companyCity,
+      companyContactNumber,
+      companyCountry,
+      companyAddress,
+      companyId,
+    ]);
 
-  if(!rows && rows.length == 0) {
-    throw "Failed to Update";
-  }
+    if (!rows && rows.length == 0) {
+      throw "Failed to Update";
+    }
 
-  const dbResponse = mappedCompany(rows[0]);
-  successMessage.data = dbResponse;
-  return res.status(status.success).send(successMessage);
-  } catch(error) {
-  errorMessage.error = 'ERROR: ' + error;
-  return res.status(status.error).send(errorMessage);
+    const dbResponse = mappedCompany(rows[0]);
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
   }
-}
+};
 
 const getUserCompany = async (id) => {
   const searchQuery = `select c.*, ce.employee_id from ${dbSchema}.company_employees ce 
@@ -123,11 +132,10 @@ const getSpecificCompany = async (req, res) => {
   const { id } = req.query;
   const { uid } = req.user;
   let company = null;
-  console.log(id)
+  console.log(id);
 
   try {
-    if (!id || id == '') {
-      console.log('dapat dito')
+    if (!id || id == "") {
       company = await getUserCompany(uid);
     } else {
       company = await getCompanyDetailsById(id);
@@ -231,6 +239,33 @@ const createCompany = async (company, uid) => {
   }
 };
 
+const getDashboard = async (req, res) => {
+  const { uid } = req.user;
+
+  try {
+    const userCompany = await getUserCompany(uid);
+
+    const dbResponse = {
+      company: userCompany,
+      charts: {
+        activeJobs: 0,
+        applicants: 0,
+        interviews: 0
+      },
+      statistic: {
+        totalHired: 0,
+        interviewAppointments: 0
+      }
+    };
+
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const mappedCompany = (raw) => {
   return {
     companyId: raw.company_id,
@@ -257,5 +292,6 @@ export {
   createInitialCompany,
   getUserCompany,
   getSpecificCompany,
-  updateCompany
+  updateCompany,
+  getDashboard
 };

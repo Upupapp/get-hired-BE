@@ -9,6 +9,7 @@ const router = express.Router();
 
 router.get('/employer/profile', verifyAuth, getEmployerProfile);
 router.get('/employer/company', verifyAuth, getEmployerCompany);
+
 // router.get('/faq/:id', getFaqid);
 
 export default router;
