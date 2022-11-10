@@ -19,7 +19,6 @@ const createCV = async (req, res) => {
     education,
   } = req.body;
 
-  console.log(req.body);
   try {
     const insertQuery = `INSERT INTO ${dbSchema}.cv
       (user_id ,name ,title,contactnumber,location,category, description, skills, cvstatus,experience,education,createddate)

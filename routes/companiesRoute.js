@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createInitialCompany,
+  getSpecificCompany
 //   getSpecificCompany,
 //   getAllCreatedCompanies,
 //   deleteCompany,
@@ -15,7 +16,7 @@ import verifyAuth from '../middleware/verifyAuth';
 const router = express.Router();
 
 router.post('/company/createcompany', verifyAuth, createInitialCompany);
-
+router.get('/company/details', verifyAuth, getSpecificCompany)
 // router.get("/company/numbercompanies", getNumberOfCompanies);
 // router.get("/company/allcompanies", getAllCompanies);
 // router.post("/company/add", createCompany);

@@ -10,8 +10,8 @@ const now = new Date();
 
 const createInitialCompany = async (req, res) => {
   const details = req.body;
-  const {uid} = req.user;
-console.log(details);
+  const { uid } = req.user;
+  console.log(details);
 
   try {
     const company = await createCompany(details, uid);
@@ -20,11 +20,7 @@ console.log(details);
       throw "No company created";
     }
 
-    const assigned = await assignEmployeeToCompany(
-      company.companyId,
-      uid,
-      uid
-    );
+    const assigned = await assignEmployeeToCompany(company.companyId, uid, uid);
 
     if (!assigned) {
       throw "Failed to assign Creator as Employee";
@@ -46,8 +42,8 @@ const getUserCompany = async (id) => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [id]);
 
-    if(!rows || rows.length == 0) {
-        return [];
+    if (!rows || rows.length == 0) {
+      return [];
     }
 
     const dbResponse = {
@@ -57,6 +53,40 @@ const getUserCompany = async (id) => {
     return dbResponse;
   } catch (error) {
     throw error;
+  }
+};
+
+const getCompanyDetailsById = async (companyId) => {
+  const searchQuery = `SELECT * FROM ${dbSchema}.companies WHERE company_id=$1;`;
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
+    const dbResponse = mappedCompany(rows[0]);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getSpecificCompany = async (req, res) => {
+  const { id } = req.query;
+  const { uid } = req.user;
+  let company = null;
+  console.log(id)
+
+  try {
+    if (!id || id == '') {
+      console.log('dapat dito')
+      company = await getUserCompany(uid);
+    } else {
+      company = await getCompanyDetailsById(id);
+    }
+
+    const dbResponse = company;
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
   }
 };
 
@@ -90,7 +120,7 @@ const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
 };
 
 const createCompany = async (company, uid) => {
-  console.log(company)
+  console.log(company);
   let rawUrl = "";
   const companyId = idGenerator(6, "COM");
 
@@ -165,7 +195,7 @@ const mappedCompany = (raw) => {
     companyAddress: raw.company_address,
     createdAt: raw.created_at,
     createdBy: raw.created_by,
-    updatedAt: raw.updated_at
+    updatedAt: raw.updated_at,
   };
 };
 
@@ -174,4 +204,5 @@ export {
   assignEmployeeToCompany,
   createInitialCompany,
   getUserCompany,
+  getSpecificCompany,
 };

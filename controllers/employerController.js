@@ -27,8 +27,12 @@ const getEmployerProfile = async (req, res) => {
 
   try {
     const user = await getUserProfileById(id);
+    const userCompany = await getUserCompany(id);
 
-    successMessage.data = user;
+    successMessage.data = {
+      ...user,
+      companyName: userCompany.companyName
+    };
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;

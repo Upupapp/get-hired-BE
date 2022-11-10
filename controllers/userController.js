@@ -68,7 +68,8 @@ const loginUser = async (req, res) => {
     const userCompany = await getUserCompany(credentials.id);
     successMessage.data = {
       ...credentials,
-      withCompany: userCompany && userCompany.length != 0
+      withCompany: userCompany && userCompany.length != 0,
+      companyName: userCompany.companyName || ''
     };
     return res.status(status.success).send(successMessage);
   } catch (err) {
