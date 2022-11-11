@@ -13,9 +13,10 @@ import {
   getUserRoleByEmail,
   getUserNameByEmail,
   getUserCredentialsByEmail,
+  getUserProfileById,
 } from "../helpers/userDetails";
 
-import { getUserCompany } from './companiesController';
+import { getUserCompany } from "./companiesController";
 import uploadInStorage from "../helpers/uploader";
 
 import {
@@ -68,7 +69,7 @@ const loginUser = async (req, res) => {
     successMessage.data = {
       ...credentials,
       withCompany: userCompany && userCompany.length != 0,
-      companyName: userCompany.companyName || ''
+      companyName: userCompany.companyName || "",
     };
     return res.status(status.success).send(successMessage);
   } catch (err) {
@@ -118,7 +119,7 @@ const registerUser = async (req, res) => {
       password: hashPassword(password),
       firstname: user.firstName,
       lastname: user.lastName,
-      role
+      role,
     };
 
     const dbRegister = await registerUserInDB(dbData);
@@ -210,7 +211,7 @@ const passwordResetLink = async (req, res) => {
     send(email, "pw_reset", {
       url: pwRequestLink + `&role=${userRole}&email=${email}`,
       first_name: name,
-      email
+      email,
     });
 
     successMessage.data = "Link Send to your provided Email";
@@ -218,6 +219,32 @@ const passwordResetLink = async (req, res) => {
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getUserProfile = async (req, res) => {
+  const { uid } = req.user;
+  try {
+    const user = await getUserProfileById(uid);
+    successMessage.data = user;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const updateUserProfile = async(req, res) => {
+  const profile = req.body;
+
+  try {
+  const user = await updateProfile({...profile});
+
+  successMessage.data = user;
+  return res.status(status.success).send(successMessage);
+  } catch(error) {
+  errorMessage.error = 'ERROR: ' + error;
+  return res.status(status.error).send(errorMessage);
   }
 };
 
@@ -288,16 +315,15 @@ const updateProfile = async (user) => {
     cellNumber,
     photoUrl,
     dateOfBirth,
-    addressB,
     gender,
     avatar,
   } = user;
 
   const updateQuery = `UPDATE ${dbSchema}.users
     SET firstname=$1, middlename=$2, lastname=$3, address=$4, city=$5, zip=$6,
-    phone_number=$7, cellnumber=$8, photourl=$9, date_of_birth=$10, address_b=$11, is_profile_updated=true,
-    last_update = $12, gender=$13
-    WHERE uid=$14 returning *`;
+    phone_number=$7, cell_number=$8, photo_url=$9, date_of_birth=$10, is_profile_updated=true,
+    updated_at = $11, gender=$12
+    WHERE uid=$13 returning *`;
 
   try {
     if (avatar && avatar != "" && !photoUrl) {
@@ -316,7 +342,6 @@ const updateProfile = async (user) => {
       cellNumber,
       rawUrl,
       dateOfBirth,
-      addressB,
       new Date(),
       gender,
       uid,
@@ -502,5 +527,7 @@ export {
   passwordResetLink,
   changePw,
   getUserCredentials,
-  deleteAccountById
+  deleteAccountById,
+  getUserProfile,
+  updateUserProfile
 };

@@ -6,10 +6,11 @@ import {
   logout,
   verifyEmail,
   passwordResetLink,
-  changePw
+  changePw,
+  getUserProfile,
+  updateUserProfile
 } from "../controllers/userController";
-
-import { send } from "../helpers/mailer";
+import verifyAuth from '../middleware/verifyAuth';
 
 const router = express.Router();
 
@@ -20,5 +21,7 @@ router.post("/auth/logout", logout);
 router.post("/auth/verifyemail", verifyEmail);
 router.get("/auth/getpwresetlink", passwordResetLink);
 router.post("/auth/changepassword", changePw);
+router.get("/auth/getprofile", verifyAuth, getUserProfile);
+router.put("/auth/updateprofile", verifyAuth, updateUserProfile);
 
 export default router;
