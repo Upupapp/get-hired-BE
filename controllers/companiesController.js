@@ -11,7 +11,6 @@ const now = new Date();
 const createInitialCompany = async (req, res) => {
   const details = req.body;
   const { uid } = req.user;
-  console.log(details);
 
   try {
     const company = await createCompany(details, uid);

@@ -406,7 +406,7 @@ const registerUserInDB = async (user) => {
 const loginUserInDBAndFirebase = async (email, password) => {
   try {
     const dbCredentials = await getUserCredentialsByEmail(email);
-    console.log(dbCredentials);
+
     if (!dbCredentials) {
       throw Error("User does not exist");
     }

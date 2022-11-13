@@ -71,3 +71,31 @@ INSERT INTO gethired.levels (level_id,level_name)
 INSERT INTO gethired.levels (level_id,level_name)
 	VALUES (5,'C-Level');
 
+
+CREATE TABLE gethired.jobs (
+	job_id varchar NOT NULL,
+	job_banner varchar NULL,
+	job_title varchar NOT NULL,
+	company_id varchar NULL,
+	industry_id int4 NULL,
+	job_role_id int4 NULL,
+	job_type_id int4 NULL,
+	job_level_id int4 NULL,
+	job_description varchar NULL,
+	job_duties varchar NULL,
+	work_setup_id int4 NULL,
+	salary_minimum numeric(6, 2) NULL,
+	salary_maximum numeric(6, 2) NULL,
+	rate varchar NULL,
+	job_address varchar NULL,
+	created_at timestamp NULL,
+	updated_at timestamp NULL,
+	expiration_date date NULL,
+	job_status_id int4 NULL,
+	CONSTRAINT jobs_pk PRIMARY KEY (job_id),
+	CONSTRAINT jobs_fk FOREIGN KEY (job_role_id) REFERENCES gethired.job_role(job_role_id) ON DELETE SET NULL ON UPDATE SET NULL,
+	CONSTRAINT jobs_fk_1 FOREIGN KEY (job_type_id) REFERENCES gethired.job_type(job_type_id) ON DELETE SET NULL ON UPDATE SET NULL,
+	CONSTRAINT jobs_fk_2 FOREIGN KEY (job_level_id) REFERENCES gethired.job_level(job_level_id) ON DELETE SET NULL ON UPDATE SET NULL,
+	CONSTRAINT jobs_fk_3 FOREIGN KEY (work_setup_id) REFERENCES gethired.work_setup(work_setup_id) ON DELETE SET NULL ON UPDATE SET NULL,
+	CONSTRAINT jobs_fk_4 FOREIGN KEY (industry_id) REFERENCES gethired.industry(industry_id) ON DELETE SET NULL ON UPDATE SET NULL
+);
