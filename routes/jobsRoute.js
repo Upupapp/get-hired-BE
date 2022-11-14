@@ -8,7 +8,8 @@ import {
   getJobRoleList,
   getSetupList,
   getTypeList,
-  getLevelList
+  getLevelList,
+  getCategoryList
 } from "../controllers/jobsController";
 
 import verifyAuth from '../middleware/verifyAuth';
@@ -20,6 +21,7 @@ router.put("/jobs/updateJobs", updateJob);
 router.delete("/jobs/delete", deleteJob);
 
 // job
+router.get("/job/categories", verifyAuth, getCategoryList);
 router.get("/job/industries", verifyAuth, getIndustryList);
 router.get("/job/badges", verifyAuth, getBadgeList);
 router.get("/job/rolelist", verifyAuth, getJobRoleList);

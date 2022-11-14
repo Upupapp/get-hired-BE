@@ -1,76 +1,82 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
+import idGenerator from "../helpers/randomNumberForId";
+import uploadInStorage from "../helpers/uploader";
 
 const dbSchema = env.schema;
 const now = Date.now();
 
 const createJobs = async (req, res) => {
+  const jobId = idGenerator(6, "JB");
+  let rawUrl = "";
+
   const {
     jobTitle,
-    jobCountry,
-    jobCategory,
-    maxSalary,
-    hoursPerWeek,
-    externalLink,
-    minSalary,
-    jobCity,
-    reqDetails,
-    applicationEmail,
-    jobDescription,
-    minRate,
-    jobType,
-    jobTags,
-    maxRate,
+    bannerFile,
     companyId,
+    industryId,
+    jobRoleId,
+    jobTypeId,
+    jobLevelId,
+    jobCategoryId,
+    jobDescription,
+    jobDuties,
+    workSetupId,
+    salaryMinimum,
+    salaryMaximum,
+    rate,
+    jobAddress,
+    expirationDate,
+    jobStatusId,
+    jobCity
   } = req.body;
 
+  const insertQuery = `INSERT INTO ${dbSchema}.jobs
+  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, expiration_date, job_status_id, job_city, job_category_id)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning *;`
+
   try {
-    const insertQuery = `INSERT INTO ${dbSchema}.jobs
-    (jobtitle, jobcountry, jobcategory, maxsalary, hoursperweek, externallink, minsalary, jobcity, reqdetails, applicationemail, jobdescription, minrate, jobtype, jobtags, maxrate)
-    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning *;`;
+
+    if (bannerFile && bannerFile != "") {
+      rawUrl = await uploadInStorage(
+        "Job-Banner",
+        `${jobId}-Banner`,
+        bannerFile
+      );
+    }
 
     const { rows } = await dbQuery.query(insertQuery, [
+      jobId,
+      rawUrl,
       jobTitle,
-      jobCountry,
-      jobCategory,
-      maxSalary,
-      hoursPerWeek,
-      externalLink,
-      minSalary,
-      jobCity,
-      reqDetails,
-      applicationEmail,
-      jobDescription,
-      minRate,
-      jobType,
-      jobTags,
-      maxRate,
-    ]);
-
-    const dbResponse = rows[0];
-
-    if (!dbResponse) {
-      errorMessage.error = "Failed to Create Company";
-      return res.status(status.error).send(errorMessage);
-    }
-
-    const addJobQuery = `INSERT INTO ${dbSchema}.company_jobs
-    (company_id, job_id) VALUES ($1, $2);`;
-
-    const company_job = await dbQuery.query(addJobQuery, [
       companyId,
-      dbResponse.job_id,
+      industryId,
+      jobRoleId,
+      jobTypeId,
+      jobLevelId,
+      jobDescription,
+      jobDuties,
+      workSetupId,
+      salaryMinimum,
+      salaryMaximum,
+      rate,
+      jobAddress,
+      now,
+      expirationDate,
+      jobStatusId,
+      jobCity,
+      jobCategoryId
     ]);
 
-    if (!company_job) {
-      errorMessage.error = "Failed to add job to a company";
+    if(rows || rows.length == 0) {
+      errorMessage.error = "Failed to create Jobs";
       return res.status(status.error).send(errorMessage);
     }
 
-    const jobList = await getJobList(companyId);
+    const dbResponse = mappedJob(rows[0]);
 
-    successMessage.data = jobList;
+    successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.data = "Operation was not successful. Error: " + error;
@@ -286,6 +292,25 @@ const getLevelList = async (req, res) => {
   }
 };
 
+const getCategoryList = async (req, res) => {
+  const searchQuery = `SELECT * FROM ${dbSchema}.job_category;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows.map((list) => {
+      return {
+        id: list.job_category_id,
+        name: list.job_category_name,
+      };
+    });
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const getJobList = async (companyId) => {
   const selectQuery = `
     SELECT 
@@ -351,7 +376,8 @@ const mappedJob = (raw) => {
     updatedAt: raw.updated_at,
     expirationDate: raw.expiration_date,
     jobStatusId: raw.job_status_id,
-    jobCity: raw.job_city
+    jobCity: raw.job_city,
+    jobCategoryId: raw.job_category_id
   };
 };
 
@@ -367,4 +393,5 @@ export {
   getSetupList,
   getTypeList,
   getLevelList,
+  getCategoryList
 };
