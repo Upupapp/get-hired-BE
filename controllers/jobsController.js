@@ -153,16 +153,32 @@ const updateJob = async (req, res) => {
   }
 };
 
+const updateJobStatus = async (status, jobId) => {
+  const updateQuery = `UPDATE ${dbSchema}.jobs SET job_status_id=$1 WHERE job_id=$2 returning *`;
+  try {
+    const { rows } = await dbQuery.query(updateQuery, [status, jobId]);
+
+    if (rows || rows.length == 0) {
+      throw "Failed to Update Job Status";
+    }
+
+    const dbResponse = mappedJob(rows[0]);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const getIndustryList = async (req, res) => {
   const searchQuery = `SELECT industry_id, industry_name FROM ${dbSchema}.industry;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map(list => {
+    const dbResponse = rows.map((list) => {
       return {
         id: list.industry_id,
-        name: list.industry_name
-      }
+        name: list.industry_name,
+      };
     });
 
     successMessage.data = dbResponse;
@@ -178,14 +194,14 @@ const getBadgeList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map(list => {
+    const dbResponse = rows.map((list) => {
       return {
         id: list.badge_id,
         name: list.badge_name,
-        icon: list.badge_icon
-      }
+        icon: list.badge_icon,
+      };
     });
-    
+
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -199,11 +215,11 @@ const getJobRoleList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map(list => {
+    const dbResponse = rows.map((list) => {
       return {
         id: list.job_role_id,
-        name: list.job_role_name
-      }
+        name: list.job_role_name,
+      };
     });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -214,15 +230,15 @@ const getJobRoleList = async (req, res) => {
 };
 
 const getSetupList = async (req, res) => {
-  const searchQuery = `SELECT job_setup_id, job_setup_name FROM ${dbSchema}.job_setup;`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.work_setup;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map(list => {
+    const dbResponse = rows.map((list) => {
       return {
-        id: list.job_setup_id,
-        name: list.job_setup_name
-      }
+        id: list.work_setup_id,
+        name: list.work_setup_name,
+      };
     });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -237,11 +253,11 @@ const getTypeList = async (req, res) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map(list => {
+    const dbResponse = rows.map((list) => {
       return {
         id: list.job_type_id,
-        name: list.job_type_name
-      }
+        name: list.job_type_name,
+      };
     });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -252,15 +268,15 @@ const getTypeList = async (req, res) => {
 };
 
 const getLevelList = async (req, res) => {
-  const searchQuery = `SELECT level_id, level_name FROM ${dbSchema}.levels;`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.job_level;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map(list => {
+    const dbResponse = rows.map((list) => {
       return {
-        id: list.level_id,
-        name: list.level_name
-      }
+        id: list.job_level_id,
+        name: list.job_level_name,
+      };
     });
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -314,34 +330,28 @@ const getJobWithCompanyDetails = async (job_id) => {
   }
 };
 
-const mapJobs = (job) => {
+const mappedJob = (raw) => {
   return {
-    jobId: job.job_id,
-    jobTitle: job.jobtitle,
-    jobCity: job.jobcity,
-    jobCountry: job.jobcountry,
-    jobCategory: job.jobcategory,
-    jobType: job.jobtype,
-    jobTags: job.jobtags,
-    reqDetails: job.reqdetails,
-    jobDescription: job.jobdescription,
-    applicationEmail: job.applicationemail,
-    minSalary: job.minsalary,
-    maxSalary: job.maxsalary,
-    minRate: job.minrate,
-    maxRate: job.maxrate,
-    hoursPerWeek: job.hoursperweek,
-    externalLink: job.externallink,
-    createdDate: job.createddate,
-    isFilled: job.isfilled,
-    isDraft: job.isdraft,
-    application: job.applications,
-    views: job.views,
-    companyName: job.companyname,
-    logoURL: job.logourl,
-    natureOfBusiness: job.natureofbusiness,
-    companyDesc: job.description,
-    updateDate: job.update_date,
+    jobId: raw.job_id,
+    jobBanner: raw.job_banner,
+    jobTitle: raw.job_title,
+    companyId: raw.company_id,
+    industryId: raw.industry_id,
+    jobRoleId: raw.job_role_id,
+    jobTypeId: raw.job_type_id,
+    jobLevelId: raw.job_level_id,
+    jobDescription: raw.job_description,
+    jobDuties: raw.job_duties,
+    workSetupId: raw.work_setup_id,
+    salaryMinimum: raw.salary_minimum,
+    salaryMaximum: raw.salary_maximum,
+    rate: raw.rate,
+    jobAddress: raw.job_address,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+    expirationDate: raw.expiration_date,
+    jobStatusId: raw.job_status_id,
+    jobCity: raw.job_city
   };
 };
 
@@ -349,10 +359,12 @@ export {
   createJobs,
   deleteJob,
   updateJob,
+
+  updateJobStatus,
   getIndustryList,
   getBadgeList,
   getJobRoleList,
   getSetupList,
   getTypeList,
-  getLevelList
+  getLevelList,
 };

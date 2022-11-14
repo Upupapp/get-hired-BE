@@ -99,3 +99,12 @@ CREATE TABLE gethired.jobs (
 	CONSTRAINT jobs_fk_3 FOREIGN KEY (work_setup_id) REFERENCES gethired.work_setup(work_setup_id) ON DELETE SET NULL ON UPDATE SET NULL,
 	CONSTRAINT jobs_fk_4 FOREIGN KEY (industry_id) REFERENCES gethired.industry(industry_id) ON DELETE SET NULL ON UPDATE SET NULL
 );
+
+CREATE TABLE gethired.job_status (
+	job_status_id int4 NOT NULL,
+	job_status_name varchar NOT NULL,
+	CONSTRAINT job_status_pk PRIMARY KEY (job_status_id)
+);
+
+ALTER TABLE gethired.jobs ADD CONSTRAINT jobs_fk_5 FOREIGN KEY (job_status_id) REFERENCES gethired.job_status(job_status_id) ON DELETE SET NULL ON UPDATE CASCADE;
+
