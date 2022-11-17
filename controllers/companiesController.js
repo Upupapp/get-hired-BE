@@ -253,6 +253,7 @@ const getDashboard = async (req, res) => {
       },
       statistic: {
         totalHired: 0,
+        totalIncrease: 0,
         interviewAppointments: 0
       }
     };
