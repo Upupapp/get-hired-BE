@@ -29,15 +29,14 @@ const createJobs = async (req, res) => {
     jobAddress,
     expirationDate,
     jobStatusId,
-    jobCity
+    jobCity,
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
   (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, expiration_date, job_status_id, job_city, job_category_id)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning *;`
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning *;`;
 
   try {
-
     if (bannerFile && bannerFile != "") {
       rawUrl = await uploadInStorage(
         "Job-Banner",
@@ -66,10 +65,10 @@ const createJobs = async (req, res) => {
       expirationDate,
       jobStatusId,
       jobCity,
-      jobCategoryId
+      jobCategoryId,
     ]);
 
-    if(rows || rows.length == 0) {
+    if (rows || rows.length == 0) {
       errorMessage.error = "Failed to create Jobs";
       return res.status(status.error).send(errorMessage);
     }
@@ -80,6 +79,19 @@ const createJobs = async (req, res) => {
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.data = "Operation was not successful. Error: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getJobBasicListOfCompany = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const list = await getBasicJobList(id);
+    successMessage.data = list;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -100,56 +112,75 @@ const deleteJob = async (req, res) => {
 };
 
 const updateJob = async (req, res) => {
+  const updateQuery = `UPDATE ${dbSchema}.jobs
+    SET job_banner=$1, job_title=$2, industry_id=$3, 
+      job_role_id=$4, job_type_id=$5, job_level_id=$6,
+      job_description=$7, job_duties=$8, work_setup_id=$9,
+      salary_minimum=$10, salary_maximum=$11, rate=$12, 
+      job_address=$13, job_city=$14, job_category_id=$15
+      job_status_id = $18
+      WHERE job_id =$17 returning *;`;
+
   const {
+    jobBanner,
+    bannerFile,
     jobTitle,
-    jobCountry,
-    jobCategory,
-    maxSalary,
-    hoursPerWeek,
-    externalLink,
-    minSalary,
-    jobCity,
-    reqDetails,
-    applicationEmail,
+    industryId,
+    jobRoleId,
+    jobTypeId,
+    jobLevelId,
     jobDescription,
-    minRate,
-    jobType,
-    jobTags,
+    jobDuties,
+    workSetupId,
+    salaryMinimum,
+    salaryMaximum,
+    rate,
+    jobAddress,
+    jobCity,
+    jobCategoryId,
+    jobStatusId,
     jobId,
-    maxRate,
-    companyId,
   } = req.body;
 
   try {
-    const updateQuery = `UPDATE ${dbSchema}.jobs
-          SET jobtitle=$1, jobcountry=$2, jobcategory=$3, maxsalary=$4, hoursperweek=$5, externallink=$6, minsalary=$7, jobcity=$8, reqdetails=$9, applicationemail=$10, jobdescription=$11, minrate=$12, jobtype=$13, jobtags=$14, maxrate=$16
-          WHERE job_id =$15 returning *;`;
+
+    if (bannerFile && bannerFile != "") {
+      rawUrl = await uploadInStorage(
+        "Job-Banner",
+        `${jobId}-Banner`,
+        bannerFile
+      );
+    } else {
+      rawUrl = jobBanner;
+    }
+    
 
     const { rows } = await dbQuery.query(updateQuery, [
+      rawUrl,
       jobTitle,
-      jobCountry,
-      jobCategory,
-      maxSalary,
-      hoursPerWeek,
-      externalLink,
-      minSalary,
-      jobCity,
-      reqDetails,
-      applicationEmail,
+      industryId,
+      jobRoleId,
+      jobTypeId,
+      jobLevelId,
       jobDescription,
-      minRate,
-      jobType,
-      jobTags,
+      jobDuties,
+      workSetupId,
+      salaryMinimum,
+      salaryMaximum,
+      rate,
+      jobAddress,
+      jobCity,
+      jobCategoryId,
+      jobStatusId,
       jobId,
-      maxRate,
     ]);
 
-    const dbResponse = await getJobWithCompanyDetails(jobId);
-
-    if (!dbResponse) {
+    if (!rows || rows.length == 0) {
       errorMessage.error = "Failed to Update Job";
       return res.status(status.error).send(errorMessage);
     }
+
+    const dbResponse = mappedJob(rows[0]);
 
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -311,6 +342,29 @@ const getCategoryList = async (req, res) => {
   }
 };
 
+const getBasicJobList = async (companyId) => {
+  const searchQuery = `SELECT 
+  j.job_id, j.job_title, j.created_at, j.company_id,
+  j.job_city, j.work_setup_id, j.job_type_id,  j.salary_minimum, j.salary_maximum,
+  j.job_status_id, ws.work_setup_name, jt.job_type_name 
+  FROM gethired.jobs j
+  left join gethired.work_setup ws 
+  on ws.work_setup_id = j.work_setup_id
+  left join gethired.job_type jt 
+  on jt.job_type_id = j.job_type_id
+  where company_id = $1 and j.job_status_id != $2;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [companyId, 3]);
+    if (!rows || rows.length > 0) {
+      return rows.map((row) => mappedBasicJob(row));
+    }
+    return rows;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const getJobList = async (companyId) => {
   const selectQuery = `
     SELECT 
@@ -377,7 +431,24 @@ const mappedJob = (raw) => {
     expirationDate: raw.expiration_date,
     jobStatusId: raw.job_status_id,
     jobCity: raw.job_city,
-    jobCategoryId: raw.job_category_id
+    jobCategoryId: raw.job_category_id,
+  };
+};
+
+const mappedBasicJob = (raw) => {
+  return {
+    jobId: raw.job_id,
+    jobTitle: raw.job_title,
+    companyId: raw.company_id,
+    jobTypeId: raw.job_type_id,
+    jobTypeName: raw.job_type_name,
+    workSetupId: raw.work_setup_id,
+    workSetupName: raw.work_setup_name,
+    salaryMinimum: raw.salary_minimum,
+    salaryMaximum: raw.salary_maximum,
+    createdAt: raw.created_at,
+    jobStatusId: raw.job_status_id,
+    jobCity: raw.job_city,
   };
 };
 
@@ -385,7 +456,6 @@ export {
   createJobs,
   deleteJob,
   updateJob,
-
   updateJobStatus,
   getIndustryList,
   getBadgeList,
@@ -393,5 +463,7 @@ export {
   getSetupList,
   getTypeList,
   getLevelList,
-  getCategoryList
+  getCategoryList,
+  getBasicJobList,
+  getJobBasicListOfCompany,
 };
