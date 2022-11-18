@@ -87,7 +87,20 @@ const getJobBasicListOfCompany = async (req, res) => {
   const { id } = req.query;
 
   try {
-    const list = await getBasicJobList(id);
+    const list = await getBasicJobList(id, null);
+    successMessage.data = list;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getExpiredJobListOfCompany = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const list = await getBasicJobList(id, 3);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -342,7 +355,13 @@ const getCategoryList = async (req, res) => {
   }
 };
 
-const getBasicJobList = async (companyId) => {
+const getBasicJobList = async (companyId, statusId) => {
+  let filteredStatus = '';
+
+  if(statusId) {
+    filteredStatus = `and j.job_status_id = ${statusId}`
+  }
+
   const searchQuery = `SELECT 
   j.job_id, j.job_title, j.created_at, j.company_id,
   j.job_city, j.work_setup_id, j.job_type_id,  j.salary_minimum, j.salary_maximum,
@@ -352,10 +371,10 @@ const getBasicJobList = async (companyId) => {
   on ws.work_setup_id = j.work_setup_id
   left join gethired.job_type jt 
   on jt.job_type_id = j.job_type_id
-  where company_id = $1 and j.job_status_id != $2;`;
+  where company_id = $1 ${filteredStatus};`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, [companyId, 3]);
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
     if (!rows || rows.length > 0) {
       return rows.map((row) => mappedBasicJob(row));
     }
@@ -466,4 +485,5 @@ export {
   getCategoryList,
   getBasicJobList,
   getJobBasicListOfCompany,
+  getExpiredJobListOfCompany
 };

@@ -10,7 +10,8 @@ import {
   getTypeList,
   getLevelList,
   getCategoryList,
-  getJobBasicListOfCompany
+  getJobBasicListOfCompany,
+  getExpiredJobListOfCompany
 } from "../controllers/jobsController";
 
 import verifyAuth from '../middleware/verifyAuth';
@@ -24,6 +25,7 @@ const router = express.Router();
 router.post("/jobs/create", createJobs);
 router.put("/jobs/updateJobs", updateJob);
 router.get("/job/basiclist", verifyAuth, getJobBasicListOfCompany);
+router.get("/job/expiredlist", verifyAuth, getExpiredJobListOfCompany);
 router.get("/job/categories", verifyAuth, getCategoryList);
 router.get("/job/industries", verifyAuth, getIndustryList);
 router.get("/job/badges", verifyAuth, getBadgeList);
