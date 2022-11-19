@@ -64,3 +64,6 @@ ALTER TABLE gethired.users ADD civil_status varchar NULL;
 ALTER TABLE gethired.users ADD state varchar NULL;
 ALTER TABLE gethired.users ADD country varchar NULL;
 
+ALTER TABLE gethired.roles RENAME TO access_roles;
+
+

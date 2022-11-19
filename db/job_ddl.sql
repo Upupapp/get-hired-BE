@@ -108,3 +108,76 @@ CREATE TABLE gethired.job_status (
 
 ALTER TABLE gethired.jobs ADD CONSTRAINT jobs_fk_5 FOREIGN KEY (job_status_id) REFERENCES gethired.job_status(job_status_id) ON DELETE SET NULL ON UPDATE CASCADE;
 
+CREATE TABLE gethired.job_badges (
+	id varchar NULL DEFAULT uuid_generate_v4(),
+	badge_id int4 NOT NULL,
+	job_id varchar NOT NULL,
+	created_at timestamp NULL,
+	CONSTRAINT job_badges_pk PRIMARY KEY (id),
+	CONSTRAINT job_badges_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.job_requirement (
+	id varchar NULL DEFAULT uuid_generate_v4(),
+	requirement varchar NOT NULL,
+	job_id varchar NOT NULL,
+	created_at timestamp NULL,
+	CONSTRAINT job_requirement_pk PRIMARY KEY (id),
+	CONSTRAINT job_requirement_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.job_goodtohave (
+	id varchar NULL DEFAULT uuid_generate_v4(),
+	goodtohave varchar NOT NULL,
+	job_id varchar NOT NULL,
+	created_at timestamp NULL,
+	CONSTRAINT job_goodtohave_pk PRIMARY KEY (id),
+	CONSTRAINT job_goodtohave_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.job_educationalbackground (
+	id varchar NULL DEFAULT uuid_generate_v4(),
+	educationalbackground varchar NOT NULL,
+	job_id varchar NOT NULL,
+	created_at timestamp NULL,
+	CONSTRAINT job_educationalbackground_pk PRIMARY KEY (id),
+	CONSTRAINT job_educationalbackground_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.job_skills (
+	id varchar NULL DEFAULT uuid_generate_v4(),
+	skills varchar NOT NULL,
+	job_id varchar NOT NULL,
+	created_at timestamp NULL,
+	CONSTRAINT job_skills_pk PRIMARY KEY (id),
+	CONSTRAINT job_skills_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.job_tags (
+	id varchar NULL DEFAULT uuid_generate_v4(),
+	tags varchar NOT NULL,
+	job_id varchar NOT NULL,
+	created_at timestamp NULL,
+	CONSTRAINT job_tags_pk PRIMARY KEY (id),
+	CONSTRAINT job_tags_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.job_interview_template (
+	job_interview_template_id varchar NOT NULL,
+	job_interview_template_name varchar NOT NULL,
+	created_at timestamp NULL,
+	updated_at timestamp NULL DEFAULT now(),
+	job_id varchar NULL,
+	CONSTRAINT job_interview_template_pk PRIMARY KEY (job_interview_template_id),
+	CONSTRAINT job_interview_template_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE gethired.interview_template_question (
+	template_question_id varchar NOT NULL,
+	template_question varchar NOT NULL,
+	template_answer_duration int4 NULL DEFAULT 3,
+	template_question_retakes int4 NULL DEFAULT 1,
+	job_interview_template_id varchar NOT NULL,
+	CONSTRAINT interview_template_question_pk PRIMARY KEY (template_question_id),
+	CONSTRAINT interview_template_question_fk FOREIGN KEY (job_interview_template_id) REFERENCES gethired.job_interview_template(job_interview_template_id) ON DELETE CASCADE ON UPDATE CASCADE
+);

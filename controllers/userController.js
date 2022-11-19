@@ -136,7 +136,8 @@ const registerUser = async (req, res) => {
         .send("Failed to generate Verification link");
     }
 
-    return res.status(status.created).send(dbRegister);
+    successMessage.data = dbRegister;
+    return res.status(status.created).send(successMessage);
   } catch (err) {
     console.log(err);
     return res.status(status.error).send(err);

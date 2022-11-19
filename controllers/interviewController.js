@@ -8,11 +8,11 @@ import env from "../env";
 const dbSchema = env.schema;
 const now = new Date();
 
-const createQuestion = async (questionDetails, jobId) => {
+const createQuestion = async (questionDetails, templateId) => {
   const { question, answerDuration, retakes } = questionDetails;
-  const insertQuery = `INSERT INTO ${dbSchema}.questions
-    (question_id, question, answer_duration, retakes, created_at, job_id)
-    VALUES($1, $2, $3, $4, $5) returning *;`;
+  const insertQuery = `INSERT INTO ${dbSchema}.interview_template_question
+  (template_question_id, template_question, template_answer_duration, template_question_retakes, job_interview_template_id, created_at)  
+    VALUES($1, $2, $3, $4, $5, $6) returning *;`;
 
   const questionId = idGenerator(6, "QN");
 
@@ -22,8 +22,8 @@ const createQuestion = async (questionDetails, jobId) => {
       question,
       answerDuration,
       retakes,
-      now,
-      jobId
+      templateId,
+      now
     ]);
 
     if (!rows || rows.length == 0) {
@@ -31,6 +31,32 @@ const createQuestion = async (questionDetails, jobId) => {
     }
 
     const dbResponse = mappedQuestion(rows);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const createInterviewTemplateQuestions = async (jobId, templateName) => {
+  const templateId = idGenerator(6, "ITPL");
+
+  const insertQuery = `INSERT INTO ${dbSchema}.job_interview_template
+  (job_interview_template_id, job_interview_template_name, created_at, job_id)
+  VALUES($1, $2, $3, $4) returning *;`;
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      templateId,
+      templateName,
+      now,
+      jobId,
+    ]);
+
+    if (!rows || rows.length == 0) {
+      throw "Failed to create template";
+    }
+
+    const dbResponse = rows[0];
     return dbResponse;
   } catch (error) {
     throw error;
@@ -45,10 +71,8 @@ const mappedQuestion = (raw) => {
     retakes: raw.retakes,
     createdAt: raw.created_at,
     updatedAt: raw.updatedAt,
-    jobId: raw.job_id
+    templateId: raw.templateId
   };
 };
 
-export {
-    createQuestion
-}
+export { createQuestion, createInterviewTemplateQuestions };

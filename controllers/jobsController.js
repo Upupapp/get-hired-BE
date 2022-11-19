@@ -3,6 +3,11 @@ import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
 import uploadInStorage from "../helpers/uploader";
+import genericInsert from "../helpers/genericInsert";
+import {
+  createInterviewTemplateQuestions,
+  createQuestion,
+} from "./interviewController";
 
 const dbSchema = env.schema;
 const now = Date.now();
@@ -30,6 +35,13 @@ const createJobs = async (req, res) => {
     expirationDate,
     jobStatusId,
     jobCity,
+    badges,
+    requirements,
+    goodToHave,
+    educationalBackground,
+    jobSkills,
+    jobTags,
+    interviewQuestions
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
@@ -73,6 +85,74 @@ const createJobs = async (req, res) => {
       return res.status(status.error).send(errorMessage);
     }
 
+    if (rows[0].job_id) {
+      if (badges && badges.length != 0) {
+        const jobBadges = await saveJobDetailsList(
+          badges,
+          "job_badges",
+          "badge_id",
+          jobId
+        );
+      }
+
+      if (requirements && requirements.length != 0) {
+        const jobRequirements = await saveJobDetailsList(
+          requirements,
+          "job_requirement",
+          "requirement",
+          jobId
+        );
+      }
+
+      if (goodToHave && goodToHave.length != 0) {
+        const jobGoodToHave = await saveJobDetailsList(
+          goodToHave,
+          "job_goodtohave",
+          "goodtohave",
+          jobId
+        );
+      }
+
+      if (educationalBackground && educationalBackground.length != 0) {
+        const jobEducationalBackground = await saveJobDetailsList(
+          educationalBackground,
+          "job_educationalbackground",
+          "educationalbackground",
+          jobId
+        );
+      }
+
+      if (jobSkills && jobSkills.length != 0) {
+        const jobSkillList = await saveJobDetailsList(
+          jobSkills,
+          "job_skills",
+          "skills",
+          jobId
+        );
+      }
+
+      if (jobTags && jobTags.length != 0) {
+        const jobTagsList = await saveJobDetailsList(
+          jobTags,
+          "job_tags",
+          "tags",
+          jobId
+        );
+      }
+
+      if (interviewQuestions && interviewQuestions.length != 0) {
+        const templateId = await createInterviewTemplateQuestions(
+          jobId,
+          "default"
+        );
+        const questions = Promise.all(
+          await interviewQuestions.map(
+            async (question) => await createQuestion(question, templateId)
+          )
+        );
+      }
+    }
+
     const dbResponse = mappedJob(rows[0]);
 
     successMessage.data = dbResponse;
@@ -87,7 +167,7 @@ const getJobBasicListOfCompany = async (req, res) => {
   const { id } = req.query;
 
   try {
-    const list = await getBasicJobList(id, null);
+    const list = await getBasicJobList(id, 0);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -156,7 +236,6 @@ const updateJob = async (req, res) => {
   } = req.body;
 
   try {
-
     if (bannerFile && bannerFile != "") {
       rawUrl = await uploadInStorage(
         "Job-Banner",
@@ -166,7 +245,6 @@ const updateJob = async (req, res) => {
     } else {
       rawUrl = jobBanner;
     }
-    
 
     const { rows } = await dbQuery.query(updateQuery, [
       rawUrl,
@@ -337,7 +415,7 @@ const getLevelList = async (req, res) => {
 };
 
 const getCategoryList = async (req, res) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.job_category;`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.category;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, []);
@@ -356,10 +434,15 @@ const getCategoryList = async (req, res) => {
 };
 
 const getBasicJobList = async (companyId, statusId) => {
-  let filteredStatus = '';
+  let filteredStatus = "";
 
-  if(statusId) {
-    filteredStatus = `and j.job_status_id = ${statusId}`
+  switch (statusId) {
+    case 0:
+      filteredStatus = `and j.job_status_id != 3`;
+      break;
+    default:
+      filteredStatus = `and j.job_status_id = ${statusId}`;
+      break;
   }
 
   const searchQuery = `SELECT 
@@ -428,6 +511,21 @@ const getJobWithCompanyDetails = async (job_id) => {
   }
 };
 
+const saveJobDetailsList = async (list, tableName, columnName, jobId) => {
+  try {
+    const insertedList = list.map(
+      async (item) =>
+        await genericInsert(tableName, columnName, item, {
+          column: "job_id",
+          value: jobId,
+        })
+    );
+    return insertedList;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const mappedJob = (raw) => {
   return {
     jobId: raw.job_id,
@@ -485,5 +583,5 @@ export {
   getCategoryList,
   getBasicJobList,
   getJobBasicListOfCompany,
-  getExpiredJobListOfCompany
+  getExpiredJobListOfCompany,
 };
