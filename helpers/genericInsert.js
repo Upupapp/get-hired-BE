@@ -7,13 +7,12 @@ const now = Date.now();
 const genericInsert = async (tableName, columnName, value, identifier) => {
   const insertQuery = `INSERT into ${dbSchema}.${tableName}
         (${columnName}, ${identifier.column}, created_at) 
-        VALUES ($1, $2 $3) returning *;`;
+        VALUES ($1, $2, current_timestamp) returning *;`;
 
   try {
     const { rows } = await dbQuery.query(insertQuery, [
       value,
       identifier.value,
-      now,
     ]);
 
     if (!rows || rows.length == 0) {

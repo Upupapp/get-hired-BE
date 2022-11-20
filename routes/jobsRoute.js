@@ -22,8 +22,8 @@ const router = express.Router();
 // router.delete("/jobs/delete", deleteJob);
 
 // job
-router.post("/jobs/create", createJobs);
-router.put("/jobs/updateJobs", updateJob);
+router.post("/job/create", verifyAuth, createJobs);
+router.put("/job/updatejobs", verifyAuth, updateJob);
 router.get("/job/basiclist", verifyAuth, getJobBasicListOfCompany);
 router.get("/job/expiredlist", verifyAuth, getExpiredJobListOfCompany);
 router.get("/job/categories", verifyAuth, getCategoryList);

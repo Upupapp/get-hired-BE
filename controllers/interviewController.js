@@ -56,7 +56,14 @@ const createInterviewTemplateQuestions = async (jobId, templateName) => {
       throw "Failed to create template";
     }
 
-    const dbResponse = rows[0];
+    const dbResponse = {
+      jobInterviewTemplateId: rows[0].job_interview_template_id,
+      jobInterviewTemplateName: rows[0].job_interview_template_name,
+      createdAt: rows[0].created_at,
+      updatedAt: rows[0].updated_at,
+      jobId: rows[0].job_id
+    };
+  
     return dbResponse;
   } catch (error) {
     throw error;
@@ -67,7 +74,7 @@ const mappedQuestion = (raw) => {
   return {
     questionId: raw.question_id,
     question: raw.question,
-    answerDuration: answer_duration,
+    answerDuration: raw.answer_duration,
     retakes: raw.retakes,
     createdAt: raw.created_at,
     updatedAt: raw.updatedAt,

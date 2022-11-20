@@ -13,6 +13,8 @@ const dbSchema = env.schema;
 const now = Date.now();
 
 const createJobs = async (req, res) => {
+  let questions = [];
+
   const jobId = idGenerator(6, "JB");
   let rawUrl = "";
 
@@ -45,15 +47,15 @@ const createJobs = async (req, res) => {
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
-  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, expiration_date, job_status_id, job_city, job_category_id)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning *;`;
+  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, job_status_id, job_city, job_category_id)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18) returning *;`;
 
   try {
-    if (bannerFile && bannerFile != "") {
+    if (bannerFile && bannerFile.length != 0) {
       rawUrl = await uploadInStorage(
         "Job-Banner",
         `${jobId}-Banner`,
-        bannerFile
+        bannerFile[0].file
       );
     }
 
@@ -73,14 +75,12 @@ const createJobs = async (req, res) => {
       salaryMaximum,
       rate,
       jobAddress,
-      now,
-      expirationDate,
       jobStatusId,
       jobCity,
       jobCategoryId,
     ]);
 
-    if (rows || rows.length == 0) {
+    if (!rows || rows.length == 0) {
       errorMessage.error = "Failed to create Jobs";
       return res.status(status.error).send(errorMessage);
     }
@@ -141,19 +141,24 @@ const createJobs = async (req, res) => {
       }
 
       if (interviewQuestions && interviewQuestions.length != 0) {
-        const templateId = await createInterviewTemplateQuestions(
+        const template = await createInterviewTemplateQuestions(
           jobId,
           "default"
         );
-        const questions = Promise.all(
+        const rawQuestions = Promise.all(
           await interviewQuestions.map(
-            async (question) => await createQuestion(question, templateId)
+            async (question) => await createQuestion(question, template.jobInterviewTemplateId)
           )
         );
+
+        rawQuestions.then(ques => questions = ques)
       }
     }
 
-    const dbResponse = mappedJob(rows[0]);
+    const dbResponse = {
+      ...mappedJob(rows[0]),
+      interviewQuestions: questions
+    };
 
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -441,6 +446,7 @@ const getBasicJobList = async (companyId, statusId) => {
       filteredStatus = `and j.job_status_id != 3`;
       break;
     default:
+      console.log(statusId)
       filteredStatus = `and j.job_status_id = ${statusId}`;
       break;
   }
@@ -448,7 +454,7 @@ const getBasicJobList = async (companyId, statusId) => {
   const searchQuery = `SELECT 
   j.job_id, j.job_title, j.created_at, j.company_id,
   j.job_city, j.work_setup_id, j.job_type_id,  j.salary_minimum, j.salary_maximum,
-  j.job_status_id, ws.work_setup_name, jt.job_type_name 
+  j.job_status_id, ws.work_setup_name, jt.job_type_name, j.rate
   FROM gethired.jobs j
   left join gethired.work_setup ws 
   on ws.work_setup_id = j.work_setup_id
@@ -566,6 +572,7 @@ const mappedBasicJob = (raw) => {
     createdAt: raw.created_at,
     jobStatusId: raw.job_status_id,
     jobCity: raw.job_city,
+    rate: raw.rate
   };
 };
 
