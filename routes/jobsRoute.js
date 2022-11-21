@@ -11,7 +11,8 @@ import {
   getLevelList,
   getCategoryList,
   getJobBasicListOfCompany,
-  getExpiredJobListOfCompany
+  getExpiredJobListOfCompany,
+  updateStatusOfJob
 } from "../controllers/jobsController";
 
 import verifyAuth from '../middleware/verifyAuth';
@@ -33,6 +34,7 @@ router.get("/job/rolelist", verifyAuth, getJobRoleList);
 router.get("/job/setuplist", verifyAuth, getSetupList);
 router.get("/job/type", verifyAuth, getTypeList);
 router.get("/job/levels", verifyAuth, getLevelList);
+router.put("/job/changestatus", verifyAuth, updateStatusOfJob)
 
 
 export default router;

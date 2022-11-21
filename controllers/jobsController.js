@@ -43,7 +43,7 @@ const createJobs = async (req, res) => {
     educationalBackground,
     jobSkills,
     jobTags,
-    interviewQuestions
+    interviewQuestions,
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
@@ -147,17 +147,18 @@ const createJobs = async (req, res) => {
         );
         const rawQuestions = Promise.all(
           await interviewQuestions.map(
-            async (question) => await createQuestion(question, template.jobInterviewTemplateId)
+            async (question) =>
+              await createQuestion(question, template.jobInterviewTemplateId)
           )
         );
 
-        rawQuestions.then(ques => questions = ques)
+        rawQuestions.then((ques) => (questions = ques));
       }
     }
 
     const dbResponse = {
       ...mappedJob(rows[0]),
-      interviewQuestions: questions
+      interviewQuestions: questions,
     };
 
     successMessage.data = dbResponse;
@@ -185,7 +186,7 @@ const getExpiredJobListOfCompany = async (req, res) => {
   const { id } = req.query;
 
   try {
-    const list = await getBasicJobList(id, 3);
+    const list = await getBasicJobList(id, 10);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -286,12 +287,27 @@ const updateJob = async (req, res) => {
   }
 };
 
-const updateJobStatus = async (status, jobId) => {
+const updateStatusOfJob = async (req, res) => {
+  const jobId = req.body.jobId;
+  const statusId = req.body.status;
+
+  try {
+    const updateJob = await updateJobStatus(statusId, jobId);
+
+    successMessage.data = updateJob;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const updateJobStatus = async (statusId, jobId) => {
   const updateQuery = `UPDATE ${dbSchema}.jobs SET job_status_id=$1 WHERE job_id=$2 returning *`;
   try {
-    const { rows } = await dbQuery.query(updateQuery, [status, jobId]);
+    const { rows } = await dbQuery.query(updateQuery, [statusId, jobId]);
 
-    if (rows || rows.length == 0) {
+    if (!rows || rows.length == 0) {
       throw "Failed to Update Job Status";
     }
 
@@ -442,11 +458,14 @@ const getBasicJobList = async (companyId, statusId) => {
   let filteredStatus = "";
 
   switch (statusId) {
-    case 0:
-      filteredStatus = `and j.job_status_id != 3`;
+    case 0: // draft and published
+      filteredStatus = `and j.job_status_id != 3 and j.job_status_id != 4`;
+      break;
+    case 10: // expired and archived
+      filteredStatus = `and j.job_status_id != 1 and j.job_status_id != 2`;
       break;
     default:
-      console.log(statusId)
+      console.log(statusId);
       filteredStatus = `and j.job_status_id = ${statusId}`;
       break;
   }
@@ -460,7 +479,7 @@ const getBasicJobList = async (companyId, statusId) => {
   on ws.work_setup_id = j.work_setup_id
   left join gethired.job_type jt 
   on jt.job_type_id = j.job_type_id
-  where company_id = $1 ${filteredStatus};`;
+  where company_id = $1 ${filteredStatus} ORDER BY j.created_at DESC;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [companyId]);
@@ -572,7 +591,7 @@ const mappedBasicJob = (raw) => {
     createdAt: raw.created_at,
     jobStatusId: raw.job_status_id,
     jobCity: raw.job_city,
-    rate: raw.rate
+    rate: raw.rate,
   };
 };
 
@@ -591,4 +610,5 @@ export {
   getBasicJobList,
   getJobBasicListOfCompany,
   getExpiredJobListOfCompany,
+  updateStatusOfJob,
 };
