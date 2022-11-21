@@ -10,7 +10,10 @@ import {
   //   getNumberOfCompanies,
   //   assignCompany,
   //   getAllCompanies,
-  getDashboard
+  getDashboard,
+  getAllCompanyUser,
+  removeCompanyUser,
+  assignEmployeeToCompany,
 } from "../controllers/companiesController";
 import verifyAuth from "../middleware/verifyAuth";
 
@@ -19,7 +22,10 @@ const router = express.Router();
 router.post("/company/createcompany", verifyAuth, createInitialCompany);
 router.put("/company/update", updateCompany);
 router.get("/company/details", verifyAuth, getSpecificCompany);
-router.get('/company/dashboard', verifyAuth, getDashboard);
+router.get("/company/dashboard", verifyAuth, getDashboard);
+router.get("/company/getallcompanyuser", getAllCompanyUser);
+router.delete("/company/removecompanyuser", removeCompanyUser);
+router.post("/company/addcompanyuser", verifyAuth, assignEmployeeToCompany);
 
 // router.get("/company/numbercompanies", getNumberOfCompanies);
 // router.get("/company/allcompanies", getAllCompanies);

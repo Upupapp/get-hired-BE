@@ -249,13 +249,13 @@ const getDashboard = async (req, res) => {
       charts: {
         activeJobs: 0,
         applicants: 0,
-        interviews: 0
+        interviews: 0,
       },
       statistic: {
         totalHired: 0,
         totalIncrease: 0,
-        interviewAppointments: 0
-      }
+        interviewAppointments: 0,
+      },
     };
 
     successMessage.data = dbResponse;
@@ -286,6 +286,66 @@ const mappedCompany = (raw) => {
   };
 };
 
+const removeCompanyUser = async (req, res) => {
+  const { userId, companyId } = req.body;
+  const deleteQuery = `DELETE FROM ${dbSchema}.company_employees
+  WHERE employee_uuid='${userId}' and company_id='${companyId}'`;
+  try {
+    const { rows } = await dbQuery.query(deleteQuery, []);
+
+    successMessage.data = "Company user has been removed";
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.data = "Operation was not successful. Error: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getAllCompanyUser = async (req, res) => {
+  const { uid } = req.user;
+  const searchQuery = `SELECT * FROM ${dbSchema}.company_employees ce JOIN ${dbSchema}.users u ON ce.employee_uuid = u.uid WHERE ce.employee_uuid = $1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [uid]);
+    const dbResponse = rows.map((row) => mappedCompanyUser(row));
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const mappedCompanyUser = (raw) => {
+  return {
+    employeeId: raw.employee_id,
+    companyId: raw.company_id,
+    employeeUuid: raw.employee_uuid,
+    assignedAt: raw.assigned_at,
+    updatedAt: raw.updated_at,
+    positionId: raw.position_id,
+    assignedBy: raw.assigned_by,
+    uId: raw.uid,
+    firstName: raw.firstname,
+    middleName: raw.middlename,
+    lastName: raw.lastname,
+    address: raw.address,
+    city: raw.city,
+    zip: raw.zip,
+    phoneNumber: raw.phone_number,
+    cellNumber: raw.cell_number,
+    photoUrl: raw.photo_url,
+    dateOfBirth: raw.date_of_birth,
+    isProfileUpdated: raw.is_profile_updated,
+    updateAt: raw.updated_at,
+    gender: raw.gender,
+    civilStatus: raw.civil_status,
+    state: raw.state,
+    country: raw.country,
+    email: raw.email,
+  };
+};
+
 export {
   createCompany,
   assignEmployeeToCompany,
@@ -293,5 +353,7 @@ export {
   getUserCompany,
   getSpecificCompany,
   updateCompany,
-  getDashboard
+  getDashboard,
+  removeCompanyUser,
+  getAllCompanyUser,
 };
