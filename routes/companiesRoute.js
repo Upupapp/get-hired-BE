@@ -14,6 +14,7 @@ import {
   getAllCompanyUser,
   removeCompanyUser,
   assignEmployeeToCompany,
+  addCompanyUser,
 } from "../controllers/companiesController";
 import verifyAuth from "../middleware/verifyAuth";
 
@@ -25,7 +26,7 @@ router.get("/company/details", verifyAuth, getSpecificCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
 router.get("/company/getallcompanyuser", getAllCompanyUser);
 router.delete("/company/removecompanyuser", removeCompanyUser);
-router.post("/company/addcompanyuser", verifyAuth, assignEmployeeToCompany);
+router.post("/company/addcompanyuser", addCompanyUser);
 
 // router.get("/company/numbercompanies", getNumberOfCompanies);
 // router.get("/company/allcompanies", getAllCompanies);

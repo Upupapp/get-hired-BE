@@ -15,8 +15,7 @@ const getUserRoleById = async (uid) => {
 };
 
 const getUserRoleByEmail = async (email) => {
-  const searchQuery =
-    `Select role from ${dbSchema}.user_credentials where email = $1`;
+  const searchQuery = `Select role from ${dbSchema}.user_credentials where email = $1`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [email]);
@@ -102,6 +101,19 @@ const getUserCredentialsByEmail = async (email) => {
   }
 };
 
+const getIdByEmail = async (email) => {
+  const searchQuery = `Select uid
+  from ${dbSchema}.users where email = $1`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [email]);
+    const dbResponse = rows[0];
+    return dbResponse;
+  } catch (error) {
+    throw Error(error);
+  }
+};
+
 const userMap = (raw) => {
   return {
     uid: raw.uid,
@@ -132,5 +144,6 @@ export {
   getUserRoleByEmail,
   getUserNameByEmail,
   getUserCredentialsByEmail,
-  getBasicInfoByEmail
+  getBasicInfoByEmail,
+  getIdByEmail,
 };

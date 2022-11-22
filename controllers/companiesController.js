@@ -2,6 +2,7 @@ import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import uploadInStorage from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
+import { getIdByEmail } from "../helpers/userDetails";
 
 import env from "../env";
 
@@ -316,6 +317,35 @@ const getAllCompanyUser = async (req, res) => {
   }
 };
 
+const addCompanyUser = async (email) => {
+  const { uid } = req.user;
+  console.log(email);
+  try {
+    const id = await getIdByEmail(email);
+
+    if (!id) {
+      throw "No user id get";
+    }
+
+    const company = await getUserCompany(uid);
+
+    if (!company.companyId) {
+      throw "User has no company";
+    }
+
+    const assigned = await assignEmployeeToCompany(company.companyId, id, uid);
+
+    if (!assigned) {
+      throw "Failed to assign Creator as Employee";
+    }
+
+    successMessage.data = assigned;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    throw error;
+  }
+};
+
 const mappedCompanyUser = (raw) => {
   return {
     employeeId: raw.employee_id,
@@ -356,4 +386,5 @@ export {
   getDashboard,
   removeCompanyUser,
   getAllCompanyUser,
+  addCompanyUser,
 };
