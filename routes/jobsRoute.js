@@ -12,13 +12,12 @@ import {
   getCategoryList,
   getJobBasicListOfCompany,
   getExpiredJobListOfCompany,
-  updateStatusOfJob
+  updateStatusOfJob,
 } from "../controllers/jobsController";
 
-import verifyAuth from '../middleware/verifyAuth';
+import verifyAuth from "../middleware/verifyAuth";
 
 const router = express.Router();
-
 
 // router.delete("/jobs/delete", deleteJob);
 
@@ -34,7 +33,6 @@ router.get("/job/rolelist", verifyAuth, getJobRoleList);
 router.get("/job/setuplist", verifyAuth, getSetupList);
 router.get("/job/type", verifyAuth, getTypeList);
 router.get("/job/levels", verifyAuth, getLevelList);
-router.put("/job/changestatus", verifyAuth, updateStatusOfJob)
-
+router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
 
 export default router;

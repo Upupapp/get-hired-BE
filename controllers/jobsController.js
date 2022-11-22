@@ -37,6 +37,7 @@ const createJobs = async (req, res) => {
     expirationDate,
     jobStatusId,
     jobCity,
+    jobCountry,
     badges,
     requirements,
     goodToHave,
@@ -47,7 +48,7 @@ const createJobs = async (req, res) => {
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
-  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, job_status_id, job_city, job_category_id)
+  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, job_status_id, job_city, job_category_id, job_country)
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18) returning *;`;
 
   try {
@@ -78,6 +79,7 @@ const createJobs = async (req, res) => {
       jobStatusId,
       jobCity,
       jobCategoryId,
+      jobCountry,
     ]);
 
     if (!rows || rows.length == 0) {
@@ -216,9 +218,9 @@ const updateJob = async (req, res) => {
       job_role_id=$4, job_type_id=$5, job_level_id=$6,
       job_description=$7, job_duties=$8, work_setup_id=$9,
       salary_minimum=$10, salary_maximum=$11, rate=$12, 
-      job_address=$13, job_city=$14, job_category_id=$15
-      job_status_id = $18
-      WHERE job_id =$17 returning *;`;
+      job_address=$13, job_city=$14, job_category_id=$15,
+      job_country= $17, job_status_id = $19
+      WHERE job_id =$18 returning *;`;
 
   const {
     jobBanner,
@@ -236,6 +238,7 @@ const updateJob = async (req, res) => {
     rate,
     jobAddress,
     jobCity,
+    jopCountry,
     jobCategoryId,
     jobStatusId,
     jobId,
@@ -268,6 +271,7 @@ const updateJob = async (req, res) => {
       jobAddress,
       jobCity,
       jobCategoryId,
+      jobCountry,
       jobStatusId,
       jobId,
     ]);
@@ -574,6 +578,7 @@ const mappedJob = (raw) => {
     jobStatusId: raw.job_status_id,
     jobCity: raw.job_city,
     jobCategoryId: raw.job_category_id,
+    jobCountry: raw.job_country,
   };
 };
 
@@ -591,6 +596,7 @@ const mappedBasicJob = (raw) => {
     createdAt: raw.created_at,
     jobStatusId: raw.job_status_id,
     jobCity: raw.job_city,
+    jobCountry: raw.job_country,
     rate: raw.rate,
   };
 };
