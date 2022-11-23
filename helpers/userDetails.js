@@ -26,8 +26,7 @@ const getUserRoleByEmail = async (email) => {
 };
 
 const getUserProfileById = async (uid) => {
-  const searchQuery = `Select *, date_part('year', age(date_of_birth)) as age
-    from ${dbSchema}.users where uid = $1`;
+  const searchQuery = `Select * from ${dbSchema}.users where uid = $1`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [uid]);
@@ -122,7 +121,6 @@ const userMap = (raw) => {
     lastName: raw.lastname,
     createdDate: raw.createddate,
     dateOfBirth: raw.date_of_birth,
-    age: raw.age,
     email: raw.email,
     gender: raw.gender,
     phoneNumber: raw.phone_number,
