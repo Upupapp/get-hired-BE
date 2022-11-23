@@ -27,7 +27,8 @@ if(isStaging == 'false') {
         messagingSenderId: process.env.SENDER_ID,
         appId: process.env.APP_ID,
         measurementId: process.env.MEASUREMENT_ID,
-        schema: process.env.SCHEMA
+        schema: process.env.SCHEMA,
+        dynamicDomain: process.env.DYNAMIC_DOMAIN
     }
 } else {
     config = {
@@ -50,7 +51,8 @@ if(isStaging == 'false') {
         messagingSenderId: process.env.SENDER_ID_DEV,
         appId: process.env.APP_ID_DEV,
         measurementId: process.env.MEASUREMENT_ID_DEV,
-        schema: process.env.SCHEMA_DEV
+        schema: process.env.SCHEMA_DEV,
+        dynamicDomain: process.env.DYNAMIC_DOMAIN
     }
 }
 

@@ -4,7 +4,7 @@ import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
 import { industryList, setupList } from "./jobsController";
 
-import { companyList } from "../services/company.service";
+import { companyList, companyDetailsById } from "../services/company.service";
 
 import dbQuery from "../db/dbQuery";
 import env from "../env";
@@ -120,32 +120,22 @@ const getUserCompany = async (id) => {
   }
 };
 
-const getCompanyDetailsById = async (companyId) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.companies WHERE company_id=$1;`;
-  try {
-    const { rows } = await dbQuery.query(searchQuery, [companyId]);
-    const dbResponse = mappedCompany(rows[0]);
-    return dbResponse;
-  } catch (error) {
-    throw error;
-  }
-};
+
 
 const getSpecificCompany = async (req, res) => {
   const { id } = req.query;
-  const { uid } = req.user;
-  let company = null;
+  let company = {};
   console.log(id);
 
   try {
     if (!id || id == "") {
+      const { uid } = req.user;
       company = await getUserCompany(uid);
     } else {
-      company = await getCompanyDetailsById(id);
+      company = await companyDetailsById(id);
     }
 
-    const dbResponse = company;
-    successMessage.data = dbResponse;
+    successMessage.data = company;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;

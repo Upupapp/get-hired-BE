@@ -25,7 +25,6 @@ const router = express.Router();
 
 router.post("/company/createcompany", verifyAuth, createInitialCompany);
 router.put("/company/update", updateCompany);
-router.get("/company/details", verifyAuth, getSpecificCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
 router.get("/company/getallcompanyuser", getAllCompanyUser);
 router.delete("/company/removecompanyuser", removeCompanyUser);
@@ -35,7 +34,7 @@ router.get("/company/industries", verifyAuth, getIndustryListCompany);
 router.get("/company/setuplist", verifyAuth, getSetupListCompany);
 
 // EDITED
-
+router.get("/company/details", getSpecificCompany);
 router.get("/company/featured", getFeaturedCompanies);
 
 
