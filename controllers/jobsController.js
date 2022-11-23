@@ -322,7 +322,7 @@ const updateJobStatus = async (statusId, jobId) => {
   }
 };
 
-const getIndustryList = async (req, res) => {
+const industryList = async () => {
   const searchQuery = `SELECT industry_id, industry_name FROM ${dbSchema}.industry;`;
 
   try {
@@ -333,6 +333,35 @@ const getIndustryList = async (req, res) => {
         name: list.industry_name,
       };
     });
+
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const setupList = async () => {
+  const searchQuery = `SELECT * FROM ${dbSchema}.work_setup;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const dbResponse = rows.map((list) => {
+      return {
+        id: list.work_setup_id,
+        name: list.work_setup_name,
+      };
+    });
+
+    return dbResponse;
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getIndustryList = async (req, res) => {
+  try {
+    const dbResponse = await industryList();
 
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -383,16 +412,8 @@ const getJobRoleList = async (req, res) => {
 };
 
 const getSetupList = async (req, res) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.work_setup;`;
-
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map((list) => {
-      return {
-        id: list.work_setup_id,
-        name: list.work_setup_name,
-      };
-    });
+    const dbResponse = await setupList();
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -617,4 +638,6 @@ export {
   getJobBasicListOfCompany,
   getExpiredJobListOfCompany,
   updateStatusOfJob,
+  industryList,
+  setupList
 };
