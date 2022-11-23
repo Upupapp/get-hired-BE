@@ -1,10 +1,12 @@
-import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import uploadInStorage from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
 import { industryList, setupList } from "./jobsController";
 
+import { companyList } from "../services/company.service";
+
+import dbQuery from "../db/dbQuery";
 import env from "../env";
 
 const dbSchema = env.schema;
@@ -369,6 +371,21 @@ const addCompanyUser = async (email) => {
   }
 };
 
+const getFeaturedCompanies = async (req, res) => {
+  const isFeatured = true;
+
+  try {
+    const featured = await companyList(isFeatured);
+    const latest = await companyList(!isFeatured);
+    
+    successMessage.data = featured.length != 0 ? featured : latest;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const mappedCompanyUser = (raw) => {
   return {
     employeeId: raw.employee_id,
@@ -412,4 +429,5 @@ export {
   addCompanyUser,
   getSetupListCompany,
   getIndustryListCompany,
+  getFeaturedCompanies,
 };
