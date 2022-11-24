@@ -225,6 +225,11 @@ const mappedJob = async (raw) => {
     jobCity: raw.job_city,
     jobCategoryId: raw.job_category_id,
     jobCountry: raw.job_country,
+    companyCity: raw.company_city,
+    companyCountry: raw.company_country,
+    companyLogoUrl: raw.company_logo,
+    companyDetails: raw.company_details,
+    numberOfEmployee: raw.number_of_employee,
     badges: await getJobBadges(raw.job_id),
     tags: await getJobArrayDetails(raw.job_id, "job_tags", "tags"),
     requirements: await getJobArrayDetails(
