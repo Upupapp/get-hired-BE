@@ -2,6 +2,8 @@ import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import idGenerator from "../helpers/randomNumberForId";
 import env from "../env";
+import { appplicantProfile } from "../services/applicant.service";
+
 const dbSchema = env.schema;
 
 const createApplication = async (req, res) => {
@@ -190,9 +192,23 @@ const createApplicationProfile = async (req, res) => {
   }
 };
 
+const getApplicantProfileById = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const profile = await appplicantProfile(id);
+    successMessage.data = profile;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 export {
   createApplication,
   deleteApplication,
   updateApplication,
   createApplicationProfile,
+  getApplicantProfileById
 };
