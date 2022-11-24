@@ -89,7 +89,9 @@ const getJobInterviewQuestions = async (jobId, templateName) => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId, templateName]);
     if (rows && rows.length != 0) {
-      return await Promise.all(rows.map(async (row) => mappedInterviewQuestions(row)));
+      return await Promise.all(
+        rows.map(async (row) => mappedInterviewQuestions(row))
+      );
     } else {
       return [];
     }
@@ -98,7 +100,7 @@ const getJobInterviewQuestions = async (jobId, templateName) => {
   }
 };
 
-const getJobArrayDetails = async(jobId, tableName, column) => {
+const getJobArrayDetails = async (jobId, tableName, column) => {
   const searchQuery = `SELECT *
       FROM ${dbSchema}.${tableName} j
       WHERE job_id = $1;`;
@@ -113,9 +115,9 @@ const getJobArrayDetails = async(jobId, tableName, column) => {
   } catch (error) {
     throw error;
   }
-}
+};
 
-const jobDetails = async(jobId) => {
+const jobDetails = async (jobId) => {
   const searchQuery = `SELECT 
   j.job_id, j.job_banner, j.job_title, 
   j.company_id, c.company_name,
@@ -148,22 +150,22 @@ const jobDetails = async(jobId) => {
     where j.job_id = $1;`;
 
   try {
-  const { rows } = await dbQuery.query(searchQuery, [jobId]);
-  if (rows && rows.length != 0) {
-    return mappedJob(rows[0]);
-  } else {
-    return null;
+    const { rows } = await dbQuery.query(searchQuery, [jobId]);
+    if (rows && rows.length != 0) {
+      return await mappedJob(rows[0])
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
   }
-  } catch(error) {
-  throw(error)
-  }
-}
+};
 
 const mappedInterviewQuestions = (raw) => {
   return {
-    question: raw.templateQuestion,
-    answerDuration: raw.template_answer_duration
-  }
+    question: raw.template_question,
+    answerDuration: raw.template_answer_duration,
+  };
 };
 
 const mappedOptions = (raw) => {
@@ -190,7 +192,7 @@ const mappedBasicJob = async (raw) => {
     jobTypeName: raw.job_type_name,
     workSetupName: raw.work_setup_name,
     badges: await getJobBadges(raw.job_id),
-    tags: await getJobArrayDetails(raw.jobId, 'job_tags', 'tags')
+    tags: await getJobArrayDetails(raw.jobId, "job_tags", "tags"),
   };
 };
 
@@ -224,12 +226,25 @@ const mappedJob = async (raw) => {
     jobCategoryId: raw.job_category_id,
     jobCountry: raw.job_country,
     badges: await getJobBadges(raw.job_id),
-    tags: await getJobArrayDetails(raw.jobId, 'job_tags', 'tags'),
-    requirements: await getJobArrayDetails(raw.jobId, 'job_requirement', 'requirement'),
-    skills: await getJobArrayDetails(raw.jobId, 'job_skills', 'skills'),
-    goodToHave: await getJobArrayDetails(raw.jobId, 'job_goodtohave', 'goodtohave'),
-    interviewQuestions: await getJobInterviewQuestions(raw.jobId, 'default')
+    tags: await getJobArrayDetails(raw.job_id, "job_tags", "tags"),
+    requirements: await getJobArrayDetails(
+      raw.job_id,
+      "job_requirement",
+      "requirement"
+    ),
+    skills: await getJobArrayDetails(raw.job_id, "job_skills", "skills"),
+    goodToHave: await getJobArrayDetails(
+      raw.job_id,
+      "job_goodtohave",
+      "goodtohave"
+    ),
+    interviewQuestions: await getJobInterviewQuestions(raw.job_id, "default"),
   };
 };
 
-export { companyPublishedJobs, getPublishedJobs, getCompanyPublishedJobsCount, jobDetails };
+export {
+  companyPublishedJobs,
+  getPublishedJobs,
+  getCompanyPublishedJobsCount,
+  jobDetails,
+};
