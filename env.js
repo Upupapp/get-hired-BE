@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === "production";
 const isStaging = process.env.is_staging;
 
 let config = {};
@@ -11,7 +12,7 @@ if(isStaging == 'false') {
         port: process.env.PORT || 3000,
         environment: process.env.NODE_ENV,
         user: process.env.DB_USER,
-        host: process.env.DB_HOST,
+        host: isProduction ? `/cloudsql/${process.env.INSTANCE_NAME}` : process.env.DB_HOST,
         database: process.env.DB_DATABASE,
         password: process.env.DB_PASSWORD,
         db_port: process.env.DB_PORT,
@@ -28,7 +29,7 @@ if(isStaging == 'false') {
         appId: process.env.APP_ID,
         measurementId: process.env.MEASUREMENT_ID,
         schema: process.env.SCHEMA,
-        dynamicDomain: process.env.DYNAMIC_DOMAIN
+        paymongo_sk: process.env.PAYMONGO_SK
     }
 } else {
     config = {
@@ -52,7 +53,7 @@ if(isStaging == 'false') {
         appId: process.env.APP_ID_DEV,
         measurementId: process.env.MEASUREMENT_ID_DEV,
         schema: process.env.SCHEMA_DEV,
-        dynamicDomain: process.env.DYNAMIC_DOMAIN
+        paymongo_sk: process.env.PAYMONGO_SK_DEV
     }
 }
 

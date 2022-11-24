@@ -13,7 +13,8 @@ import {
   getJobBasicListOfCompany,
   getExpiredJobListOfCompany,
   updateStatusOfJob,
-  getAllPublishedJobs
+  getAllPublishedJobs,
+  getJobDetails
 } from "../controllers/jobsController";
 
 import verifyAuth from "../middleware/verifyAuth";
@@ -38,5 +39,6 @@ router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
 
 // public api
 router.get("/job/published", getAllPublishedJobs);
+router.get("/job/details", getJobDetails);
 
 export default router;

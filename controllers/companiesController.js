@@ -235,6 +235,7 @@ const getDashboard = async (req, res) => {
         totalIncrease: 0,
         interviewAppointments: 0,
       },
+      totalContacts: 0
     };
 
     successMessage.data = dbResponse;
