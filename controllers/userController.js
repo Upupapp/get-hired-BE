@@ -531,5 +531,7 @@ export {
   getUserCredentials,
   deleteAccountById,
   getUserProfile,
-  updateUserProfile
+  updateUserProfile,
+  registerUserInDB,
+  getVerification
 };

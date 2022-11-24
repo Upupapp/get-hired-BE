@@ -10,7 +10,8 @@ sgMail.setApiKey(env.mailerKey);
 const templates = {
   // TODO to add template here once created
   verify_email: "d-f476e852447940a4a3acfee5f4a7f63d",
-  pw_reset: "d-3517d64c1dd1403fb4d857af16b9e8a4"
+  pw_reset: "d-3517d64c1dd1403fb4d857af16b9e8a4",
+  add_user: "d-0140cd7cd48743efa350e9c044381b3d"
 };
 
 const send = (recipient, templateToUse, data) => {

@@ -3,8 +3,24 @@ import uploadInStorage from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
 import { industryList, setupList } from "./jobsController";
+import { checkUserIfExistInFirebase, registerNewUserInFirebase } from "../helpers/firebaseFunctions";
+import {
+  hashPassword,
+  comparePassword,
+  isValidEmail,
+  isEmpty,
+  validatePassword,
+} from "../helpers/validation";
+import { send } from "../helpers/mailer";
 
-import { companyList, companyDetailsById } from "../services/company.service";
+import { registerUserInDB, getVerification } from './userController'
+import {
+  companyList,
+  companyDetailsById,
+  companyUsers,
+  assignEmployeeToCompany,
+  getCompanyNameByCompanyId
+} from "../services/company.service";
 
 import dbQuery from "../db/dbQuery";
 import env from "../env";
@@ -120,8 +136,6 @@ const getUserCompany = async (id) => {
   }
 };
 
-
-
 const getSpecificCompany = async (req, res) => {
   const { id } = req.query;
   let company = {};
@@ -140,35 +154,6 @@ const getSpecificCompany = async (req, res) => {
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
-  }
-};
-
-const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
-  const insertQuery = `INSERT INTO ${dbSchema}.company_employees
-    (employee_id, company_id, employee_uuid, assigned_at, updated_at, position_id, assigned_by)
-    VALUES($1, $2, $3, $4, $5, $6, $7) returning *;`;
-
-  const employeeId = idGenerator(6, "EMP");
-
-  try {
-    const { rows } = await dbQuery.query(insertQuery, [
-      employeeId,
-      companyId,
-      uid,
-      now,
-      now,
-      0, // TODO to change if position is available
-      assignedBy,
-    ]);
-
-    if (rows && rows.length == 0) {
-      throw "Failed to assign employee to the company";
-    }
-
-    const dbResponse = rows[0];
-    return dbResponse;
-  } catch (error) {
-    throw error;
   }
 };
 
@@ -318,13 +303,10 @@ const removeCompanyUser = async (req, res) => {
 };
 
 const getAllCompanyUser = async (req, res) => {
-  const { uid } = req.user;
-  const searchQuery = `SELECT * FROM ${dbSchema}.company_employees ce JOIN ${dbSchema}.users u ON ce.employee_uuid = u.uid WHERE ce.employee_uuid = $1;`;
-
+  const { id } = req.query;
   try {
-    const { rows } = await dbQuery.query(searchQuery, [uid]);
-    const dbResponse = rows.map((row) => mappedCompanyUser(row));
-    successMessage.data = dbResponse;
+    const users = await companyUsers(id);
+    successMessage.data = users;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -332,32 +314,70 @@ const getAllCompanyUser = async (req, res) => {
   }
 };
 
-const addCompanyUser = async (email) => {
+const addCompanyUser = async (req, res) => {
+  const { email, companyId } = req.body;
   const { uid } = req.user;
-  console.log(email);
+
   try {
-    const id = await getIdByEmail(email);
+    const userInFirebase = await checkUserIfExistInFirebase(email);
 
-    if (!id) {
-      throw "No user id get";
+    if (userInFirebase && userInFirebase.length !== 0) {
+      throw "Email already a user.";
     }
 
-    const company = await getUserCompany(uid);
+    const password = `p@ssw0rd1111`;
 
-    if (!company.companyId) {
-      throw "User has no company";
+    const user = {
+      email,
+      password,
+      firstName: 'Temp',
+      lastName: 'User',
+      role: 2,
+    };
+
+    const userData = await registerNewUserInFirebase(user);
+
+    const dbData = {
+      uid: userData.uid,
+      email: userData.email,
+      password: hashPassword(password),
+      firstname: user.firstName,
+      lastname: user.lastName,
+      role: 2
+    };
+
+    const dbRegister = await registerUserInDB(dbData);
+
+    if (!userData || !dbRegister) {
+      errorMessage.error = "Operation not Successful.";
+      return res.status(status.error).send(errorMessage);
     }
+    const isVerified = await getVerification(email, user.firstName);
 
-    const assigned = await assignEmployeeToCompany(company.companyId, id, uid);
+    const assigned = await assignEmployeeToCompany(companyId, userData.uid, uid);
 
     if (!assigned) {
-      throw "Failed to assign Creator as Employee";
+      throw "Failed to assign User to a Company";
     }
 
-    successMessage.data = assigned;
+    const companyName = await getCompanyNameByCompanyId(companyId);
+
+    send(email, "add_user", {
+      login_url: `${env.app_url}/signin`,
+      name: userData.firstname,
+      company: companyName,
+      email,
+      password
+    });
+
+    successMessage.data = {
+      ...assigned,
+      ...dbRegister
+    };
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    throw error;
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
   }
 };
 
@@ -367,7 +387,7 @@ const getFeaturedCompanies = async (req, res) => {
   try {
     const featured = await companyList(isFeatured);
     const latest = await companyList(!isFeatured);
-    
+
     successMessage.data = featured.length != 0 ? featured : latest;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -408,7 +428,6 @@ const mappedCompanyUser = (raw) => {
 
 export {
   createCompany,
-  assignEmployeeToCompany,
   createInitialCompany,
   getUserCompany,
   getSpecificCompany,

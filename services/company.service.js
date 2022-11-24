@@ -1,8 +1,10 @@
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import { getCompanyPublishedJobsCount } from "./job.service";
+import idGenerator from "../helpers/randomNumberForId";
 
 const dbSchema = env.schema;
+const now = new Date();
 
 const companyList = async (isFeatured) => {
   const searchQuery = `SELECT
@@ -36,6 +38,75 @@ const companyDetailsById = async (companyId) => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [companyId]);
     const dbResponse = mappedCompany(rows[0]);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const companyUsers = async (companyId) => {
+  const searchQuery = `SELECT ce.*, u.firstname, u.lastname, u.email 
+    FROM ${dbSchema}.company_employees ce 
+    LEFT JOIN ${dbSchema}.users u 
+    ON ce.employee_uuid = u.uid 
+    WHERE ce.company_id = $1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
+    if (rows && rows.length != 0) {
+      return await Promise.all(
+        rows.map(async (row) => {
+          return {
+            employeeId: row.employee_id,
+            companyId: row.company_id,
+            assignedAt: row.assigned_at,
+            email: row.email,
+            fullName: row.firstname + " " + row.lastname,
+          };
+        })
+      );
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
+  const insertQuery = `INSERT INTO ${dbSchema}.company_employees
+      (employee_id, company_id, employee_uuid, assigned_at, updated_at, position_id, assigned_by)
+      VALUES($1, $2, $3, $4, $5, $6, $7) returning *;`;
+
+  const employeeId = idGenerator(6, "EMP");
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      employeeId,
+      companyId,
+      uid,
+      now,
+      now,
+      0, // TODO to change if position is available
+      assignedBy,
+    ]);
+
+    if (rows && rows.length == 0) {
+      throw "Failed to assign employee to the company";
+    }
+
+    const dbResponse = rows[0];
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getCompanyNameByCompanyId = async (companyId) => {
+  const searchQuery = `Select company_name from ${dbSchema}.companies where company_id = $1;`;
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
+    const dbResponse = rows[0].company_name;
     return dbResponse;
   } catch (error) {
     throw error;
@@ -87,4 +158,10 @@ const mappedCompany = (raw) => {
   };
 };
 
-export { companyList, companyDetailsById };
+export {
+  companyList,
+  companyDetailsById,
+  companyUsers,
+  assignEmployeeToCompany,
+  getCompanyNameByCompanyId
+};

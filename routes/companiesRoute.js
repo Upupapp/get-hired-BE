@@ -13,7 +13,6 @@ import {
   getDashboard,
   getAllCompanyUser,
   removeCompanyUser,
-  assignEmployeeToCompany,
   addCompanyUser,
   getIndustryListCompany,
   getSetupListCompany,
@@ -26,14 +25,14 @@ const router = express.Router();
 router.post("/company/createcompany", verifyAuth, createInitialCompany);
 router.put("/company/update", updateCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
-router.get("/company/getallcompanyuser", getAllCompanyUser);
 router.delete("/company/removecompanyuser", removeCompanyUser);
-router.post("/company/addcompanyuser", addCompanyUser);
-router.post("/company/addcompanyuser", verifyAuth, assignEmployeeToCompany);
 router.get("/company/industries", verifyAuth, getIndustryListCompany);
 router.get("/company/setuplist", verifyAuth, getSetupListCompany);
 
 // EDITED
+router.post("/company/addcompanyuser", verifyAuth, addCompanyUser);
+router.get("/company/getallcompanyuser", verifyAuth, getAllCompanyUser);
+router.get("/company/usercompany", verifyAuth, getSpecificCompany);
 router.get("/company/details", getSpecificCompany);
 router.get("/company/featured", getFeaturedCompanies);
 
