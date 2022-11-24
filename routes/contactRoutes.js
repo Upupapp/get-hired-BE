@@ -1,5 +1,5 @@
 import express from "express";
-import { createContact, deleteContact, multipleContact, updateContact } from "../controllers/contactsController";
+import { createContact, deleteContact, list, multipleContact, updateContact } from "../controllers/contactsController";
 
 // import verifyAuth from '../middleware/verifyAuth';
 
@@ -9,5 +9,6 @@ router.post("/contacts/addcontact", createContact);
 router.post("/contacts/multiplecontact", multipleContact);
 router.delete("/contacts/deletecontact", deleteContact);
 router.put("/contacts/updatecontact", updateContact);
+router.get("/contacts/list", list)
 
 export default router;

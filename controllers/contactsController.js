@@ -1,7 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
-import { addContact, checkContactIfExist, editContact } from "../services/contact.service";
+import { addContact, checkContactIfExist, contactList, editContact } from "../services/contact.service";
 const dbSchema = env.schema;
 
 const createContact = async (req, res) => {
@@ -107,24 +107,14 @@ const updateContact = async (req, res) => {
     }
 };
 
-const contactListwStatus = async (req, res) => {
+const list = async (req, res) => {
 
-    const { userId } = req.query
+    const { companyId } = req.query
     let contact = [];
     try {
-        // const checkUserId = await checkUserIfExist2(payload.userId);
-
-        // if (!checkUserId) {
-        //     errorMessage.error = "User does not exist";
-        //     return res.status(status.error).send(errorMessage);
-        // }
-        const role = await getUserRoleById(userId);
-        if (role == '2') {
-            contact = [...await getContactListOfMyTeamMembers(userId), ...await contactList(userId)];
-        } else {
-            contact = await contactList(userId);
-        }
-
+   
+        contact = await contactList(companyId);
+    
         if (!contact || contact.length == 0) {
             successMessage.data = [];
             return res.status(status.error).send(successMessage);
@@ -140,4 +130,4 @@ const contactListwStatus = async (req, res) => {
 };
 
 
-export {createContact, multipleContact, deleteContact, updateContact}
+export {createContact, multipleContact, deleteContact, updateContact, list}
