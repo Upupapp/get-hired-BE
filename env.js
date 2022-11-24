@@ -2,8 +2,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const isStaging = process.env.is_staging;
 const isProduction = process.env.NODE_ENV === "production";
+const isStaging = process.env.is_staging;
 
 let config = {};
 
@@ -29,7 +29,7 @@ if(isStaging == 'false') {
         appId: process.env.APP_ID,
         measurementId: process.env.MEASUREMENT_ID,
         schema: process.env.SCHEMA,
-        dynamicDomain: process.env.DYNAMIC_DOMAIN
+        paymongo_sk: process.env.PAYMONGO_SK
     }
 } else {
     config = {
@@ -53,7 +53,7 @@ if(isStaging == 'false') {
         appId: process.env.APP_ID_DEV,
         measurementId: process.env.MEASUREMENT_ID_DEV,
         schema: process.env.SCHEMA_DEV,
-        dynamicDomain: process.env.DYNAMIC_DOMAIN
+        paymongo_sk: process.env.PAYMONGO_SK_DEV
     }
 }
 

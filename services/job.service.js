@@ -96,6 +96,50 @@ const getJobTags = async (jobId) => {
   }
 };
 
+const jobDetails = async(jobId) => {
+  const searchQuery = `SELECT 
+  j.job_id, j.job_banner, j.job_title, 
+  j.company_id, c.company_name,
+  j.industry_id, i.industry_name,
+  j.job_role_id, jr.job_role_name,
+  j.job_type_id, jt.job_type_name,
+  j.job_level_id, jl.job_level_name,
+  j.job_description, j.job_duties, 
+  j.work_setup_id, ws.work_setup_name,
+  j.salary_minimum, j.salary_maximum, j.rate, j.job_address, j.created_at, j.updated_at, j.expiration_date, 
+  j.job_status_id, 
+  j.job_city, 
+  j.job_category_id, cat.job_category_name, 
+  j.job_country, j.is_featured
+    FROM ${dbSchema}.jobs j
+    left join ${dbSchema}.companies c
+    on c.company_id = j.company_id
+    left join ${dbSchema}.industry i
+    on i.industry_id = j.industry_id
+    left join ${dbSchema}.job_role jr
+    on jr.job_role_id  = j.job_role_id
+    left join ${dbSchema}.job_type jt
+    on jt.job_type_id  = j.job_type_id
+    left join ${dbSchema}.job_level jl
+    on jl.job_level_id  = j.job_level_id
+    left join ${dbSchema}.work_setup ws
+    on ws.work_setup_id  = j.work_setup_id
+    left join ${dbSchema}.category cat
+    on cat.job_category_id  = j.job_category_id
+    where j.job_id = $1;`;
+
+  try {
+  const { rows } = await dbQuery.query(searchQuery, [jobId]);
+  if (rows && rows.length != 0) {
+    return mappedJob(rows[0]);
+  } else {
+    return null;
+  }
+  } catch(error) {
+  throw(error)
+  }
+}
+
 const mappedOptions = (raw) => {
   return {
     id: raw.badge_id,
@@ -125,7 +169,41 @@ const mappedBasicJob = async (raw) => {
 };
 
 const mappedJob = (raw) => {
-  return {};
+  return {
+    jobId: raw.job_id,
+    jobBanner: raw.job_banner,
+    jobTitle: raw.job_title,
+    companyId: raw.company_id,
+    industryId: raw.industry_id,
+    industryName: raw.industry_name,
+    jobRoleId: raw.job_role_id,
+    jobRoleName: raw.job_role_name,
+    jobTypeId: raw.job_type_id,
+    jobTypeName: raw.job_type_name,
+    jobLevelId: raw.job_level_id,
+    jobLevelName: raw.job_level_name,
+    jobDescription: raw.job_description,
+    jobDuties: raw.job_duties,
+    workSetupId: raw.work_setup_id,
+    workSetupName: raw.work_setup_name,
+    salaryMinimum: raw.salary_minimum,
+    salaryMaximum: raw.salary_maximum,
+    rate: raw.rate,
+    jobAddress: raw.job_address,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+    expirationDate: raw.expiration_date,
+    jobStatusId: raw.job_status_id,
+    jobCity: raw.job_city,
+    jobCategoryId: raw.job_category_id,
+    jobCountry: raw.job_country,
+    badges: [],
+    tags: [],
+    requirements: [],
+    skills: [],
+    goodToHave: [],
+    interviewQuestions: []
+  };
 };
 
-export { companyPublishedJobs, getPublishedJobs, getCompanyPublishedJobsCount };
+export { companyPublishedJobs, getPublishedJobs, getCompanyPublishedJobsCount, jobDetails };

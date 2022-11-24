@@ -8,7 +8,7 @@ import {
   createInterviewTemplateQuestions,
   createQuestion,
 } from "./interviewController";
-import { getPublishedJobs } from "../services/job.service";
+import { getPublishedJobs, jobDetails } from "../services/job.service";
 
 const dbSchema = env.schema;
 const now = Date.now();
@@ -590,6 +590,19 @@ const getAllPublishedJobs = async (req, res) => {
   }
 };
 
+const getJobDetails = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const details = await jobDetails(id);
+    successMessage.data = details;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const mappedJob = (raw) => {
   return {
     jobId: raw.job_id,
@@ -655,4 +668,5 @@ export {
   industryList,
   setupList,
   getAllPublishedJobs,
+  getJobDetails,
 };
