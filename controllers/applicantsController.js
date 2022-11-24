@@ -1,5 +1,6 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
+import idGenerator from "../helpers/randomNumberForId";
 import env from "../env";
 const dbSchema = env.schema;
 
@@ -127,4 +128,71 @@ const mapApplications = (application) => {
   };
 };
 
-export { createApplication, deleteApplication, updateApplication };
+const createApplicationProfile = async (req, res) => {
+  const {
+    applicantId,
+    photoUrl,
+    jobTitle,
+    shortBio,
+    servicesProvided,
+    jobTypeId,
+    jobLevelId,
+    jobSetUpId,
+    salaryMinimum,
+    salaryMaximum,
+  } = req.body;
+  const applicantProfileId = idGenerator(6, "AP");
+  try {
+    const insertQuery = `INSERT INTO ${dbSchema}.applicants_profile
+      (applicant_profile_id, applicant_id, photo_url, job_title, short_bio, services_provided, job_type_id, job_level_id, job_setup_id, salary_minimum, salary_maximum)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *;`;
+
+    const { rows } = await dbQuery.query(insertQuery, [
+      applicantProfileId,
+      applicantId,
+      photoUrl,
+      jobTitle,
+      shortBio,
+      servicesProvided,
+      jobTypeId,
+      jobLevelId,
+      jobSetUpId,
+      salaryMinimum,
+      salaryMaximum,
+    ]);
+
+    const dbResponse = rows[0];
+
+    if (!dbResponse) {
+      errorMessage.error = "Failed to Create Applicant Profile";
+      return res.status(status.error).send(errorMessage);
+    }
+
+    const applicantProfile = {
+      applicantProfileId: dbResponse.applicant_profile_id,
+      applicantId: dbResponse.applicant_id,
+      photoUrl: dbResponse.photo_url,
+      jobTitle: dbResponse.job_title,
+      shortBio: dbResponse.short_bio,
+      servicesProvided: dbResponse.services_provided,
+      jobTypeId: dbResponse.job_type_id,
+      jobLevelId: dbResponse.job_level_id,
+      jobSetUpId: dbResponse.job_setup_id,
+      salaryMinimum: dbResponse.salary_minimum,
+      salaryMaximum: dbResponse.salary_maximum,
+    };
+
+    successMessage.data = applicantProfile;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.data = "Operation was not successful. Error: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+export {
+  createApplication,
+  deleteApplication,
+  updateApplication,
+  createApplicationProfile,
+};
