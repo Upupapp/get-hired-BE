@@ -19,7 +19,9 @@ import {
   companyDetailsById,
   companyUsers,
   assignEmployeeToCompany,
-  getCompanyNameByCompanyId
+  getCompanyNameByCompanyId,
+  charts,
+  getCompanyIdByUserId
 } from "../services/company.service";
 
 import dbQuery from "../db/dbQuery";
@@ -222,14 +224,10 @@ const getDashboard = async (req, res) => {
 
   try {
     const userCompany = await getUserCompany(uid);
-
+    const chart = await charts(userCompany.companyId)
     const dbResponse = {
       company: userCompany,
-      charts: {
-        activeJobs: 0,
-        applicants: 0,
-        interviews: 0,
-      },
+      charts: chart,
       statistic: {
         totalHired: 0,
         totalIncrease: 0,
