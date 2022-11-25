@@ -165,7 +165,7 @@ const createCompany = async (company, uid) => {
   const companyId = idGenerator(6, "COM");
 
   const insertQuery = `INSERT INTO ${dbSchema}.companies
-  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_date, created_by)
+  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_at, created_by)
   VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *;`;
 
   const {
