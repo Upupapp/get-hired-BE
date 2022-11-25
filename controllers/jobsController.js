@@ -214,6 +214,8 @@ const deleteJob = async (req, res) => {
 };
 
 const updateJob = async (req, res) => {
+  let rawUrl = "";
+
   const updateQuery = `UPDATE ${dbSchema}.jobs
     SET job_banner=$1, job_title=$2, industry_id=$3, 
       job_role_id=$4, job_type_id=$5, job_level_id=$6,
@@ -239,7 +241,7 @@ const updateJob = async (req, res) => {
     rate,
     jobAddress,
     jobCity,
-    jopCountry,
+    jobCountry,
     jobCategoryId,
     jobStatusId,
     jobId,
