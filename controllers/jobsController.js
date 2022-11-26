@@ -8,7 +8,7 @@ import {
   createInterviewTemplateQuestions,
   createQuestion,
 } from "./interviewController";
-import { getPublishedJobs, jobDetails } from "../services/job.service";
+import { getPublishedJobs, jobDetails, saveJobArray, mappedJob } from "../services/job.service";
 
 const dbSchema = env.schema;
 const now = Date.now();
@@ -43,9 +43,9 @@ const createJobs = async (req, res) => {
     requirements,
     goodToHave,
     educationalBackground,
-    jobSkills,
-    jobTags,
-    interviewQuestions,
+    skills,
+    tags,
+    interviewQuestions
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
@@ -89,59 +89,9 @@ const createJobs = async (req, res) => {
     }
 
     if (rows[0].job_id) {
-      if (badges && badges.length != 0) {
-        const jobBadges = await saveJobDetailsList(
-          badges,
-          "job_badges",
-          "badge_id",
-          jobId
-        );
-      }
-
-      if (requirements && requirements.length != 0) {
-        const jobRequirements = await saveJobDetailsList(
-          requirements,
-          "job_requirement",
-          "requirement",
-          jobId
-        );
-      }
-
-      if (goodToHave && goodToHave.length != 0) {
-        const jobGoodToHave = await saveJobDetailsList(
-          goodToHave,
-          "job_goodtohave",
-          "goodtohave",
-          jobId
-        );
-      }
-
-      if (educationalBackground && educationalBackground.length != 0) {
-        const jobEducationalBackground = await saveJobDetailsList(
-          educationalBackground,
-          "job_educationalbackground",
-          "educationalbackground",
-          jobId
-        );
-      }
-
-      if (jobSkills && jobSkills.length != 0) {
-        const jobSkillList = await saveJobDetailsList(
-          jobSkills,
-          "job_skills",
-          "skills",
-          jobId
-        );
-      }
-
-      if (jobTags && jobTags.length != 0) {
-        const jobTagsList = await saveJobDetailsList(
-          jobTags,
-          "job_tags",
-          "tags",
-          jobId
-        );
-      }
+      await saveJobArray(rows[0].job_id, {
+        badges, requirements, goodToHave, educationalBackground, skills, tags
+      });
 
       if (interviewQuestions && interviewQuestions.length != 0) {
         const template = await createInterviewTemplateQuestions(
@@ -159,10 +109,7 @@ const createJobs = async (req, res) => {
       }
     }
 
-    const dbResponse = {
-      ...mappedJob(rows[0]),
-      interviewQuestions: questions,
-    };
+    const dbResponse = mappedJob(rows[0]);
 
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
@@ -222,7 +169,7 @@ const updateJob = async (req, res) => {
       job_description=$7, job_duties=$8, work_setup_id=$9,
       salary_minimum=$10, salary_maximum=$11, rate=$12, 
       job_address=$13, job_city=$14, job_category_id=$15,
-      job_country= $17, job_status_id = $19
+      job_country= $16, job_status_id = $17
       WHERE job_id =$18 returning *;`;
 
   const {
@@ -245,6 +192,13 @@ const updateJob = async (req, res) => {
     jobCategoryId,
     jobStatusId,
     jobId,
+    badges,
+    requirements,
+    goodToHave,
+    educationalBackground,
+    skills,
+    tags,
+    interviewQuestions
   } = req.body;
 
   try {
@@ -278,6 +232,10 @@ const updateJob = async (req, res) => {
       jobStatusId,
       jobId,
     ]);
+
+    const jobArrays = await saveJobArray(jobId, {
+      badges, requirements, goodToHave, educationalBackground, skills, tags
+    });
 
     if (!rows || rows.length == 0) {
       errorMessage.error = "Failed to Update Job";
@@ -579,6 +537,16 @@ const saveJobDetailsList = async (list, tableName, columnName, jobId) => {
   }
 };
 
+const deleteArrayJobEntry = async (jobId, tableName, columnName) => {
+  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1;`;
+  try {
+    const { rows } = await dbQuery.query(deleteQuery, [jobId]);
+    return true;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const getAllPublishedJobs = async (req, res) => {
   const { id } = req.query;
 
@@ -603,33 +571,6 @@ const getJobDetails = async (req, res) => {
     errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
   }
-};
-
-const mappedJob = (raw) => {
-  return {
-    jobId: raw.job_id,
-    jobBanner: raw.job_banner,
-    jobTitle: raw.job_title,
-    companyId: raw.company_id,
-    industryId: raw.industry_id,
-    jobRoleId: raw.job_role_id,
-    jobTypeId: raw.job_type_id,
-    jobLevelId: raw.job_level_id,
-    jobDescription: raw.job_description,
-    jobDuties: raw.job_duties,
-    workSetupId: raw.work_setup_id,
-    salaryMinimum: raw.salary_minimum,
-    salaryMaximum: raw.salary_maximum,
-    rate: raw.rate,
-    jobAddress: raw.job_address,
-    createdAt: raw.created_at,
-    updatedAt: raw.updated_at,
-    expirationDate: raw.expiration_date,
-    jobStatusId: raw.job_status_id,
-    jobCity: raw.job_city,
-    jobCategoryId: raw.job_category_id,
-    jobCountry: raw.job_country,
-  };
 };
 
 const mappedBasicJob = (raw) => {

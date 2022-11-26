@@ -117,6 +117,74 @@ const getJobArrayDetails = async (jobId, tableName, column) => {
   }
 };
 
+const saveJobArray = async (jobId, arrays) => {
+  const { badges, requirements, goodToHave, educationalBackground, skills, tags } = arrays;
+  if (badges && badges.length != 0) {
+    const deleteArrays = await deleteArrayJobEntry(jobId, "job_badges", "job_id");
+    const jobBadges = await saveJobDetailsList(
+      badges,
+      "job_badges",
+      "badge_id",
+      jobId
+    );
+  }
+
+  if (requirements && requirements.length != 0) {
+    const deleteArrays = await deleteArrayJobEntry(jobId, "job_requirement", "job_id");
+
+    const jobRequirements = await saveJobDetailsList(
+      requirements,
+      "job_requirement",
+      "requirement",
+      jobId
+    );
+  }
+
+  if (goodToHave && goodToHave.length != 0) {
+    const deleteArrays = await deleteArrayJobEntry(jobId, "job_goodtohave", "job_id");
+
+    const jobGoodToHave = await saveJobDetailsList(
+      goodToHave,
+      "job_goodtohave",
+      "goodtohave",
+      jobId
+    );
+  }
+
+  if (educationalBackground && educationalBackground.length != 0) {
+    const deleteArrays = await deleteArrayJobEntry(jobId, "job_educationalbackground", "job_id");
+
+    const jobEducationalBackground = await saveJobDetailsList(
+      educationalBackground,
+      "job_educationalbackground",
+      "educationalbackground",
+      jobId
+    );
+  }
+
+  if (skills && skills.length != 0) {
+    const deleteArrays = await deleteArrayJobEntry(jobId, "job_skills", "job_id");
+
+    const jobSkillList = await saveJobDetailsList(
+      skills,
+      "job_skills",
+      "skills",
+      jobId
+    );
+  }
+
+  if (tags && tags.length != 0) {
+    const deleteArrays = await deleteArrayJobEntry(jobId, "job_tags", "job_id");
+
+    const jobTagsList = await saveJobDetailsList(
+      tags,
+      "job_tags",
+      "tags",
+      jobId
+    );
+  }
+}
+
 const jobDetails = async (jobId) => {
   const searchQuery = `SELECT 
   j.job_id, j.job_banner, j.job_title, 
@@ -243,6 +311,11 @@ const mappedJob = async (raw) => {
       "job_goodtohave",
       "goodtohave"
     ),
+    educationalBackground: await getJobArrayDetails(
+      raw.job_id,
+      "job_educationalbackground",
+      "educationalbackground"
+    ),
     interviewQuestions: await getJobInterviewQuestions(raw.job_id, "default"),
   };
 };
@@ -252,4 +325,6 @@ export {
   getPublishedJobs,
   getCompanyPublishedJobsCount,
   jobDetails,
+  saveJobArray,
+  mappedJob
 };
