@@ -225,40 +225,40 @@ const deleteUserAccountInFirebaseById = async (uid) => {
   return firebaseAdmin.auth().deleteUser(uid);
 };
 
-// const createDynamicLink = async (postTitle, postDesc, postImage, postLink) => {
-//   const dynamicDomain = env.dynamicDomain;
-//   const firebaseLink = `https://firebasedynamiclinks.googleapis.com/v1/shortLinks`;
+const createDynamicLink = async (postTitle, postDesc, postImage, postLink) => {
+  const dynamicDomain = env.dynamicDomain;
+  const firebaseLink = `https://firebasedynamiclinks.googleapis.com/v1/shortLinks`;
 
-//   try {
-//     const data = {
-//       dynamicLinkInfo: {
-//         domainUriPrefix: `${dynamicDomain}`,
-//         link: `${process.env.APP_URL}/${postLink}`,
-//         socialMetaTagInfo: {
-//           socialTitle: postTitle,
-//           socialDescription: postDesc,
-//           socialImageLink: postImage,
-//         },
-//       },
-//       suffix: {
-//         option: "SHORT",
-//       },
-//     };
-//     const config = {
-//       method: "post",
-//       url: `${firebaseLink}?key=${firebaseConfig.apiKey}`,
-//       headers: {
-//         "Content-Type": "application/json",
-//       },
-//       data: data,
-//     };
-//     const dynamicLink = await axios.request(config);
-//     const dbResponse = dynamicLink.data;
-//     return dbResponse;
-//   } catch (error) {
-//     throw error;
-//   }
-// };
+  try {
+    const data = {
+      dynamicLinkInfo: {
+        domainUriPrefix: `${dynamicDomain}`,
+        link: `${process.env.APP_URL}/${postLink}`,
+        socialMetaTagInfo: {
+          socialTitle: postTitle,
+          socialDescription: postDesc,
+          socialImageLink: postImage,
+        },
+      },
+      suffix: {
+        option: "SHORT",
+      },
+    };
+    const config = {
+      method: "post",
+      url: `${firebaseLink}?key=${env.apiKey}`,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      data: data,
+    };
+    const dynamicLink = await axios.request(config);
+    const dbResponse = dynamicLink.data;
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
 
 export {
   signInUserAndGetTokeninFirebase,
@@ -277,4 +277,5 @@ export {
   firebaseSendGroupNotif,
   registerNewUserInFirebaseWithEmail,
   deleteUserAccountInFirebaseById,
+  createDynamicLink
 };

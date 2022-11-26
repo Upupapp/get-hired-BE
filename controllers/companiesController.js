@@ -3,7 +3,11 @@ import uploadInStorage from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
 import { industryList, setupList } from "./jobsController";
-import { checkUserIfExistInFirebase, registerNewUserInFirebase } from "../helpers/firebaseFunctions";
+import {
+  checkUserIfExistInFirebase,
+  registerNewUserInFirebase,
+  createDynamicLink,
+} from "../helpers/firebaseFunctions";
 import {
   hashPassword,
   comparePassword,
@@ -13,7 +17,7 @@ import {
 } from "../helpers/validation";
 import { send } from "../helpers/mailer";
 
-import { registerUserInDB, getVerification } from './userController'
+import { registerUserInDB, getVerification } from "./userController";
 import {
   companyList,
   companyDetailsById,
@@ -21,7 +25,7 @@ import {
   assignEmployeeToCompany,
   getCompanyNameByCompanyId,
   charts,
-  getCompanyIdByUserId
+  getCompanyIdByUserId,
 } from "../services/company.service";
 
 import dbQuery from "../db/dbQuery";
@@ -224,7 +228,7 @@ const getDashboard = async (req, res) => {
 
   try {
     const userCompany = await getUserCompany(uid);
-    const chart = await charts(userCompany.companyId)
+    const chart = await charts(userCompany.companyId);
     const dbResponse = {
       company: userCompany,
       charts: chart,
@@ -233,7 +237,7 @@ const getDashboard = async (req, res) => {
         totalIncrease: 0,
         interviewAppointments: 0,
       },
-      totalContacts: 0
+      totalContacts: 0,
     };
 
     successMessage.data = dbResponse;
@@ -329,8 +333,8 @@ const addCompanyUser = async (req, res) => {
     const user = {
       email,
       password,
-      firstName: 'Temp',
-      lastName: 'User',
+      firstName: "Temp",
+      lastName: "User",
       role: 2,
     };
 
@@ -342,7 +346,7 @@ const addCompanyUser = async (req, res) => {
       password: hashPassword(password),
       firstname: user.firstName,
       lastname: user.lastName,
-      role: 2
+      role: 2,
     };
 
     const dbRegister = await registerUserInDB(dbData);
@@ -353,7 +357,11 @@ const addCompanyUser = async (req, res) => {
     }
     const isVerified = await getVerification(email, user.firstName);
 
-    const assigned = await assignEmployeeToCompany(companyId, userData.uid, uid);
+    const assigned = await assignEmployeeToCompany(
+      companyId,
+      userData.uid,
+      uid
+    );
 
     if (!assigned) {
       throw "Failed to assign User to a Company";
@@ -366,12 +374,12 @@ const addCompanyUser = async (req, res) => {
       name: userData.firstname,
       company: companyName,
       email,
-      password
+      password,
     });
 
     successMessage.data = {
       ...assigned,
-      ...dbRegister
+      ...dbRegister,
     };
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -388,6 +396,26 @@ const getFeaturedCompanies = async (req, res) => {
     const latest = await companyList(!isFeatured);
 
     successMessage.data = featured.length != 0 ? featured : latest;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getCompanyShareableLink = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const company = await companyDetailsById(id);
+    const postLink = `/companies/details?id=${id}`;
+    const link = await createDynamicLink(
+      company.companyName,
+      "View all job posted by visiting this link",
+      company.companyLogoUrl,
+      postLink
+    );
+    successMessage.data = link;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -438,4 +466,5 @@ export {
   getSetupListCompany,
   getIndustryListCompany,
   getFeaturedCompanies,
+  getCompanyShareableLink,
 };

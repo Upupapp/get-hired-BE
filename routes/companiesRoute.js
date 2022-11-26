@@ -16,7 +16,8 @@ import {
   addCompanyUser,
   getIndustryListCompany,
   getSetupListCompany,
-  getFeaturedCompanies
+  getFeaturedCompanies,
+  getCompanyShareableLink
 } from "../controllers/companiesController";
 import verifyAuth from "../middleware/verifyAuth";
 
@@ -35,7 +36,7 @@ router.get("/company/getallcompanyuser", verifyAuth, getAllCompanyUser);
 router.get("/company/usercompany", verifyAuth, getSpecificCompany);
 router.get("/company/details", getSpecificCompany);
 router.get("/company/featured", getFeaturedCompanies);
-
+router.get("/company/sharelink", getCompanyShareableLink);
 
 
 // router.get("/company/numbercompanies", getNumberOfCompanies);

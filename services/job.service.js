@@ -144,9 +144,20 @@ const saveJobDetailsList = async (list, tableName, columnName, jobId) => {
 };
 
 const saveJobArray = async (jobId, arrays) => {
-  const { badges, requirements, goodToHave, educationalBackground, skills, tags } = arrays;
+  const {
+    badges,
+    requirements,
+    goodToHave,
+    educationalBackground,
+    skills,
+    tags,
+  } = arrays;
   if (badges && badges.length != 0) {
-    const deleteArrays = await deleteArrayJobEntry(jobId, "job_badges", "job_id");
+    const deleteArrays = await deleteArrayJobEntry(
+      jobId,
+      "job_badges",
+      "job_id"
+    );
     const jobBadges = await saveJobDetailsList(
       badges,
       "job_badges",
@@ -156,7 +167,11 @@ const saveJobArray = async (jobId, arrays) => {
   }
 
   if (requirements && requirements.length != 0) {
-    const deleteArrays = await deleteArrayJobEntry(jobId, "job_requirement", "job_id");
+    const deleteArrays = await deleteArrayJobEntry(
+      jobId,
+      "job_requirement",
+      "job_id"
+    );
 
     const jobRequirements = await saveJobDetailsList(
       requirements,
@@ -167,7 +182,11 @@ const saveJobArray = async (jobId, arrays) => {
   }
 
   if (goodToHave && goodToHave.length != 0) {
-    const deleteArrays = await deleteArrayJobEntry(jobId, "job_goodtohave", "job_id");
+    const deleteArrays = await deleteArrayJobEntry(
+      jobId,
+      "job_goodtohave",
+      "job_id"
+    );
 
     const jobGoodToHave = await saveJobDetailsList(
       goodToHave,
@@ -178,7 +197,11 @@ const saveJobArray = async (jobId, arrays) => {
   }
 
   if (educationalBackground && educationalBackground.length != 0) {
-    const deleteArrays = await deleteArrayJobEntry(jobId, "job_educationalbackground", "job_id");
+    const deleteArrays = await deleteArrayJobEntry(
+      jobId,
+      "job_educationalbackground",
+      "job_id"
+    );
 
     const jobEducationalBackground = await saveJobDetailsList(
       educationalBackground,
@@ -189,7 +212,11 @@ const saveJobArray = async (jobId, arrays) => {
   }
 
   if (skills && skills.length != 0) {
-    const deleteArrays = await deleteArrayJobEntry(jobId, "job_skills", "job_id");
+    const deleteArrays = await deleteArrayJobEntry(
+      jobId,
+      "job_skills",
+      "job_id"
+    );
 
     const jobSkillList = await saveJobDetailsList(
       skills,
@@ -209,7 +236,7 @@ const saveJobArray = async (jobId, arrays) => {
       jobId
     );
   }
-}
+};
 
 const jobDetails = async (jobId) => {
   const searchQuery = `SELECT 
@@ -225,7 +252,9 @@ const jobDetails = async (jobId) => {
   j.job_status_id, 
   j.job_city, 
   j.job_category_id, cat.job_category_name, 
-  j.job_country, j.is_featured
+  j.job_country, j.is_featured,
+  c.company_city, c.company_country, c.company_logo,
+  c.company_details, c.number_of_employee
     FROM ${dbSchema}.jobs j
     left join ${dbSchema}.companies c
     on c.company_id = j.company_id
@@ -242,13 +271,49 @@ const jobDetails = async (jobId) => {
     left join ${dbSchema}.category cat
     on cat.job_category_id  = j.job_category_id
     where j.job_id = $1;`;
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [jobId]);
+    if (rows && rows.length != 0) {
+      return await mappedJob(rows[0]);
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const jobBasicDetails = async (jobId) => {
+  const searchQuery = `SELECT 
+  j.job_id, j.job_banner, j.job_title, 
+  j.company_id, c.company_name,
+  j.job_description, 
+  j.job_city, 
+  j.job_country, c.company_logo,
+  c.company_details
+    FROM ${dbSchema}.jobs j
+    left join ${dbSchema}.companies c
+    on c.company_id = j.company_id
+    where j.job_id = $1;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId]);
     if (rows && rows.length != 0) {
-      return await mappedJob(rows[0])
+      const raw = rows[0];
+      return {
+        jobId: raw.job_id,
+        jobBanner: raw.job_banner,
+        jobTitle: raw.job_title,
+        companyId: raw.company_id,
+        companyName: raw.company_name,
+        jobDescription: raw.job_description,
+        jobCity: raw.job_city,
+        jobCountry: raw.job_country,
+        companyLogoUrl: raw.company_logo,
+        companyDetails: raw.company_details,
+      };
     } else {
-      return [];
+      return null;
     }
   } catch (error) {
     throw error;
@@ -324,6 +389,7 @@ const mappedJob = async (raw) => {
     companyLogoUrl: raw.company_logo,
     companyDetails: raw.company_details,
     numberOfEmployee: raw.number_of_employee,
+    companyRating: 0,
     badges: await getJobBadges(raw.job_id),
     tags: await getJobArrayDetails(raw.job_id, "job_tags", "tags"),
     requirements: await getJobArrayDetails(
@@ -352,5 +418,6 @@ export {
   getCompanyPublishedJobsCount,
   jobDetails,
   saveJobArray,
-  mappedJob
+  mappedJob,
+  jobBasicDetails,
 };

@@ -7,7 +7,15 @@ import {
   createInterviewTemplateQuestions,
   createQuestion,
 } from "./interviewController";
-import { getPublishedJobs, jobDetails, saveJobArray, mappedJob } from "../services/job.service";
+import {
+  getPublishedJobs,
+  jobDetails,
+  saveJobArray,
+  mappedJob,
+  jobBasicDetails,
+} from "../services/job.service";
+
+import { createDynamicLink } from "../helpers/firebaseFunctions";
 
 const dbSchema = env.schema;
 const now = Date.now();
@@ -44,7 +52,7 @@ const createJobs = async (req, res) => {
     educationalBackground,
     skills,
     tags,
-    interviewQuestions
+    interviewQuestions,
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
@@ -89,7 +97,12 @@ const createJobs = async (req, res) => {
 
     if (rows[0].job_id) {
       await saveJobArray(rows[0].job_id, {
-        badges, requirements, goodToHave, educationalBackground, skills, tags
+        badges,
+        requirements,
+        goodToHave,
+        educationalBackground,
+        skills,
+        tags,
       });
 
       if (interviewQuestions && interviewQuestions.length != 0) {
@@ -197,7 +210,7 @@ const updateJob = async (req, res) => {
     educationalBackground,
     skills,
     tags,
-    interviewQuestions
+    interviewQuestions,
   } = req.body;
 
   try {
@@ -233,7 +246,12 @@ const updateJob = async (req, res) => {
     ]);
 
     const jobArrays = await saveJobArray(jobId, {
-      badges, requirements, goodToHave, educationalBackground, skills, tags
+      badges,
+      requirements,
+      goodToHave,
+      educationalBackground,
+      skills,
+      tags,
     });
 
     if (!rows || rows.length == 0) {
@@ -502,25 +520,6 @@ const getJobList = async (companyId) => {
   }
 };
 
-const getJobWithCompanyDetails = async (job_id) => {
-  const searchQuery = `
-    select * from ${dbSchema}.jobs j 
-    inner join ${dbSchema}.company_jobs cj 
-    on cj.job_id = j.job_id 
-    inner join ${dbSchema}.company c 
-    on cj.company_id = c.company_id 
-    where j.job_id = '${job_id}'
-  `;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = mapJobs(rows[0]);
-    return dbResponse;
-  } catch (error) {
-    throw Error("Error getting Job Details");
-  }
-};
-
 const getAllPublishedJobs = async (req, res) => {
   const { id } = req.query;
 
@@ -540,6 +539,26 @@ const getJobDetails = async (req, res) => {
   try {
     const details = await jobDetails(id);
     successMessage.data = details;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getJobShareableLink = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const job = await jobBasicDetails(id);
+    const postLink = `/jobs/details/${id}`;
+    const link = await createDynamicLink(
+      job.jobTitle + ' - ' + job.jobCity + ' ' + job.jobCountry,
+      job.companyName,
+      job.companyLogoUrl,
+      postLink
+    );
+    successMessage.data = link;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -586,4 +605,5 @@ export {
   setupList,
   getAllPublishedJobs,
   getJobDetails,
+  getJobShareableLink
 };
