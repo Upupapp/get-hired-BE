@@ -318,24 +318,6 @@ const industryList = async () => {
   }
 };
 
-const setupList = async () => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.work_setup;`;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map((list) => {
-      return {
-        id: list.work_setup_id,
-        name: list.work_setup_name,
-      };
-    });
-
-    return dbResponse;
-  } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
 
 const getIndustryList = async (req, res) => {
   try {
@@ -389,54 +371,6 @@ const getJobRoleList = async (req, res) => {
   }
 };
 
-const getSetupList = async (req, res) => {
-  try {
-    const dbResponse = await setupList();
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-const getTypeList = async (req, res) => {
-  const searchQuery = `SELECT job_type_id, job_type_name FROM ${dbSchema}.job_type;`;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map((list) => {
-      return {
-        id: list.job_type_id,
-        name: list.job_type_name,
-      };
-    });
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
-const getLevelList = async (req, res) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.job_level;`;
-
-  try {
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const dbResponse = rows.map((list) => {
-      return {
-        id: list.job_level_id,
-        name: list.job_level_name,
-      };
-    });
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
 
 const getCategoryList = async (req, res) => {
   const searchQuery = `SELECT * FROM ${dbSchema}.category;`;
@@ -593,16 +527,12 @@ export {
   getIndustryList,
   getBadgeList,
   getJobRoleList,
-  getSetupList,
-  getTypeList,
-  getLevelList,
   getCategoryList,
   getBasicJobList,
   getJobBasicListOfCompany,
   getExpiredJobListOfCompany,
   updateStatusOfJob,
   industryList,
-  setupList,
   getAllPublishedJobs,
   getJobDetails,
   getJobShareableLink

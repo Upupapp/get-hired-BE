@@ -11,6 +11,7 @@ import jobsRoutes from "./routes/jobsRoute";
 import companiesRoute from "./routes/companiesRoute";
 import employerRoute from "./routes/employerRoute";
 import contactRoutes from "./routes/contactRoutes"
+import optionsRoutes from "./routes/optionsRoute";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -42,6 +43,8 @@ app.use("/api", jobsRoutes);
 app.use("/api", companiesRoute);
 app.use("/api", employerRoute);
 app.use("/api", contactRoutes);
+app.use("/api", optionsRoutes);
+
 
 app.get("/", (req, res) => res.send("Welcome to Get Hired API"));
 

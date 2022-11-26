@@ -2,7 +2,7 @@ import { successMessage, errorMessage, status } from "../helpers/status";
 import uploadInStorage from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
-import { industryList, setupList } from "./jobsController";
+import { industryList } from "./jobsController";
 import {
   checkUserIfExistInFirebase,
   registerNewUserInFirebase,
@@ -259,16 +259,16 @@ const getIndustryListCompany = async (req, res) => {
   }
 };
 
-const getSetupListCompany = async (req, res) => {
-  try {
-    const setup = await setupList();
-    successMessage.data = setup;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
+// const getSetupListCompany = async (req, res) => {
+//   try {
+//     const setup = await setupList();
+//     successMessage.data = setup;
+//     return res.status(status.success).send(successMessage);
+//   } catch (error) {
+//     errorMessage.error = "ERROR: " + error;
+//     return res.status(status.error).send(errorMessage);
+//   }
+// };
 
 const mappedCompany = (raw) => {
   return {
@@ -463,7 +463,7 @@ export {
   removeCompanyUser,
   getAllCompanyUser,
   addCompanyUser,
-  getSetupListCompany,
+  // getSetupListCompany,
   getIndustryListCompany,
   getFeaturedCompanies,
   getCompanyShareableLink,

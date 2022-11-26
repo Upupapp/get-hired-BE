@@ -6,9 +6,6 @@ import {
   getIndustryList,
   getBadgeList,
   getJobRoleList,
-  getSetupList,
-  getTypeList,
-  getLevelList,
   getCategoryList,
   getJobBasicListOfCompany,
   getExpiredJobListOfCompany,
@@ -33,9 +30,6 @@ router.get("/job/categories", verifyAuth, getCategoryList);
 router.get("/job/industries", verifyAuth, getIndustryList);
 router.get("/job/badges", verifyAuth, getBadgeList);
 router.get("/job/rolelist", verifyAuth, getJobRoleList);
-router.get("/job/setuplist", verifyAuth, getSetupList);
-router.get("/job/type", verifyAuth, getTypeList);
-router.get("/job/levels", verifyAuth, getLevelList);
 router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
 
 // public api

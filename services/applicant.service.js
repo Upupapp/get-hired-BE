@@ -49,7 +49,7 @@ const appplicantProfile = async (userId) => {
     if (rows && rows.length != 0) {
       return await mappedProfile(rows[0]);
     } else {
-      return [];
+      return null;
     }
   } catch (error) {
     throw error;

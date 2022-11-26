@@ -15,7 +15,7 @@ import {
   removeCompanyUser,
   addCompanyUser,
   getIndustryListCompany,
-  getSetupListCompany,
+  // getSetupListCompany,
   getFeaturedCompanies,
   getCompanyShareableLink
 } from "../controllers/companiesController";
@@ -28,7 +28,7 @@ router.put("/company/update", updateCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
 router.delete("/company/removecompanyuser", removeCompanyUser);
 router.get("/company/industries", verifyAuth, getIndustryListCompany);
-router.get("/company/setuplist", verifyAuth, getSetupListCompany);
+// router.get("/company/setuplist", verifyAuth, getSetupListCompany);
 
 // EDITED
 router.post("/company/addcompanyuser", verifyAuth, addCompanyUser);
