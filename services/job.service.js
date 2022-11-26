@@ -1,5 +1,6 @@
 import dbQuery from "../db/dbQuery";
 import env from "../env";
+import genericInsert from "../helpers/genericInsert";
 
 const dbSchema = env.schema;
 
@@ -112,6 +113,31 @@ const getJobArrayDetails = async (jobId, tableName, column) => {
     } else {
       return [];
     }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteArrayJobEntry = async (jobId, tableName, columnName) => {
+  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1;`;
+  try {
+    const { rows } = await dbQuery.query(deleteQuery, [jobId]);
+    return true;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const saveJobDetailsList = async (list, tableName, columnName, jobId) => {
+  try {
+    const insertedList = list.map(
+      async (item) =>
+        await genericInsert(tableName, columnName, item, {
+          column: "job_id",
+          value: jobId,
+        })
+    );
+    return insertedList;
   } catch (error) {
     throw error;
   }
