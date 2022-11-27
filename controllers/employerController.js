@@ -29,17 +29,17 @@ const getEmployerProfile = async (req, res) => {
     const user = await getUserProfileById(id);
     const userCompany = await getUserCompany(id);
 
-    successMessage.data = {
+    const dbResponse = {
       ...user,
-      companyName: userCompany.companyName
+      companyName: userCompany.companyName ? userCompany.companyName: null
     };
+    successMessage.data = dbResponse;
+
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
   }
 };
-
-
 
 export { getEmployerCompany, getEmployerProfile };

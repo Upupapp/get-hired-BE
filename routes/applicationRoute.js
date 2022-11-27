@@ -3,18 +3,20 @@ import {
   createApplication,
   updateApplication,
   deleteApplication,
-  createApplicationProfile,
+  createProfile,
   getApplicantProfileById
 } from "../controllers/applicantsController";
-
-import { send } from "../helpers/mailer";
+import verifyAuth from "../middleware/verifyAuth";
 
 const router = express.Router();
 
+// application
 router.post("/application/create", createApplication);
 router.put("/application/updateJobs", updateApplication);
 router.delete("/application/delete", deleteApplication);
-router.post("/application/createapplicantprofile", createApplicationProfile);
+
+// applicant
+router.post("/applicant/createprofile", verifyAuth, createProfile);
 router.get("/applicant/profile", getApplicantProfileById);
 
 export default router;

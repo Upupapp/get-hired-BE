@@ -212,7 +212,7 @@ const createCompany = async (company, uid) => {
       uid,
     ]);
 
-    if (rows && rows.length == 0) {
+    if (!rows && rows.length == 0) {
       throw "Failed to create Company";
     }
 

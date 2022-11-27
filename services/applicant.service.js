@@ -1,6 +1,7 @@
 import idGenerator from "../helpers/randomNumberForId";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
+import uploadInStorage from "../helpers/uploader";
 
 const dbSchema = env.schema;
 const now = new Date();
@@ -30,19 +31,90 @@ const mappedCandidate = (raw) => {
   };
 };
 
+const createApplicationProfile = async (applicant) => {
+  let rawUrl = "";
+  let rawUrlPhoto = "";
+
+  const {
+    userId,
+    photoUrl,
+    jobTitle,
+    shortBio,
+    servicesProvided,
+    jobTypeId,
+    jobLevelId,
+    workSetupId,
+    salaryMinimum,
+    salaryMaximum,
+    videoCVFile,
+    profileImage
+  } = applicant;
+  
+  const applicantProfileId = idGenerator(6, "AP");
+
+  try {
+    if (videoCVFile && videoCVFile != "") {
+      rawUrl = await uploadInStorage(
+        "Applicant-CVs",
+        `${applicantProfileId}-CV`,
+        videoCVFile
+      );
+    }
+
+    if (profileImage && profileImage != "") {
+      rawUrlPhoto = await uploadInStorage(
+        "Applicant-Profile-Photo",
+        `${applicantProfileId}-ProfilePhoto`,
+        profileImage
+      );
+    }
+
+    const insertQuery = `INSERT INTO ${dbSchema}.applicants_profile
+      (applicant_profile_id, user_id, photo_url, job_title, short_bio, services_provided, job_type_id, job_level_id, work_setup_id, salary_minimum, salary_maximum, 
+      video_cv_url, is_profile_ready)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning *;`;
+
+    const { rows } = await dbQuery.query(insertQuery, [
+      applicantProfileId,
+      userId,
+      rawUrlPhoto,
+      jobTitle,
+      shortBio,
+      servicesProvided,
+      jobTypeId,
+      jobLevelId,
+      workSetupId,
+      salaryMinimum,
+      salaryMaximum,
+      rawUrl,
+      isProfileReady
+    ]);
+
+    if(!rows && rows.length == 0) {
+      throw "Failed to create profile"
+    }
+
+    const dbResponse = mappedProfile(rows[0]);
+
+    return dbResponse;
+  } catch (error) {
+    throw (error);
+  }
+};
+
 const appplicantProfile = async (userId) => {
   const searchQuery = `SELECT ap.*, u.*,
     jt.job_type_name, jl.job_level_name, ws.work_setup_name
     FROM ${dbSchema}.applicants_profile ap
     left join ${dbSchema}.users u
-    on u.uid = ap.applicant_id
+    on u.uid = ap.user_id
     left join ${dbSchema}.work_setup ws
     on ws.work_setup_id  = ap.work_setup_id
     left join ${dbSchema}.job_type jt
     on jt.job_type_id = ap.job_type_id
     left join ${dbSchema}.job_level jl
     on jl.job_level_id = ap.job_level_id
-    WHERE ap.applicant_id = $1;`;
+    WHERE ap.user_id = $1;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [userId]);
@@ -58,7 +130,8 @@ const appplicantProfile = async (userId) => {
 
 const mappedProfile = async (raw) => {
   return {
-    applicantId: raw.applicant_id,
+    applicantProfileId: raw.applicant_id,
+    userId: raw.userId,
     firstName: raw.firstname,
     lastName: raw.lastname,
     photoUrl: raw.photo_url,
@@ -86,4 +159,4 @@ const mappedProfile = async (raw) => {
   };
 };
 
-export { candidateListByJobId, appplicantProfile };
+export { candidateListByJobId, appplicantProfile, createApplicationProfile };
