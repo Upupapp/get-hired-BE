@@ -121,10 +121,15 @@ const updateCompany = async (req, res) => {
 };
 
 const getUserCompany = async (id) => {
-  const searchQuery = `select c.*, ce.employee_id from ${dbSchema}.company_employees ce 
-    left join ${dbSchema}.companies c 
-    on c.company_id = ce.company_id 
-    where ce.employee_uuid = $1`;
+  const searchQuery = `select 
+    c.*, ce.employee_id, i.industry_name as company_industry_name
+    from ${dbSchema}.company_employees ce 
+      left join ${dbSchema}.companies c 
+      on c.company_id = ce.company_id 
+      RIGHT JOIN ${dbSchema}.industry i
+      on c.industry_id = i.industry_id
+      where ce.employee_uuid = $1`;
+
   try {
     const { rows } = await dbQuery.query(searchQuery, [id]);
 
@@ -164,7 +169,6 @@ const getSpecificCompany = async (req, res) => {
 };
 
 const createCompany = async (company, uid) => {
-  console.log(company);
   let rawUrl = "";
   const companyId = idGenerator(6, "COM");
 
@@ -287,6 +291,7 @@ const mappedCompany = (raw) => {
     createdAt: raw.created_at,
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
+    companyIndustryName: raw.company_industry_name
   };
 };
 
