@@ -363,16 +363,15 @@ const addGroup = async (groupName, companyId) => {
     }
 };
 
-const editGroup = async (groupId, groupName, userId) => {
+const editGroup = async (groupId, groupName) => {
 
     try {
         const updateQuery = `UPDATE ${dbSchema}.group
-                            SET  group_name=$1, user_id=$2
-                            WHERE group_id=$3 returning *;`;
+                            SET  group_name=$1
+                            WHERE group_id=$2 returning *;`;
 
         const { rows } = await dbQuery.query(updateQuery, [firstName,
             groupName,
-            userId,
             groupId
         ]);
 
@@ -491,5 +490,83 @@ const listOfGroup = async (companyId) => {
     }
 };
 
+const listOfContacts = async (companyId, groupName) => {
+    try {
+        const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email 
+                            FROM gethired.contact c
+                            where not exists(select email from gethired.group_list
+                            right join gethired."group" g on g.group_id = group_list.group_id
+                            where group_list.email = c.email 
+                            and g.group_name = '${groupName}') 
+                            and c.company_id = '${companyId}'
+                            order by created_at ASC;`;
+
+        const { rows } = await dbQuery.query(searchQuery, []);
+
+        const dbResponse = rows;
+
+        if (!dbResponse) {
+            throw Error(error);
+        }
+
+        return dbResponse;
+
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
+const checkContacts = async (complete) => {
+    const searchQuery = `SELECT l.email 
+                        FROM gethired.group_list l
+                        right join gethired.contact c on c.email = l.email  
+                        where l.group_id = '${complete.group_id}';`;
+    let value = "";
+    try {
+        const { rows } = await dbQuery.query(searchQuery, []);
+
+        const dbResponse = rows;
+
+        if (!dbResponse) {
+            throw Error(errorMessage);
+        };
+
+        const usersList = {
+            ...complete,
+            emails: dbResponse
+        };
+
+        return usersList;
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
+const groupList = async (companyId) => {
+    try {
+        const searchQuery = `SELECT group_id, group_name, created_date
+                            FROM gethired."group"
+                            where company_id = '${companyId}'
+                            order by created_date ASC;;`;
+
+        const { rows } = await dbQuery.query(searchQuery, []);
+
+        const dbResponse = rows;
+
+        if (!dbResponse) {
+            throw Error(error);
+        }
+
+        const output = await Promise.all(dbResponse.map(async (complete) => {
+            return await checkContacts(complete);
+        }));
+
+        return output;
+
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
 export { addContact, checkContactIfExist, editContact, contactList, checkGroupIfExist, addGroup, addInGroupList, getGroupId, checkIfExistInGroup,
-    addMultipleContact, listOfGroup}
+    addMultipleContact, listOfGroup, listOfContacts, editGroup, checkEmailIfExistInContact, groupList}

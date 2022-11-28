@@ -1,5 +1,6 @@
 import express from "express";
-import { createContact, createGroup, deleteContact, grouplist, list, multipleContact, updateContact } from "../controllers/contactsController";
+import { groupsmigration } from "googleapis/build/src/apis/groupsmigration";
+import { contactslist, createContact, createGroup, deleteContact, deleteGroup, grouplist, list, list2, multipleContact, updateContact, updateGroup } from "../controllers/contactsController";
 
 // import verifyAuth from '../middleware/verifyAuth';
 
@@ -13,5 +14,9 @@ router.get("/contacts/list", list)
 router.get("/contacts/grouplist", grouplist)
 
 router.post("/groups/creategroup", createGroup);
+router.get("/groups/contactlist", contactslist)
+router.put("/groups/updategroup", updateGroup);
+router.delete("/groups/deletegroup", deleteGroup);
+router.get("/groups/list", list2)
 
 export default router;
