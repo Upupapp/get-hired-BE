@@ -85,8 +85,8 @@ const createApplicationProfile = async (applicant) => {
 
     const insertQuery = `INSERT INTO ${dbSchema}.applicants_profile
       (applicant_profile_id, user_id, photo_url, job_title, short_bio, services_provided, job_type_id, job_level_id, work_setup_id, salary_minimum, salary_maximum, 
-      video_cv_url, is_profile_ready)
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning *;`;
+      video_cv_url, is_profile_ready, created_at)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *;`;
 
     const { rows } = await dbQuery.query(insertQuery, [
       applicantProfileId,
@@ -102,6 +102,7 @@ const createApplicationProfile = async (applicant) => {
       salaryMaximum,
       rawUrl,
       isProfileReady,
+      now
     ]);
 
     if (!rows && rows.length == 0) {
@@ -146,6 +147,147 @@ const createApplicationProfile = async (applicant) => {
     }
 
     if (certifications && certifications.length != 0) {
+      const certf = certifications.map(
+        async (cert) => await saveCertifications(cert)
+      );
+    }
+
+    const dbResponse = mappedProfile({
+      ...profile,
+      ...rows[0],
+    });
+
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const updateApplicationProfile = async (applicant) => {
+  let rawUrl = "";
+  let rawUrlPhoto = "";
+
+  const {
+    applicantProfileId,
+    userId,
+    jobTitle,
+    shortBio,
+    servicesProvided,
+    jobTypeId,
+    jobLevelId,
+    workSetupId,
+    salaryMinimum,
+    salaryMaximum,
+    videoCVFile,
+    videoCVUrl,
+    profileImage,
+    photoUrl,
+    isProfileReady,
+    firstName,
+    lastName,
+    address,
+    contactNumber,
+    city,
+    country,
+    skills,
+    workExperience,
+    educationalBackground,
+    certifications,
+    documents,
+  } = applicant;
+  
+  try {
+    if (videoCVFile && videoCVFile != "") {
+      rawUrl = await uploadInStorage(
+        "Applicant-CVs",
+        `${applicantProfileId}-CV`,
+        videoCVFile
+      );
+    } else {
+      rawUrl = videoCVUrl;
+    }
+
+    if (profileImage && profileImage != "") {
+      rawUrlPhoto = await uploadInStorage(
+        "Applicant-Profile-Photo",
+        `${applicantProfileId}-ProfilePhoto`,
+        profileImage
+      );
+    } else {
+      rawUrlPhoto = photoUrl;
+    }
+
+    const updateQuery = `UPDATE ${dbSchema}.applicants_profile
+    SET photo_url=$1, job_title=$2, short_bio=$3, services_provided=$4, 
+    job_type_id=$5, job_level_id=$6, work_setup_id=$7, salary_minimum=$8,
+    salary_maximum=$9, video_cv_url=$10,  updated_at=$11, is_profile_ready=$12
+    WHERE user_id=$13 returning *;`;
+
+    const { rows } = await dbQuery.query(updateQuery, [
+      rawUrlPhoto,
+      jobTitle,
+      shortBio,
+      servicesProvided,
+      jobTypeId,
+      jobLevelId,
+      workSetupId,
+      salaryMinimum,
+      salaryMaximum,
+      rawUrl,
+      now,
+      isProfileReady,
+      userId
+    ]);
+
+    if (!rows && rows.length == 0) {
+      throw "Failed to update profile";
+    }
+
+    const profile = await updateUserProfile({
+      firstName,
+      lastName,
+      address,
+      contactNumber,
+      city,
+      country,
+      rawUrlPhoto,
+      userId,
+    });
+
+    if (!profile && profile.length == 0) {
+      throw "Failed to update basic info";
+    }
+
+    if (skills && skills.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId, 'applicant_skills', 'applicant_id');
+      const skillList = await saveApplicantDetailsList(
+        skills,
+        "applicant_skills",
+        "skills",
+        rows[0].applicant_profile_id
+      );
+    }
+
+    if (workExperience && workExperience.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId, 'applicant_work_experience', 'applicant_id');
+      const work = workExperience.map(
+        async (exp) => await saveApplicantWorkExperience(exp)
+      );
+    }
+
+    if (educationalBackground && educationalBackground.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId, 'applicant_educational_background', 'applicant_id');
+      const educBG = educationalBackground.map(
+        async (educ) => await saveApplicantEducationalBackground(educ)
+      );
+    }
+
+    if (certifications && certifications.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId, 'applicant_certificates', 'applicant_id');
       const certf = certifications.map(
         async (cert) => await saveCertifications(cert)
       );
@@ -322,10 +464,10 @@ const mappedCertifications = (raw) => {
   };
 };
 
-const deleteArrayApplicantEntry = async (jobId, tableName, columnName) => {
+const deleteArrayApplicantEntry = async (applicantId, tableName, columnName) => {
   const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1;`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, [jobId]);
+    const { rows } = await dbQuery.query(deleteQuery, [applicantId]);
     return true;
   } catch (error) {
     throw error;
@@ -380,7 +522,7 @@ const appplicantProfile = async (userId) => {
 
 const mappedProfile = async (raw) => {
   return {
-    applicantProfileId: raw.applicant_id,
+    applicantProfileId: raw.applicant_profile_id,
     userId: raw.userId,
     firstName: raw.firstname,
     lastName: raw.lastname,
@@ -411,4 +553,4 @@ const mappedProfile = async (raw) => {
   };
 };
 
-export { candidateListByJobId, appplicantProfile, createApplicationProfile };
+export { candidateListByJobId, appplicantProfile, createApplicationProfile, updateApplicationProfile };

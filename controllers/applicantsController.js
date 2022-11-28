@@ -2,7 +2,11 @@ import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import idGenerator from "../helpers/randomNumberForId";
 import env from "../env";
-import { appplicantProfile, createApplicationProfile } from "../services/applicant.service";
+import {
+  appplicantProfile,
+  createApplicationProfile,
+  updateApplicationProfile,
+} from "../services/applicant.service";
 
 const dbSchema = env.schema;
 
@@ -143,7 +147,7 @@ const createProfile = async (req, res) => {
 
 const updateProfile = async (req, res) => {
   try {
-    // const profile = await createApplicationProfile(req.body);
+    const profile = await updateApplicationProfile(req.body);
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -170,5 +174,5 @@ export {
   updateApplication,
   createProfile,
   getApplicantProfileById,
-  updateProfile
+  updateProfile,
 };
