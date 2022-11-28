@@ -1,7 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
-import { addContact, checkContactIfExist, contactList, editContact } from "../services/contact.service";
+import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact } from "../services/contact.service";
 const dbSchema = env.schema;
 
 const createContact = async (req, res) => {
@@ -28,10 +28,9 @@ const createContact = async (req, res) => {
 };
 
 const multipleContact = async (req, res) => {
-    const { contacts } = req.body;
+    const { groupName, groupId, contacts } = req.body;
     let thisIsContacts = [];
     try {
-
         if (contacts.length > 0) {
 
             let multiple = new Promise((resolve, reject) => {
@@ -95,8 +94,6 @@ const updateContact = async (req, res) => {
             errorMessage.error = 'Failed to Update Contact';
             return res.status(status.error).send(errorMessage);
         }
-        // const notify = await notifyCreateEventForMember(eventUpdate.eventid, eventUpdate.learninghubid)
-        //to add list of emlpoyees
 
         successMessage.data = contactUpdate
         return res.status(status.success).send(successMessage);
@@ -129,5 +126,48 @@ const list = async (req, res) => {
     }
 };
 
+const createGroup = async (req, res) => {
+    const {groupName, companyId, emails} = req.body;
+    let thisIsContacts = [];
+    try {
 
-export {createContact, multipleContact, deleteContact, updateContact, list}
+        const add = await addGroup(groupName, companyId)
+
+        if (!add) {
+            errorMessage.error = 'Failed to Create Group';
+            return res.status(status.error).send(errorMessage);
+        }
+        if (emails.length > 0) {
+
+            let multiple = new Promise((resolve, reject) => {
+                emails.forEach(async option => {
+                    const create = await addInGroupList(add.group_id, option.email)
+                    if (!create) {
+                        successMessage.data = 'Failed to Add In Group ' + option.email;
+                        return res.status(status.error).send(errorMessage);
+                    }
+                  
+                    thisIsContacts.push(create);
+                    if (thisIsContacts.length == emails.length) resolve();
+                });
+            });
+            multiple.then(() => {
+                const addMultiple = {
+                    ...add,
+                    contacts: thisIsContacts
+                };
+
+                successMessage.data = addMultiple
+                return res.status(status.success).send(successMessage);
+            });
+
+        }
+
+    }
+    catch (error) {
+        errorMessage.error = 'Operation was not successful' + error;
+        return res.status(status.error).send(errorMessage);
+    }
+};
+
+export {createContact, multipleContact, deleteContact, updateContact, list, createGroup}
