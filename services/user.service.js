@@ -24,11 +24,13 @@ const updateUserProfile = async (profile) => {
     contactNumber,
     city,
     country,
-    photoUrl,
+    rawUrlPhoto,
     userId,
   } = profile;
 
-  const updateQuery = `UPDATE gethired.users
+  console.log(rawUrlPhoto);
+
+  const updateQuery = `UPDATE ${dbSchema}.users
   SET firstname=$1, lastname=$2, address=$3, cell_number=$4, city=$5, country=$6, photo_url=$7, is_profile_updated=true
   WHERE uid=$8 returning *;`;
 
@@ -40,7 +42,7 @@ const updateUserProfile = async (profile) => {
       contactNumber,
       city,
       country,
-      photoUrl,
+      rawUrlPhoto,
       userId,
     ]);
 

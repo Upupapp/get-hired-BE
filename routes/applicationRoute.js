@@ -5,7 +5,8 @@ import {
   deleteApplication,
   createProfile,
   getApplicantProfileById,
-  updateProfile
+  updateProfile,
+  getUserProfile
 } from "../controllers/applicantsController";
 import verifyAuth from "../middleware/verifyAuth";
 
@@ -20,5 +21,6 @@ router.delete("/application/delete", deleteApplication);
 router.put("/applicant/updateprofile", verifyAuth, updateProfile);
 router.post("/applicant/createprofile", verifyAuth, createProfile);
 router.get("/applicant/profile", getApplicantProfileById);
+router.get("/applicant/userprofile", verifyAuth, getUserProfile);
 
 export default router;

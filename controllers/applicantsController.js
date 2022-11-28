@@ -7,6 +7,7 @@ import {
   createApplicationProfile,
   updateApplicationProfile,
 } from "../services/applicant.service";
+import { getUserProfileById } from "../helpers/userDetails";
 
 const dbSchema = env.schema;
 
@@ -168,6 +169,20 @@ const getApplicantProfileById = async (req, res) => {
   }
 };
 
+const getUserProfile = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const creds = await getUserProfileById(id);
+
+    successMessage.data = creds;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 export {
   createApplication,
   deleteApplication,
@@ -175,4 +190,5 @@ export {
   createProfile,
   getApplicantProfileById,
   updateProfile,
+  getUserProfile
 };
