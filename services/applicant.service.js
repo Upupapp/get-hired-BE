@@ -58,13 +58,11 @@ const createApplicationProfile = async (applicant) => {
     city,
     country,
     skills,
+    workExperience,
+    educationalBackground,
+    certifications,
+    documents,
   } = applicant;
-
-  // workExperience?: WorkExperience[];
-  // educationalBackground?: EducationalBackground[];
-  // certifications?: Certifications[];
-  // skills: string[];
-  // documents: [];
 
   const applicantProfileId = idGenerator(6, "AP");
 
@@ -135,18 +133,22 @@ const createApplicationProfile = async (applicant) => {
     }
 
     if (workExperience && workExperience.length != 0) {
-      // TODO save work experience
       const work = workExperience.map(
         async (exp) => await saveApplicantWorkExperience(exp)
       );
     }
 
     if (educationalBackground && educationalBackground.length != 0) {
-      // TODO save educational Background
+      saveApplicantEducationalBackground;
+      const educBG = educationalBackground.map(
+        async (educ) => await saveApplicantEducationalBackground(educ)
+      );
     }
 
     if (certifications && certifications.length != 0) {
-      // TODO save
+      const certf = certifications.map(
+        async (cert) => await saveCertifications(cert)
+      );
     }
 
     const dbResponse = mappedProfile({
@@ -171,7 +173,7 @@ const saveApplicantWorkExperience = async (workExperience, applicantId) => {
     endMonth,
     endYear,
     isCurrentJob,
-    details
+    details,
   } = workExperience;
 
   const insertQuery = ``;
@@ -214,23 +216,110 @@ const mappedWorkExperience = (raw) => {
   };
 };
 
-1
+const saveApplicantEducationalBackground = async (
+  educBackground,
+  applicantId
+) => {
+  const {
+    educLevelId,
+    educLevelName,
+    fieldOfStudy,
+    school,
+    schoolAddress,
+    startMonth,
+    startYear,
+    endMonth,
+    endYear,
+  } = educBackground;
 
-const getApplicantArrayDetails = async (applicantId, tableName, column) => {
-  const searchQuery = `SELECT *
-      FROM ${dbSchema}.${tableName} j
-      WHERE job_id = $1;`;
+  const insertQuery = `INSERT INTO ${dbSchema}.applicant_educational_background
+  (applicant_id, created_at, educ_level_id, educ_level_name, field_of_study, school, school_address, start_month, start_year, end_month, end_year)
+  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *;`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, [jobId]);
-    if (rows && rows.length != 0) {
-      return await Promise.all(rows.map(async (row) => row[column]));
-    } else {
-      return [];
-    }
+    const { rows } = await dbQuery.query(insertQuery, [
+      applicantId,
+      now,
+      educLevelId,
+      educLevelName,
+      fieldOfStudy,
+      school,
+      schoolAddress,
+      startMonth,
+      startYear,
+      endMonth,
+      endYear,
+    ]);
+    const dbResponse = mappedEducationalBackground(rows[0]);
+    return dbResponse;
   } catch (error) {
     throw error;
   }
+};
+
+const mappedEducationalBackground = (raw) => {
+  return {
+    applicantId: raw.applicant_id,
+    startMonth: raw.start_month,
+    startYear: raw.start_year,
+    endMonth: raw.end_month,
+    endYear: raw.end_year,
+    createdAt: raw.created_at,
+    educLevelId: raw.educ_level_id,
+    educLevelName: raw.educ_level_name,
+    fieldOfStudy: raw.field_of_study,
+    school: raw.school,
+    schoolAddress: raw.school_address,
+  };
+};
+
+const saveCertifications = async (certifications, applicantId) => {
+  const {
+    certTitle,
+    noExpiry,
+    details,
+    startMonth,
+    startYear,
+    endMonth,
+    endYear,
+  } = certifications;
+
+  const insertQuery = `INSERT INTO ${dbSchema}.applicant_certificates
+      (cert_title, no_expiry, start_month, start_year, 
+      end_month, end_year, details, created_at, applicant_id)
+  VALUES($1, $2, $3, $4,$5, $6, $7, $8, $9) returning *;`;
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      certTitle,
+      noExpiry,
+      startMonth,
+      startYear,
+      endMonth,
+      endYear,
+      details,
+      now,
+      applicantId,
+    ]);
+    const dbResponse = mappedCertifications(rows[0]);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const mappedCertifications = (raw) => {
+  return {
+    applicantId: raw.applicant_id,
+    startMonth: raw.start_month,
+    startYear: raw.start_year,
+    endMonth: raw.end_month,
+    endYear: raw.end_year,
+    createdAt: raw.created_at,
+    certTitle: raw.cert_title,
+    noExpiry: raw.no_expiry,
+    detail: raw.details,
+  };
 };
 
 const deleteArrayApplicantEntry = async (jobId, tableName, columnName) => {
