@@ -2,6 +2,9 @@ import idGenerator from "../helpers/randomNumberForId";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
+import genericInsert from "../helpers/genericInsert";
+
+import { updateUserProfile } from "./user.service";
 
 const dbSchema = env.schema;
 const now = new Date();
@@ -37,7 +40,6 @@ const createApplicationProfile = async (applicant) => {
 
   const {
     userId,
-    photoUrl,
     jobTitle,
     shortBio,
     servicesProvided,
@@ -47,9 +49,23 @@ const createApplicationProfile = async (applicant) => {
     salaryMinimum,
     salaryMaximum,
     videoCVFile,
-    profileImage
+    profileImage,
+    isProfileReady,
+    firstName,
+    lastName,
+    address,
+    contactNumber,
+    city,
+    country,
+    skills,
   } = applicant;
-  
+
+  // workExperience?: WorkExperience[];
+  // educationalBackground?: EducationalBackground[];
+  // certifications?: Certifications[];
+  // skills: string[];
+  // documents: [];
+
   const applicantProfileId = idGenerator(6, "AP");
 
   try {
@@ -87,18 +103,163 @@ const createApplicationProfile = async (applicant) => {
       salaryMinimum,
       salaryMaximum,
       rawUrl,
-      isProfileReady
+      isProfileReady,
     ]);
 
-    if(!rows && rows.length == 0) {
-      throw "Failed to create profile"
+    if (!rows && rows.length == 0) {
+      throw "Failed to create profile";
     }
 
-    const dbResponse = mappedProfile(rows[0]);
+    const profile = await updateUserProfile({
+      firstName,
+      lastName,
+      address,
+      contactNumber,
+      city,
+      country,
+      rawUrlPhoto,
+      userId,
+    });
+
+    if (!profile && profile.length == 0) {
+      throw "Failed to update basic info";
+    }
+
+    if (skills && skills.length != 0) {
+      const skillList = await saveApplicantDetailsList(
+        skills,
+        "applicant_skills",
+        "skills",
+        rows[0].applicant_profile_id
+      );
+    }
+
+    if (workExperience && workExperience.length != 0) {
+      // TODO save work experience
+      const work = workExperience.map(
+        async (exp) => await saveApplicantWorkExperience(exp)
+      );
+    }
+
+    if (educationalBackground && educationalBackground.length != 0) {
+      // TODO save educational Background
+    }
+
+    if (certifications && certifications.length != 0) {
+      // TODO save
+    }
+
+    const dbResponse = mappedProfile({
+      ...profile,
+      ...rows[0],
+    });
 
     return dbResponse;
   } catch (error) {
-    throw (error);
+    throw error;
+  }
+};
+
+const saveApplicantWorkExperience = async (workExperience, applicantId) => {
+  const {
+    jobTitle,
+    companyName,
+    location,
+    jobTypeId,
+    startMonth,
+    startYear,
+    endMonth,
+    endYear,
+    isCurrentJob,
+    details
+  } = workExperience;
+
+  const insertQuery = ``;
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      applicantId,
+      jobTitle,
+      companyName,
+      location,
+      jobTypeId,
+      startMonth,
+      startYear,
+      endMonth,
+      endYear,
+      isCurrentJob,
+      details,
+    ]);
+    const dbResponse = mappedWorkExperience(rows[0]);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const mappedWorkExperience = (raw) => {
+  return {
+    applicantId: raw.applicant_id,
+    jobTitle: raw.job_title,
+    companyName: raw.company_name,
+    location: raw.location,
+    jobTypeId: raw.job_type_id,
+    startMonth: raw.start_month,
+    startYear: raw.start_year,
+    endMonth: raw.end_month,
+    endYear: raw.end_year,
+    isCurrentJob: raw.is_current_job,
+    details: raw.details,
+    createdAt: raw.created_at,
+  };
+};
+
+1
+
+const getApplicantArrayDetails = async (applicantId, tableName, column) => {
+  const searchQuery = `SELECT *
+      FROM ${dbSchema}.${tableName} j
+      WHERE job_id = $1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [jobId]);
+    if (rows && rows.length != 0) {
+      return await Promise.all(rows.map(async (row) => row[column]));
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const deleteArrayApplicantEntry = async (jobId, tableName, columnName) => {
+  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1;`;
+  try {
+    const { rows } = await dbQuery.query(deleteQuery, [jobId]);
+    return true;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const saveApplicantDetailsList = async (
+  list,
+  tableName,
+  columnName,
+  applicantId
+) => {
+  try {
+    const insertedList = list.map(
+      async (item) =>
+        await genericInsert(tableName, columnName, item, {
+          column: "job_id",
+          value: applicantId,
+        })
+    );
+    return insertedList;
+  } catch (error) {
+    throw error;
   }
 };
 
@@ -142,6 +303,8 @@ const mappedProfile = async (raw) => {
     workSetupName: raw.work_setup_name,
     email: raw.email,
     address: raw.address,
+    city: raw.city,
+    country: raw.country,
     contactNumber: raw.cell_number,
     shortBio: raw.short_bio,
     servicesProvided: raw.services_provided,

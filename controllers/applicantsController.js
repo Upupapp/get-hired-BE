@@ -141,6 +141,16 @@ const createProfile = async (req, res) => {
   }
 };
 
+const updateProfile = async (req, res) => {
+  try {
+    // const profile = await createApplicationProfile(req.body);
+    successMessage.data = profile;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
 const getApplicantProfileById = async (req, res) => {
   const { id } = req.query;
 
@@ -160,4 +170,5 @@ export {
   updateApplication,
   createProfile,
   getApplicantProfileById,
+  updateProfile
 };

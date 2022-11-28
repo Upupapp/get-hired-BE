@@ -16,4 +16,53 @@ const insertLogs = async (activity, userId) => {
   }
 };
 
-export { insertLogs };
+const updateUserProfile = async (profile) => {
+  const {
+    firstName,
+    lastName,
+    address,
+    contactNumber,
+    city,
+    country,
+    photoUrl,
+    userId,
+  } = profile;
+
+  const updateQuery = `UPDATE gethired.users
+  SET firstname=$1, lastname=$2, address=$3, cell_number=$4, city=$5, country=$6, photo_url=$7, is_profile_updated=true
+  WHERE uid=$8 returning *;`;
+
+  try {
+    const { rows } = await dbQuery.query(updateQuery, [
+      firstName,
+      lastName,
+      address,
+      contactNumber,
+      city,
+      country,
+      photoUrl,
+      userId,
+    ]);
+
+    if (!rows && rows.length == 0) {
+      throw "Failed to update profile";
+    }
+
+    const dbResponse = rows[0];
+
+    return {
+      firstName: dbResponse.firstname,
+      lastName: dbResponse.lastname,
+      address: dbResponse.address,
+      contactNumber: dbResponse.cell_number,
+      city: dbResponse.city,
+      country: dbResponse.country,
+      photoUrl: dbResponse.photo_url,
+      userId: dbResponse.uid,
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+export { insertLogs, updateUserProfile };
