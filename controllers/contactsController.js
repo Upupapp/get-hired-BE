@@ -1,7 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
-import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact } from "../services/contact.service";
+import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact, addMultipleContact, listOfGroup } from "../services/contact.service";
 const dbSchema = env.schema;
 
 const createContact = async (req, res) => {
@@ -35,7 +35,7 @@ const multipleContact = async (req, res) => {
 
             let multiple = new Promise((resolve, reject) => {
                 contacts.forEach(async option => {
-                    const add = await addContact(option)
+                    const add = await addMultipleContact(option, groupName, groupId)
                     if (!add) {
                         successMessage.data = 'Failed to Add Contact ' + option.email;
                         return res.status(status.error).send(errorMessage);
@@ -126,6 +126,29 @@ const list = async (req, res) => {
     }
 };
 
+const grouplist = async (req, res) => {
+
+    const { companyId } = req.query
+    let groups = [];
+    try {
+   
+        groups = await listOfGroup(companyId);
+    
+        if (!groups || groups.length == 0) {
+            successMessage.data = [];
+            return res.status(status.error).send(successMessage);
+        }
+
+        successMessage.data = groups
+        return res.status(status.success).send(successMessage);
+
+    } catch (error) {
+        errorMessage.error = "Operation was not successful" + error;
+        return res.status(status.error).send(errorMessage);
+    }
+};
+
+
 const createGroup = async (req, res) => {
     const {groupName, companyId, emails} = req.body;
     let thisIsContacts = [];
@@ -170,4 +193,4 @@ const createGroup = async (req, res) => {
     }
 };
 
-export {createContact, multipleContact, deleteContact, updateContact, list, createGroup}
+export {createContact, multipleContact, deleteContact, updateContact, list, createGroup, grouplist}

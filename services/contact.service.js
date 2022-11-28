@@ -97,6 +97,98 @@ const addContact = async (contact) => {
     }
 };
 
+const addMultipleContact = async (contact, groupName, groupId) => {
+    let message = "";
+    const {
+        companyId,
+        userId,
+        firstName,
+        lastName,
+        email,
+        mobileNumber,
+        address
+    } = contact;
+    try {
+
+        const ifExistContact = await checkEmailIfExistInContact(email);
+
+        if (ifExistContact) {
+            if (groupName == '' && groupId == '') {
+                message = "Contact aleady exist"
+                return { message };
+            } else if (groupName == '') {
+                const check = await checkIfExistInGroup(email, groupId)
+                if (check) {
+                    message = "Contact aleady exist in your list and in group"
+                    return { message };
+                }
+                const addToGroupList = await addInGroupList(groupId, email)
+                message = "Contact aleady exist, but has been added to group"
+                return { message };
+            } else {
+                const check = await checkGroupNameIfExist(groupName)
+                if (check) {
+                    const selectQuery = `SELECT group_id FROM gethired."group" where group_name ='${groupName}';`;
+                    const { rows } = await dbQuery.query(selectQuery, []);
+                    const response = rows[0]
+                    const addToGroupList = await addInGroupList(response.group_id, email)
+                    message = "Contact aleady exist, but has been added to the existing group"
+                    return { message };
+                }
+                const addToGroup = await addGroup(groupName, companyId)
+                const addToGroupList = await addInGroupList(addToGroup.group_id, email)
+                message = "Contact aleady exist, but has been added to the new group"
+                return { message };
+            }
+        }
+        const insertQuery = `INSERT INTO ${dbSchema}.contact
+                          (user_id, first_name, last_name, email, mobile_number, address, 
+                               created_at, company_id)
+                            VALUES($1, $2, $3, $4, $5, $6, current_timestamp, $7) returning *;`;
+
+        const { rows } = await dbQuery.query(insertQuery, [
+            userId,
+            firstName,
+            lastName,
+            email,
+            mobileNumber,
+            address,
+            companyId
+        ]);
+
+        const dbResponse = rows[0];
+        if (!dbResponse) {
+            throw Error("Failed to Add Contact");
+        }
+
+        if (groupName == '' && groupId == '') {
+            message = "Successfully add contact"
+            return { ...dbResponse, message };
+        } else if (groupName == '') {
+            const addToGroupList = await addInGroupList(groupId, email)
+            message = "Successfully add contact"
+            return { ...dbResponse, message };
+        } else {
+            const check = await checkGroupNameIfExist(groupName)
+            if (check) {
+                const selectQuery = `SELECT group_id FROM gethired."group" where group_name ='${groupName}';`;
+                const { rows } = await dbQuery.query(selectQuery, []);
+                const response = rows[0]
+                const addToGroupList = await addInGroupList(response.group_id, email)
+                message = "Successfully add contact"
+                return { ...dbResponse, message };
+            }
+            const addToGroup = await addGroup(groupName, companyId)
+            const addToGroupList = await addInGroupList(addToGroup.group_id, email)
+            message = "Successfully add contact"
+            return { ...dbResponse, message };
+        }
+
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
 const checkEmailIfExistInContact = async (email) => {
 
     // TODO (Filter by agency)
@@ -378,4 +470,26 @@ const getGroupId= async (companyId) => {
     }
 };
 
-export { addContact, checkContactIfExist, editContact, contactList, checkGroupIfExist, addGroup, addInGroupList, getGroupId, checkIfExistInGroup}
+const listOfGroup = async (companyId) => {
+    try {
+        const searchQuery = `SELECT group_id, group_name
+                            FROM gethired."group"
+                            where company_id = '${companyId}';`;
+
+        const { rows } = await dbQuery.query(searchQuery, []);
+
+        const dbResponse = rows;
+
+        if (!dbResponse) {
+            throw Error(error);
+        }
+
+        return dbResponse;
+
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
+export { addContact, checkContactIfExist, editContact, contactList, checkGroupIfExist, addGroup, addInGroupList, getGroupId, checkIfExistInGroup,
+    addMultipleContact, listOfGroup}
