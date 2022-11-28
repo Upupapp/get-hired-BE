@@ -135,20 +135,20 @@ const createApplicationProfile = async (applicant) => {
 
     if (workExperience && workExperience.length != 0) {
       const work = workExperience.map(
-        async (exp) => await saveApplicantWorkExperience(exp)
+        async (exp) => await saveApplicantWorkExperience(exp, rows[0].applicant_profile_id)
       );
     }
 
     if (educationalBackground && educationalBackground.length != 0) {
       saveApplicantEducationalBackground;
       const educBG = educationalBackground.map(
-        async (educ) => await saveApplicantEducationalBackground(educ)
+        async (educ) => await saveApplicantEducationalBackground(educ, rows[0].applicant_profile_id)
       );
     }
 
     if (certifications && certifications.length != 0) {
       const certf = certifications.map(
-        async (cert) => await saveCertifications(cert)
+        async (cert) => await saveCertifications(cert, rows[0].applicant_profile_id)
       );
     }
 
@@ -265,7 +265,7 @@ const updateApplicationProfile = async (applicant) => {
         skills,
         "applicant_skills",
         "skills",
-        rows[0].applicant_profile_id
+        applicantProfileId
       );
     }
 
@@ -273,7 +273,7 @@ const updateApplicationProfile = async (applicant) => {
       await deleteArrayApplicantEntry(
         applicantProfileId, 'applicant_work_experience', 'applicant_id');
       const work = workExperience.map(
-        async (exp) => await saveApplicantWorkExperience(exp)
+        async (exp) => await saveApplicantWorkExperience(exp, applicantProfileId)
       );
     }
 
@@ -281,7 +281,7 @@ const updateApplicationProfile = async (applicant) => {
       await deleteArrayApplicantEntry(
         applicantProfileId, 'applicant_educational_background', 'applicant_id');
       const educBG = educationalBackground.map(
-        async (educ) => await saveApplicantEducationalBackground(educ)
+        async (educ) => await saveApplicantEducationalBackground(educ, applicantProfileId)
       );
     }
 
@@ -289,7 +289,7 @@ const updateApplicationProfile = async (applicant) => {
       await deleteArrayApplicantEntry(
         applicantProfileId, 'applicant_certificates', 'applicant_id');
       const certf = certifications.map(
-        async (cert) => await saveCertifications(cert)
+        async (cert) => await saveCertifications(cert, applicantProfileId)
       );
     }
 
@@ -318,11 +318,12 @@ const saveApplicantWorkExperience = async (workExperience, applicantId) => {
     details,
   } = workExperience;
 
-  const insertQuery = ``;
+  const insertQuery = `INSERT INTO ${dbSchema}.applicant_work_experience
+  (job_title, company_name, "location", job_type_id, start_month, start_year, end_month, end_year, is_current_job, details, created_at, applicant_id)
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12);`;
 
   try {
     const { rows } = await dbQuery.query(insertQuery, [
-      applicantId,
       jobTitle,
       companyName,
       location,
@@ -333,6 +334,8 @@ const saveApplicantWorkExperience = async (workExperience, applicantId) => {
       endYear,
       isCurrentJob,
       details,
+      now,
+      applicantId
     ]);
     const dbResponse = mappedWorkExperience(rows[0]);
     return dbResponse;
