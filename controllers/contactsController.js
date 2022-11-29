@@ -115,7 +115,7 @@ const list = async (req, res) => {
     
         if (!contact || contact.length == 0) {
             successMessage.data = [];
-            return res.status(status.error).send(successMessage);
+            return res.status(status.success).send(successMessage);
         }
 
         successMessage.data = contact
@@ -290,7 +290,7 @@ const list2 = async (req, res) => {
     
         if (!contact || contact.length == 0) {
             successMessage.data = [];
-            return res.status(status.error).send(successMessage);
+            return res.status(status.success).send(successMessage);
         }
 
         successMessage.data = contact
