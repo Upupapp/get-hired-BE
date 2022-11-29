@@ -95,7 +95,7 @@ const list = async (req, res) => {
 
         if (!candidate || candidate.length == 0) {
             successMessage.data = [];
-            return res.status(status.error).send(successMessage);
+            return res.status(status.success).send(successMessage);
         }
         successMessage.data = candidate
         return res.status(status.success).send(successMessage);
