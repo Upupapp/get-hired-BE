@@ -137,7 +137,7 @@ const grouplist = async (req, res) => {
     
         if (!groups || groups.length == 0) {
             successMessage.data = [];
-            return res.status(status.error).send(successMessage);
+            return res.status(status.success).send(successMessage);
         }
 
         successMessage.data = groups
@@ -244,7 +244,7 @@ const contactslist = async (req, res) => {
     
         if (!contacts || contacts.length == 0) {
             successMessage.data = [];
-            return res.status(status.error).send(successMessage);
+            return res.status(status.success).send(successMessage);
         }
 
         successMessage.data = contacts
