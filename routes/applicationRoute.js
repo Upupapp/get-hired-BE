@@ -20,7 +20,8 @@ router.delete("/application/delete", deleteApplication);
 // applicant
 router.put("/applicant/updateprofile", verifyAuth, updateProfile);
 router.post("/applicant/createprofile", verifyAuth, createProfile);
-router.get("/applicant/profile", getApplicantProfileById);
 router.get("/applicant/userprofile", verifyAuth, getUserProfile);
+
+router.get("/applicant/profile", getApplicantProfileById);
 
 export default router;

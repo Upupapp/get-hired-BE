@@ -102,7 +102,7 @@ const createApplicationProfile = async (applicant) => {
       salaryMaximum,
       rawUrl,
       isProfileReady,
-      now
+      now,
     ]);
 
     if (!rows && rows.length == 0) {
@@ -124,6 +124,18 @@ const createApplicationProfile = async (applicant) => {
       throw "Failed to update basic info";
     }
 
+    if (documents.length > 0) {
+      const output = await Promise.all(
+        documents.map(async (document, index) => {
+          return await uploadAndSaveAttachment(
+            document,
+            rows[0].applicant_profile_id,
+            index
+          );
+        })
+      );
+    }
+
     if (skills && skills.length != 0) {
       const skillList = await saveApplicantDetailsList(
         skills,
@@ -135,20 +147,26 @@ const createApplicationProfile = async (applicant) => {
 
     if (workExperience && workExperience.length != 0) {
       const work = workExperience.map(
-        async (exp) => await saveApplicantWorkExperience(exp, rows[0].applicant_profile_id)
+        async (exp) =>
+          await saveApplicantWorkExperience(exp, rows[0].applicant_profile_id)
       );
     }
 
     if (educationalBackground && educationalBackground.length != 0) {
       saveApplicantEducationalBackground;
       const educBG = educationalBackground.map(
-        async (educ) => await saveApplicantEducationalBackground(educ, rows[0].applicant_profile_id)
+        async (educ) =>
+          await saveApplicantEducationalBackground(
+            educ,
+            rows[0].applicant_profile_id
+          )
       );
     }
 
     if (certifications && certifications.length != 0) {
       const certf = certifications.map(
-        async (cert) => await saveCertifications(cert, rows[0].applicant_profile_id)
+        async (cert) =>
+          await saveCertifications(cert, rows[0].applicant_profile_id)
       );
     }
 
@@ -195,7 +213,7 @@ const updateApplicationProfile = async (applicant) => {
     certifications,
     documents,
   } = applicant;
-  
+
   try {
     if (videoCVFile && videoCVFile != "") {
       rawUrl = await uploadInStorage(
@@ -236,7 +254,7 @@ const updateApplicationProfile = async (applicant) => {
       rawUrl,
       now,
       isProfileReady,
-      userId
+      userId,
     ]);
 
     if (!rows && rows.length == 0) {
@@ -258,9 +276,24 @@ const updateApplicationProfile = async (applicant) => {
       throw "Failed to update basic info";
     }
 
+    if (documents.length > 0) {
+      const output = await Promise.all(
+        documents.map(async (document, index) => {
+          return await uploadAndSaveAttachment(
+            document,
+            applicantProfileId,
+            index
+          );
+        })
+      );
+    }
+
     if (skills && skills.length != 0) {
       await deleteArrayApplicantEntry(
-        applicantProfileId, 'applicant_skills', 'applicant_id');
+        applicantProfileId,
+        "applicant_skills",
+        "applicant_id"
+      );
       const skillList = await saveApplicantDetailsList(
         skills,
         "applicant_skills",
@@ -271,23 +304,34 @@ const updateApplicationProfile = async (applicant) => {
 
     if (workExperience && workExperience.length != 0) {
       await deleteArrayApplicantEntry(
-        applicantProfileId, 'applicant_work_experience', 'applicant_id');
+        applicantProfileId,
+        "applicant_work_experience",
+        "applicant_id"
+      );
       const work = workExperience.map(
-        async (exp) => await saveApplicantWorkExperience(exp, applicantProfileId)
+        async (exp) =>
+          await saveApplicantWorkExperience(exp, applicantProfileId)
       );
     }
 
     if (educationalBackground && educationalBackground.length != 0) {
       await deleteArrayApplicantEntry(
-        applicantProfileId, 'applicant_educational_background', 'applicant_id');
+        applicantProfileId,
+        "applicant_educational_background",
+        "applicant_id"
+      );
       const educBG = educationalBackground.map(
-        async (educ) => await saveApplicantEducationalBackground(educ, applicantProfileId)
+        async (educ) =>
+          await saveApplicantEducationalBackground(educ, applicantProfileId)
       );
     }
 
     if (certifications && certifications.length != 0) {
       await deleteArrayApplicantEntry(
-        applicantProfileId, 'applicant_certificates', 'applicant_id');
+        applicantProfileId,
+        "applicant_certificates",
+        "applicant_id"
+      );
       const certf = certifications.map(
         async (cert) => await saveCertifications(cert, applicantProfileId)
       );
@@ -335,7 +379,7 @@ const saveApplicantWorkExperience = async (workExperience, applicantId) => {
       isCurrentJob,
       details,
       now,
-      applicantId
+      applicantId,
     ]);
     const dbResponse = mappedWorkExperience(rows[0]);
     return dbResponse;
@@ -467,7 +511,11 @@ const mappedCertifications = (raw) => {
   };
 };
 
-const deleteArrayApplicantEntry = async (applicantId, tableName, columnName) => {
+const deleteArrayApplicantEntry = async (
+  applicantId,
+  tableName,
+  columnName
+) => {
   const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1;`;
   try {
     const { rows } = await dbQuery.query(deleteQuery, [applicantId]);
@@ -523,13 +571,80 @@ const appplicantProfile = async (userId) => {
   }
 };
 
+const getApplicantArrayDetails = async (applicantId, tableName) => {
+  const searchQuery = `SELECT *
+      FROM ${dbSchema}.${tableName} j
+      WHERE applicant_id = $1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [applicantId]);
+    if (rows && rows.length != 0) {
+      return [...rows];
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const appSkills = async (applicationId) => {
+  const mappedSkip = await getApplicantArrayDetails(
+    applicationId,
+    "applicant_skills"
+  );
+  return mappedSkip.map(async (raw) => raw.skills);
+};
+
+const getcert = async (applicantId) => {
+  const we = await getApplicantArrayDetails(
+    applicantId,
+    "applicant_certificates"
+  );
+
+  if (we.length > 0) {
+    return await Promise.all(
+      rows.map(async (row) => mappedCertifications(we))
+    );
+  } else {
+    return [];
+  }
+};
+const getWorkExperience = async (applicantId) => {
+  const we = await getApplicantArrayDetails(
+    applicantId,
+    "applicant_work_experience"
+  );
+  if (we.length > 0) {
+    return await Promise.all(
+      rows.map(async (row) => mappedWorkExperience(row))
+    );
+  } else {
+    return [];
+  }
+};
+
+const getEducBgDetails = async (applicantId) => {
+  const we = await getApplicantArrayDetails(
+    applicantId,
+    "applicant_educational_background"
+  );
+  if (we.length > 0) {
+    return await Promise.all(
+      rows.map(async (row) => mappedEducationalBackground(row))
+    );
+  } else {
+    return [];
+  }
+};
+
 const mappedProfile = async (raw) => {
   return {
     applicantProfileId: raw.applicant_profile_id,
     userId: raw.userId,
-    firstName: raw.firstname,
-    lastName: raw.lastname,
-    photoUrl: raw.photo_url,
+    firstName: raw.firstName || raw.firstname,
+    lastName: raw.lastName || raw.lastname,
+    photoUrl: raw.photoUrl || raw.photo_url,
     videoCVUrl: raw.video_cv_url,
     jobTitle: raw.job_title,
     rating: raw.applicant_rating,
@@ -539,7 +654,7 @@ const mappedProfile = async (raw) => {
     address: raw.address,
     city: raw.city,
     country: raw.country,
-    contactNumber: raw.cell_number,
+    contactNumber: raw.contactNumber || raw.cell_number,
     shortBio: raw.short_bio,
     servicesProvided: raw.services_provided,
     jobTypeId: raw.job_type_id,
@@ -548,12 +663,74 @@ const mappedProfile = async (raw) => {
     jobLevelName: raw.job_level_name,
     salaryMinimum: raw.salary_minimum,
     salaryMaximum: raw.salary_maximum,
-    workExperience: [],
-    educationalBackground: [],
-    certifications: [],
-    skills: [],
-    documents: [],
+    workExperience: await getWorkExperience(raw.applicant_profile_id),
+    educationalBackground: await getEducBgDetails(raw.applicant_profile_id),
+    skills: await appSkills(raw.applicant_profile_id),
+    documents: await getApplicantArrayDetails(
+      raw.applicant_profile_id,
+      "documents"
+    ),
   };
 };
 
-export { candidateListByJobId, appplicantProfile, createApplicationProfile, updateApplicationProfile };
+const uploadAndSaveAttachment = async (attachment, applicantId, index = 0) => {
+  let rawUrl = "";
+  let generalQuery = "";
+  let dbResponse = {};
+
+  const { id, file, fileUrl, size, type, filename } = attachment;
+
+  try {
+    if (file && file != "") {
+      rawUrl = await uploadInStorage("Applicant-Documents", filename, file);
+    }
+
+    if (id && file) {
+      generalQuery = `UPDATE ${dbSchema}.documents
+      SET fileurl=$1, filename=$2, "size"=$3, "type"=$4
+      WHERE applicant_id=$5 returning *;`;
+
+      const { rows } = await dbQuery.query(generalQuery, [
+        rawUrl,
+        filename,
+        size,
+        type,
+        applicantId,
+      ]);
+
+      dbResponse = rows[0];
+    } else if (file && !id) {
+      generalQuery = `INSERT INTO ${dbSchema}.documents
+      (fileurl, filename, "size", "type", applicant_id)
+      VALUES($1, $2, $3, $4, $5) returning *;`;
+
+      const { rows } = await dbQuery.query(generalQuery, [
+        rawUrl,
+        filename,
+        size,
+        type,
+        applicantId,
+      ]);
+
+      dbResponse = rows[0];
+    } else {
+      dbResponse = attachment;
+    }
+
+    if (!dbResponse) {
+      throw "Failed to save Url in DB";
+    }
+
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+export {
+  candidateListByJobId,
+  appplicantProfile,
+  createApplicationProfile,
+  updateApplicationProfile,
+  uploadAndSaveAttachment,
+};
