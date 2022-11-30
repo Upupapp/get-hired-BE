@@ -517,7 +517,7 @@ const getCompanyName= async (companyId) => {
 
 const listOfContacts = async (companyId, groupName) => {
     try {
-        const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email 
+        const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.contact_id 
                             FROM gethired.contact c
                             where not exists(select email from gethired.group_list
                             right join gethired."group" g on g.group_id = group_list.group_id

@@ -116,7 +116,7 @@ const editCandidate = async (candidate) => {
 const candidateList = async (companyId) => {
     try {
         const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.mobile_number, c.address, 
-                                c.created_at, c.job_id, j.job_title, c.status
+                                c.created_at, c.job_id, j.job_title, c.status, c.candidate_id
                             FROM gethired.candidates c
                             right join gethired.jobs j on j.job_id = c.job_id
                             where c.company_id = '${companyId}'
