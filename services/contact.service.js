@@ -298,7 +298,7 @@ let message = "";
 
 const contactList = async (companyId) => {
     try {
-        const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.mobile_number, c.address, 
+        const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.first_name, c.last_name, c.email, c.mobile_number, c.address, 
                                 c.created_at, c.company_id 
                             FROM gethired.contact c
                             where c.company_id = '${companyId}'
