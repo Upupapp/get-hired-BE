@@ -40,6 +40,8 @@ const addCandidates = async (candidate) => {
         if (!dbResponse) {
             throw Error("Failed to Add Candidate");
         }
+        const jobName = await getJobName(jobId);
+        const sendEmail = await sendEmailInvite(email, firstName, jobName);
         message = "Successfully add candidate"
         return { ...dbResponse, message };
     } catch (error) {
@@ -118,7 +120,7 @@ const candidateList = async (companyId) => {
                             FROM gethired.candidates c
                             right join gethired.jobs j on j.job_id = c.job_id
                             where c.company_id = '${companyId}'
-                            order by created_at ASC;`;
+                            order by created_at DESC;`;
 
         const { rows } = await dbQuery.query(searchQuery, []);
 
@@ -135,5 +137,27 @@ const candidateList = async (companyId) => {
     }
 };
 
+const getJobName= async (jobId) => {
+    const searchQuery = `SELECT job_title
+    FROM ${dbSchema}.jobs where job_id = $1`;
+
+    try {
+        const { rows } = await dbQuery.query(searchQuery, [jobId]);
+        return rows[0].job_title;
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
+
+const sendEmailInvite = async (email, firstName, jobName) => {
+    const userData = {
+        name: firstName,
+        job: jobName,
+        app_url: `${env.app_url}/signup`
+    };
+    send(email, "invite", userData);
+    return { msg: "Email has been sent", link: `${env.app_url}/signup` };
+};
 
 export {addCandidates, checkCandidateIfExist, editCandidate, candidateList}

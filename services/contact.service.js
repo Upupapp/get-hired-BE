@@ -1,6 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { send } from "../helpers/mailer";
 import env from "../env";
+
 const dbSchema = env.schema;
 
 const addContact = async (contact) => {
@@ -18,6 +19,7 @@ const addContact = async (contact) => {
     } = contact;
     try {
 
+        let nameOfCompany = await getCompanyName(companyId);
         const ifExistContact = await checkEmailIfExistInContact(email);
 
         if (ifExistContact) {
@@ -30,6 +32,8 @@ const addContact = async (contact) => {
                     message = "Contact aleady exist in your list and in group"
                     return { message };
                 }
+                
+                const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
                 const addToGroupList = await addInGroupList(groupId, email)
                 message = "Contact aleady exist, but has been added to group"
                 return { message };
@@ -39,11 +43,13 @@ const addContact = async (contact) => {
                     const selectQuery = `SELECT group_id FROM gethired."group" where group_name ='${groupName}';`;
                     const { rows } = await dbQuery.query(selectQuery, []);
                     const response = rows[0]
+                    const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
                     const addToGroupList = await addInGroupList(response.group_id, email)
                     message = "Contact aleady exist, but has been added to the existing group"
                     return { message };
                 }
                 const addToGroup = await addGroup(groupName, companyId)
+                const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
                 const addToGroupList = await addInGroupList(addToGroup.group_id, email)
                 message = "Contact aleady exist, but has been added to the new group"
                 return { message };
@@ -70,9 +76,11 @@ const addContact = async (contact) => {
         }
 
         if (groupName == '' && groupId == '') {
+            const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
             message = "Successfully add contact"
             return { ...dbResponse, message };
         } else if (groupName == '') {
+            const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
             const addToGroupList = await addInGroupList(groupId, email)
             message = "Successfully add contact"
             return { ...dbResponse, message };
@@ -81,12 +89,14 @@ const addContact = async (contact) => {
             if (check) {
                 const selectQuery = `SELECT group_id FROM gethired."group" where group_name ='${groupName}';`;
                 const { rows } = await dbQuery.query(selectQuery, []);
-                const response = rows[0]
+                const response = rows[0];
+                const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
                 const addToGroupList = await addInGroupList(response.group_id, email)
                 message = "Successfully add contact"
                 return { ...dbResponse, message };
             }
             const addToGroup = await addGroup(groupName, companyId)
+            const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
             const addToGroupList = await addInGroupList(addToGroup.group_id, email)
             message = "Successfully add contact"
             return { ...dbResponse, message };
@@ -291,7 +301,7 @@ const contactList = async (companyId) => {
                                 c.created_at
                             FROM gethired.contact c
                             where c.company_id = '${companyId}'
-                            order by created_at ASC;`;
+                            order by created_at DESC;`;
 
         const { rows } = await dbQuery.query(searchQuery, []);
 
@@ -490,6 +500,18 @@ const listOfGroup = async (companyId) => {
     }
 };
 
+const getCompanyName= async (companyId) => {
+    const searchQuery = `SELECT company_name
+    FROM ${dbSchema}.companies where company_id = $1`;
+
+    try {
+        const { rows } = await dbQuery.query(searchQuery, [companyId]);
+        return rows[0].company_name;
+    } catch (error) {
+        throw Error(error);
+    }
+};
+
 const listOfContacts = async (companyId, groupName) => {
     try {
         const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email 
@@ -499,7 +521,7 @@ const listOfContacts = async (companyId, groupName) => {
                             where group_list.email = c.email 
                             and g.group_name = '${groupName}') 
                             and c.company_id = '${companyId}'
-                            order by created_at ASC;`;
+                            order by created_at DESC;`;
 
         const { rows } = await dbQuery.query(searchQuery, []);
 
@@ -547,7 +569,7 @@ const groupList = async (companyId) => {
         const searchQuery = `SELECT group_id, group_name, created_date
                             FROM gethired."group"
                             where company_id = '${companyId}'
-                            order by created_date ASC;;`;
+                            order by created_date DESC;`;
 
         const { rows } = await dbQuery.query(searchQuery, []);
 
@@ -568,5 +590,15 @@ const groupList = async (companyId) => {
     }
 };
 
+const sendEmailAdded = async (email, firstName, company) => {
+    const userData = {
+        name: firstName,
+        company: company,
+        app_url: `${env.app_url}/signup`
+    };
+    send(email, "contact", userData);
+    return { msg: "Email has been sent", link: `${env.app_url}/signup` };
+};
+
 export { addContact, checkContactIfExist, editContact, contactList, checkGroupIfExist, addGroup, addInGroupList, getGroupId, checkIfExistInGroup,
-    addMultipleContact, listOfGroup, listOfContacts, editGroup, checkEmailIfExistInContact, groupList}
+    addMultipleContact, listOfGroup, listOfContacts, editGroup, checkEmailIfExistInContact, groupList, sendEmailAdded}
