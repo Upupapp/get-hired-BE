@@ -226,7 +226,7 @@ const deleteUserAccountInFirebaseById = async (uid) => {
 };
 
 const createDynamicLink = async (postTitle, postDesc, postImage, postLink) => {
-  const dynamicDomain = env.dynamicDomain;
+  const dynamicDomain = `${process.env.DYNAMIC_DOMAIN}`;
   const firebaseLink = `https://firebasedynamiclinks.googleapis.com/v1/shortLinks`;
 
   try {
