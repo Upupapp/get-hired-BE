@@ -183,6 +183,40 @@ const getUserProfile = async (req, res) => {
   }
 };
 
+const getDashboard = async(req, res) => {
+  const { uid } = req.user;
+
+  try {
+    const userDetails = await getUserProfileById(id);
+    const dbResponse = {
+      user: {
+        firstName: userDetails.firstName,
+        lastName: userDetails.lastName,
+        email: userDetails.email,
+        photoUrl: userDetails.photoUrl,
+        videoInterviews: 0,
+        activeApplications: 0
+      },
+      charts: {
+        profileView: 0,
+        jobApplication: [
+          { createdAt: null, number: 0 }
+        ],
+        interviewed: 0,
+        hired: 0,
+        archived: 0,
+        totalJobApplication: 0
+      }
+    };
+
+  successMessage.data = dbResponse;
+  return res.status(status.success).send(successMessage);
+  } catch(error) {
+  errorMessage.error = 'ERROR: ' + error;
+  return res.status(status.error).send(errorMessage);
+  }
+}
+
 export {
   createApplication,
   deleteApplication,
@@ -190,5 +224,6 @@ export {
   createProfile,
   getApplicantProfileById,
   updateProfile,
-  getUserProfile
+  getUserProfile,
+  getDashboard
 };

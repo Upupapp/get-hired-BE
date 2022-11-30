@@ -312,6 +312,8 @@ const removeCompanyUser = async (req, res) => {
 
 const getAllCompanyUser = async (req, res) => {
   const { id } = req.query;
+
+  console.log(id);
   try {
     const users = await companyUsers(id);
     successMessage.data = users;

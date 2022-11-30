@@ -277,6 +277,11 @@ const updateApplicationProfile = async (applicant) => {
     }
 
     if (documents.length > 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId,
+        "documents",
+        "applicant_id"
+      );
       const output = await Promise.all(
         documents.map(async (document, index) => {
           return await uploadAndSaveAttachment(
@@ -603,9 +608,7 @@ const getcert = async (applicantId) => {
   );
 
   if (we.length > 0) {
-    return await Promise.all(
-      rows.map(async (row) => mappedCertifications(we))
-    );
+    return await Promise.all(rows.map(async (row) => mappedCertifications(we)));
   } else {
     return [];
   }
@@ -685,41 +688,22 @@ const uploadAndSaveAttachment = async (attachment, applicantId, index = 0) => {
       rawUrl = await uploadInStorage("Applicant-Documents", filename, file);
     }
 
-    if (id && file) {
-      generalQuery = `UPDATE ${dbSchema}.documents
-      SET fileurl=$1, filename=$2, "size"=$3, "type"=$4
-      WHERE applicant_id=$5 returning *;`;
-
-      const { rows } = await dbQuery.query(generalQuery, [
-        rawUrl,
-        filename,
-        size,
-        type,
-        applicantId,
-      ]);
-
-      dbResponse = rows[0];
-    } else if (file && !id) {
-      generalQuery = `INSERT INTO ${dbSchema}.documents
+    generalQuery = `INSERT INTO ${dbSchema}.documents
       (fileurl, filename, "size", "type", applicant_id)
       VALUES($1, $2, $3, $4, $5) returning *;`;
 
-      const { rows } = await dbQuery.query(generalQuery, [
-        rawUrl,
-        filename,
-        size,
-        type,
-        applicantId,
-      ]);
+    const { rows } = await dbQuery.query(generalQuery, [
+      rawUrl,
+      filename,
+      size,
+      type,
+      applicantId,
+    ]);
 
-      dbResponse = rows[0];
-    } else {
-      dbResponse = attachment;
-    }
-
-    if (!dbResponse) {
+    if (rows && rows.length == 0) {
       throw "Failed to save Url in DB";
     }
+    dbResponse = rows[0];
 
     return dbResponse;
   } catch (error) {

@@ -51,6 +51,7 @@ const companyUsers = async (companyId) => {
     ON ce.employee_uuid = u.uid 
     WHERE ce.company_id = $1;`;
 
+  console.log(companyId);
   try {
     const { rows } = await dbQuery.query(searchQuery, [companyId]);
     if (rows && rows.length != 0) {
@@ -123,7 +124,6 @@ const getCompanyIdByUserId = async (uid) => {
     throw error;
   }
 };
-
 
 const mappedCompanyBasicInfo = async (raw) => {
   return {
