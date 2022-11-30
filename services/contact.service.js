@@ -120,7 +120,7 @@ const addMultipleContact = async (contact, groupName, groupId) => {
     } = contact;
     try {
 
-        const ifExistContact = await checkEmailIfExistInContact(email);
+        const ifExistContact = await checkEmailIfExistInContact(email, companyId);
 
         if (ifExistContact) {
             if (groupName == '' && groupId == '') {
@@ -299,7 +299,7 @@ let message = "";
 const contactList = async (companyId) => {
     try {
         const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.mobile_number, c.address, 
-                                c.created_at
+                                c.created_at, c.company_id 
                             FROM gethired.contact c
                             where c.company_id = '${companyId}'
                             order by created_at DESC;`;
@@ -313,6 +313,7 @@ const contactList = async (companyId) => {
         }
 
         const output = await Promise.all(dbResponse.map(async (complete) => {
+            console.log(complete)
             return await checkGroups(complete);
         }));
 
@@ -324,10 +325,11 @@ const contactList = async (companyId) => {
 };
 
 const checkGroups = async (complete) => {
+    
     const searchQuery = `SELECT l.group_id, g.group_name
                         FROM gethired.group_list l
                         right join gethired."group" g on g.group_id = l.group_id 
-                        where l.email = '${complete.email}';`;
+                        where l.email = '${complete.email}' and g.company_id = '${complete.company_id}';`;
     let value = "";
     try {
         const { rows } = await dbQuery.query(searchQuery, []);
