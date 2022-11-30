@@ -384,15 +384,16 @@ const editGroup = async (groupId, groupName) => {
                             SET  group_name=$1
                             WHERE group_id=$2 returning *;`;
 
-        const { rows } = await dbQuery.query(updateQuery, [firstName,
+        const { rows } = await dbQuery.query(updateQuery, [
             groupName,
             groupId
         ]);
 
-        const dbResponse = rows[0];
-        if (!dbResponse) {
+        if (!rows[0]) {
             throw Error("Failed to Update Group List");
         }
+
+        const dbResponse = rows[0];
 
         return dbResponse;
     } catch (error) {

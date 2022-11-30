@@ -1,15 +1,22 @@
 import firebase from "firebase/compat";
 import { firebaseConfig } from "../middleware/firebaseApp";
 
-const uploadInStorage = (folder, fileName, uploadedFile) =>
+const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
   new Promise((resolve, reject) => {
     console.log("Uploading image ...");
-
-    const img = uploadedFile.slice(uploadedFile.indexOf(",") + 1);
-    const imgType = uploadedFile.slice(
+    let img = "";
+    let imgType = uploadedFile.slice(
       uploadedFile.indexOf(":") + 1,
       uploadedFile.indexOf(";")
     );
+
+    if (withCodecs == 0) {
+      img = uploadedFile.slice(uploadedFile.indexOf(",") + 1);
+    } else {
+      let result = uploadedFile.substring(uploadedFile.indexOf(";") + 1);
+      let result2 = result.substring(result.indexOf(";") + 1);
+      img = result2.slice(result2.indexOf(",") + 1);
+    }
 
     const app = firebase.initializeApp(firebaseConfig);
 

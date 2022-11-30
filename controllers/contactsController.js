@@ -194,6 +194,7 @@ const createGroup = async (req, res) => {
 };
 
 const updateGroup = async (req, res) => {
+    let thisIsContacts = [];
     const {groupId, groupName, emails} = req.body;
     try {
         const groupUpdate = await editGroup(groupId, groupName)
@@ -202,6 +203,7 @@ const updateGroup = async (req, res) => {
             errorMessage.error = 'Failed to Update Group';
             return res.status(status.error).send(errorMessage);
         }
+
         if (emails.length > 0) {
 
             let multiple = new Promise((resolve, reject) => {
@@ -226,6 +228,8 @@ const updateGroup = async (req, res) => {
                 return res.status(status.success).send(successMessage);
             });
 
+        } else {
+            console.log('Empty email object');
         }
     }
     catch (error) {

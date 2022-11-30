@@ -219,7 +219,7 @@ const updateApplicationProfile = async (applicant) => {
       rawUrl = await uploadInStorage(
         "Applicant-CVs",
         `${applicantProfileId}-CV`,
-        videoCVFile
+        videoCVFile, 1
       );
     } else {
       rawUrl = videoCVUrl;
@@ -642,7 +642,6 @@ const getEducBgDetails = async (applicantId) => {
 };
 
 const mappedProfile = async (raw) => {
-  console.log(raw);
   return {
     applicantProfileId: raw.applicant_profile_id,
     userId: raw.userId,
