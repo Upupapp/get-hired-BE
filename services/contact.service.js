@@ -20,7 +20,7 @@ const addContact = async (contact) => {
     try {
 
         let nameOfCompany = await getCompanyName(companyId);
-        const ifExistContact = await checkEmailIfExistInContact(email);
+        const ifExistContact = await checkEmailIfExistInContact(email, companyId);
 
         if (ifExistContact) {
             if (groupName == '' && groupId == '') {
@@ -199,16 +199,17 @@ const addMultipleContact = async (contact, groupName, groupId) => {
     }
 };
 
-const checkEmailIfExistInContact = async (email) => {
+const checkEmailIfExistInContact = async (email, companyId) => {
 
     // TODO (Filter by agency)
     try {
 
         const searchQuery = `SELECT email
             FROM ${dbSchema}.contact
-            where contact.email = $1;`;
+            where contact.email = $1 and contact.company_id = $2;`;
         const { rows } = await dbQuery.query(searchQuery, [
-            email
+            email,
+            companyId
         ]);
 
         if (!rows || rows.length === 0) {
