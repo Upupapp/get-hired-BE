@@ -121,8 +121,7 @@ const createJobs = async (req, res) => {
       }
     }
 
-    const dbResponse = mappedJob(rows[0]);
-
+    const dbResponse = await mappedJob(rows[0]);
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -402,7 +401,6 @@ const getBasicJobList = async (companyId, statusId) => {
       filteredStatus = `and j.job_status_id != 1 and j.job_status_id != 2`;
       break;
     default:
-      console.log(statusId);
       filteredStatus = `and j.job_status_id = ${statusId}`;
       break;
   }

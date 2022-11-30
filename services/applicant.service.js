@@ -602,13 +602,13 @@ const appSkills = async (applicationId) => {
 };
 
 const getcert = async (applicantId) => {
-  const we = await getApplicantArrayDetails(
+  const certs = await getApplicantArrayDetails(
     applicantId,
     "applicant_certificates"
   );
 
-  if (we.length > 0) {
-    return await Promise.all(rows.map(async (row) => mappedCertifications(we)));
+  if (certs.length > 0) {
+    return await Promise.all(certs.map(async (cert) => mappedCertifications(cert)));
   } else {
     return [];
   }
@@ -620,7 +620,7 @@ const getWorkExperience = async (applicantId) => {
   );
   if (we.length > 0) {
     return await Promise.all(
-      rows.map(async (row) => mappedWorkExperience(row))
+      we.map(async (w) => mappedWorkExperience(w))
     );
   } else {
     return [];
@@ -628,13 +628,13 @@ const getWorkExperience = async (applicantId) => {
 };
 
 const getEducBgDetails = async (applicantId) => {
-  const we = await getApplicantArrayDetails(
+  const educBs = await getApplicantArrayDetails(
     applicantId,
     "applicant_educational_background"
   );
-  if (we.length > 0) {
+  if (educBs.length > 0) {
     return await Promise.all(
-      rows.map(async (row) => mappedEducationalBackground(row))
+      educBs.map(async (educB) => mappedEducationalBackground(educB))
     );
   } else {
     return [];
@@ -642,12 +642,13 @@ const getEducBgDetails = async (applicantId) => {
 };
 
 const mappedProfile = async (raw) => {
+  console.log(raw);
   return {
     applicantProfileId: raw.applicant_profile_id,
     userId: raw.userId,
-    firstName: raw.firstName || raw.firstname,
-    lastName: raw.lastName || raw.lastname,
-    photoUrl: raw.photoUrl || raw.photo_url,
+    firstName: raw.firstName ? raw.firstName: raw.firstname,
+    lastName: raw.lastName ? raw.lastName: raw.lastname,
+    photoUrl: raw.photoUrl ? raw.photoUrl: raw.photo_url,
     videoCVUrl: raw.video_cv_url,
     jobTitle: raw.job_title,
     rating: raw.applicant_rating,
@@ -657,7 +658,7 @@ const mappedProfile = async (raw) => {
     address: raw.address,
     city: raw.city,
     country: raw.country,
-    contactNumber: raw.contactNumber || raw.cell_number,
+    contactNumber: raw.contactNumber ? raw.contactNumber : raw.cell_number,
     shortBio: raw.short_bio,
     servicesProvided: raw.services_provided,
     jobTypeId: raw.job_type_id,

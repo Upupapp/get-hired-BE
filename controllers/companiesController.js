@@ -150,7 +150,6 @@ const getUserCompany = async (id) => {
 const getSpecificCompany = async (req, res) => {
   const { id } = req.query;
   let company = {};
-  console.log(id);
 
   try {
     if (!id || id == "") {
@@ -291,7 +290,7 @@ const mappedCompany = (raw) => {
     createdAt: raw.created_at,
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
-    companyIndustryName: raw.company_industry_name
+    companyIndustryName: raw.company_industry_name,
   };
 };
 
@@ -313,7 +312,6 @@ const removeCompanyUser = async (req, res) => {
 const getAllCompanyUser = async (req, res) => {
   const { id } = req.query;
 
-  console.log(id);
   try {
     const users = await companyUsers(id);
     successMessage.data = users;
@@ -325,14 +323,39 @@ const getAllCompanyUser = async (req, res) => {
 };
 
 const addCompanyUser = async (req, res) => {
-  const { email, companyId } = req.body;
+  const { emails, companyId } = req.body;
   const { uid } = req.user;
 
+  try {
+    const userStatus = await Promise.all(
+      await emails.map(async (item) => {
+        const adding = await addCompanyUserByEmail(item.email, companyId, uid);
+        return {
+          email: item.email, status: adding.status, msg: adding.msg
+        }
+      })
+    );
+
+    successMessage.data = {
+      companyId,
+      emails: userStatus
+    }
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const addCompanyUserByEmail = async (email, companyId, uid) => {
   try {
     const userInFirebase = await checkUserIfExistInFirebase(email);
 
     if (userInFirebase && userInFirebase.length !== 0) {
-      throw "Email already a user.";
+      return {
+        msg: "Email already a user.",
+        status: 'failed'
+      };
     }
 
     const password = `p@ssw0rd1111`;
@@ -359,9 +382,12 @@ const addCompanyUser = async (req, res) => {
     const dbRegister = await registerUserInDB(dbData);
 
     if (!userData || !dbRegister) {
-      errorMessage.error = "Operation not Successful.";
-      return res.status(status.error).send(errorMessage);
+      return {
+        msg: "Failed to Create credentials",
+        status: 'failed'
+      };
     }
+
     const isVerified = await getVerification(email, user.firstName);
 
     const assigned = await assignEmployeeToCompany(
@@ -371,7 +397,10 @@ const addCompanyUser = async (req, res) => {
     );
 
     if (!assigned) {
-      throw "Failed to assign User to a Company";
+      return {
+        msg: "Failed to assign User to a Company",
+        status: 'failed'
+      };
     }
 
     const companyName = await getCompanyNameByCompanyId(companyId);
@@ -388,10 +417,15 @@ const addCompanyUser = async (req, res) => {
       ...assigned,
       ...dbRegister,
     };
-    return res.status(status.success).send(successMessage);
+    return {
+      msg: 'Successfully added',
+      status: 'success'
+    };
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
+    return {
+      msg: `Failed: ${error}`,
+      status: 'failed'
+    };
   }
 };
 
