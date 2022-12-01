@@ -260,13 +260,20 @@ const graph = async (companyId) => {
                       left join gethired.jobs j on j.job_id = a.job_id
                       where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
                       group by date_part('month', a.updated_at), date_part('day', a.updated_at)`;
+  const selectQuery = `SELECT date_part('month', l.date_of_activity) as month, date_part('day', l.date_of_activity) as day, count(l.activity_id)
+                      FROM gethired.logs l
+                      left join gethired.jobs j on j.job_id = l.activity_id 
+                      where j.company_id = $1 and l.activity_name = 'Job View'
+                      group by date_part('month', l.date_of_activity), date_part('day', l.date_of_activity)`
 
   try {
     const applicants = await dbQuery.query(searchQuery, [companyId]);
+    const jobView = await dbQuery.query(selectQuery, [companyId]);
     console.log(applicants.rows)
 
     const result = {
         graph: applicants.rows ? applicants.rows : 0,
+        jobViews: jobView.rows ? jobView.rows : 0
     }
 
     return result;

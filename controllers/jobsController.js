@@ -16,6 +16,7 @@ import {
 } from "../services/job.service";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
+import { insertLogs } from "../services/user.service";
 
 const dbSchema = env.schema;
 const now = Date.now();
@@ -470,6 +471,7 @@ const getJobDetails = async (req, res) => {
 
   try {
     const details = await jobDetails(id);
+    const click = await insertLogs("Job View", "", id)
     successMessage.data = details;
     return res.status(status.success).send(successMessage);
   } catch (error) {

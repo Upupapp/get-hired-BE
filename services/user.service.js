@@ -3,12 +3,12 @@ import env from "../env";
 
 const dbSchema = env.schema;
 
-const insertLogs = async (activity, userId) => {
+const insertLogs = async (activity, userId, id) => {
   const insertQuery = `INSERT INTO ${dbSchema}.logs
-    (activity_name, user_id)
-    VALUES($1, $2) returning *;`;
+    (activity_name, user_id, activity_id)
+    VALUES($1, $2, $3) returning *;`;
   try {
-    const { rows } = await dbQuery.query(insertQuery, [activity, userId]);
+    const { rows } = await dbQuery.query(insertQuery, [activity, userId, id]);
     const dbResponse = rows[0];
     return dbResponse;
   } catch (error) {
