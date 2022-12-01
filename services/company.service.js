@@ -159,17 +159,20 @@ const mappedCompany = (raw) => {
 const charts = async (companyId) => {
   const searchQuery = `SELECT date_part('month', updated_at) as month, count(job_id) as activejobs
                       FROM gethired.jobs
-                      where job_status_id = '2' and company_id  = $1
+                      where job_status_id = '2' and company_id  = $1 
+                      and date_part('month', CURRENT_DATE) = date_part('month', updated_at)
                       group by date_part('month', updated_at);`;
   const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_applicant_id) as applicant
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
                       where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2'
+                      and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
   const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_applicant_id) as interviews
                     FROM gethired.job_applicants a
                     left join gethired.jobs j on j.job_id = a.job_id
-                    where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4' 
+                    where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4'
+                    and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at) 
                     group by date_part('month', a.updated_at);`;
 
   try {
@@ -191,48 +194,111 @@ const charts = async (companyId) => {
         : 0,
     };
 
-    return result;
+    return result
   } catch (error) {
     throw Error("Operation Failed" + error);
   }
 };
 
-// const statistic = async (companyId) => {
+const statistic = async (companyId) => {
 
-//   const searchQuery = `SELECT date_part('month', updated_at) as month, count(job_id) as activejobs
-//                       FROM gethired.jobs
-//                       where job_status_id = '2' and company_id  = $1
-//                       group by date_part('month', updated_at);`;
-//   const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_applicant_id) as applicant
-//                       FROM gethired.job_applicants a
-//                       left join gethired.jobs j on j.job_id = a.job_id
-//                       where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2'
-//                       group by date_part('month', a.updated_at);`;
-//   const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_applicant_id) as interviews
-//                     FROM gethired.job_applicants a
-//                     left join gethired.jobs j on j.job_id = a.job_id
-//                     where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4'
-//                     group by date_part('month', a.updated_at);`;
+  const searchQuery = `SELECT count(contact_id) as contact
+                      FROM gethired.contact
+                      where company_id = $1;`;
+  const searchQuery2 = `select count(distinct a.job_applicant_id) as applicant
+                        FROM gethired.job_applicants a
+                        left join gethired.jobs j on j.job_id = a.job_id
+                        right join gethired.users u on u.uid = a.candidate_id 
+                        right join gethired.contact c on c.email = u.email 
+                        where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
+                        group by a.job_applicant_id, c.email`;
 
-//   try {
-//     var today = new Date();
-//     var mm = today.getMonth()+1;
-//     const activeJobs = await dbQuery.query(searchQuery, [companyId]);
-//     const applicants = await dbQuery.query(searchQuery2, [companyId]);
-//     console.log(applicants.rows[0])
-//     const interview = await dbQuery.query(searchQuery3, [companyId]);
+  try {
+    const contacts = await dbQuery.query(searchQuery, [companyId]);
+    const applicants = await dbQuery.query(searchQuery2, [companyId]);
 
-//     const result = {
-//         contactActiveJobs: activeJobs.rows[0] ? parseInt(activeJobs.rows[0].activejobs) : 0 ,
-//         applicantsActiveJobs: applicants.rows[0] ? parseInt(applicants.rows[0].applicant) : 0,
-//     }
+    const applicantPercentage = parseInt(applicants.rows[0].applicant)/parseInt(contacts.rows[0].contact) * 100
+    const contactPercentage = 100 - applicantPercentage 
+    console.log(contactPercentage)
 
-//     return result;
+    const result = {
+        contacts: contactPercentage ? contactPercentage.toPrecision(3) : 0,
+        applicants: applicantPercentage ? applicantPercentage.toPrecision(3) : 0,
+    }
 
-//   } catch (error) {
-//     throw Error("Operation Failed" + error);
-//   };
-// };
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
+
+const totalContacts = async (companyId) => {
+
+  const searchQuery = `SELECT count(contact_id) as contact
+                      FROM gethired.contact
+                      where company_id = $1;`;
+
+  try {
+    const contacts = await dbQuery.query(searchQuery, [companyId]);
+
+    const result = {
+        totalContacts: contacts.rows[0] ? parseInt(contacts.rows[0].contact) : 0,
+    }
+
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
+
+const graph = async (companyId) => {
+
+  const searchQuery = `select date_part('month', a.updated_at) as month, date_part('day', a.updated_at) as day, count(distinct a.job_applicant_id)
+                      FROM gethired.job_applicants a
+                      left join gethired.jobs j on j.job_id = a.job_id
+                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
+                      group by date_part('month', a.updated_at), date_part('day', a.updated_at)`;
+
+  try {
+    const applicants = await dbQuery.query(searchQuery, [companyId]);
+    console.log(applicants.rows)
+
+    const result = {
+        graph: applicants.rows ? applicants.rows : 0,
+    }
+
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
+
+const cities = async (companyId) => {
+
+  const searchQuery = `select u.city, count(a.job_applicant_id)
+                      FROM gethired.job_applicants a
+                      left join gethired.jobs j on j.job_id = a.job_id
+                      left join gethired.users u on u.uid = a.candidate_id 
+                      where j.company_id = $1 and city notnull 
+                      group by u.city
+                      order by count(a.job_applicant_id) desc limit 5`;
+
+  try {
+    const city = await dbQuery.query(searchQuery, [companyId]);
+
+    const result = {
+        cities: city.rows ? city.rows : 0,
+    }
+
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
 
 export {
   companyList,
@@ -242,4 +308,8 @@ export {
   getCompanyNameByCompanyId,
   getCompanyIdByUserId,
   charts,
+  statistic,
+  totalContacts,
+  graph,
+  cities
 };

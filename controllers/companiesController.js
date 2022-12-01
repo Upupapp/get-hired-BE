@@ -26,6 +26,10 @@ import {
   getCompanyNameByCompanyId,
   charts,
   getCompanyIdByUserId,
+  statistic,
+  totalContacts,
+  graph,
+  cities,
 } from "../services/company.service";
 
 import dbQuery from "../db/dbQuery";
@@ -232,15 +236,17 @@ const getDashboard = async (req, res) => {
   try {
     const userCompany = await getUserCompany(uid);
     const chart = await charts(userCompany.companyId);
+    const statistics = await statistic(userCompany.companyId);
+    const totalContact = await totalContacts(userCompany.companyId);
+    const graphList = await graph(userCompany.companyId);
+    const cityList = await cities(userCompany.companyId);
     const dbResponse = {
       company: userCompany,
       charts: chart,
-      statistic: {
-        totalHired: 0,
-        totalIncrease: 0,
-        interviewAppointments: 0,
-      },
-      totalContacts: 0,
+      statistic: statistics,
+      ...graphList,
+      ...cityList,
+      totalContacts: totalContact,
     };
 
     successMessage.data = dbResponse;
