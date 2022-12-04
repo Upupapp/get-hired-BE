@@ -400,6 +400,7 @@ const mappedWorkExperience = (raw) => {
     companyName: raw.company_name,
     location: raw.location,
     jobTypeId: raw.job_type_id,
+    jobTypeName: raw.job_type_name,
     startMonth: raw.start_month,
     startYear: raw.start_year,
     endMonth: raw.end_month,
@@ -576,9 +577,11 @@ const appplicantProfile = async (userId) => {
   }
 };
 
-const getApplicantArrayDetails = async (applicantId, tableName) => {
+const getApplicantArrayDetails = async (applicantId, tableName, joinQuery = "") => {
+  let join = `left join `
   const searchQuery = `SELECT *
-      FROM ${dbSchema}.${tableName} j
+      FROM ${dbSchema}.${tableName} t
+      ${joinQuery}
       WHERE applicant_id = $1;`;
 
   try {
@@ -616,7 +619,8 @@ const getcert = async (applicantId) => {
 const getWorkExperience = async (applicantId) => {
   const we = await getApplicantArrayDetails(
     applicantId,
-    "applicant_work_experience"
+    "applicant_work_experience",
+    `left join ${dbSchema}.job_type jt on jt.job_type_id = t.job_type_id`
   );
   if (we.length > 0) {
     return await Promise.all(
