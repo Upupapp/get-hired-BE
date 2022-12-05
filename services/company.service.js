@@ -162,13 +162,13 @@ const charts = async (companyId) => {
                       where job_status_id = '2' and company_id  = $1 
                       and date_part('month', CURRENT_DATE) = date_part('month', updated_at)
                       group by date_part('month', updated_at);`;
-  const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_applicant_id) as applicant
+  const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
                       where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2'
                       and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
-  const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_applicant_id) as interviews
+  const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as interviews
                     FROM gethired.job_applicants a
                     left join gethired.jobs j on j.job_id = a.job_id
                     where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4'
@@ -205,13 +205,13 @@ const statistic = async (companyId) => {
   const searchQuery = `SELECT count(contact_id) as contact
                       FROM gethired.contact
                       where company_id = $1;`;
-  const searchQuery2 = `select count(distinct a.job_applicant_id) as applicant
+  const searchQuery2 = `select count(distinct a.job_application_id) as applicant
                         FROM gethired.job_applicants a
                         left join gethired.jobs j on j.job_id = a.job_id
                         right join gethired.users u on u.uid = a.candidate_id 
                         right join gethired.contact c on c.email = u.email 
                         where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
-                        group by a.job_applicant_id, c.email`;
+                        group by a.job_application_id, c.email`;
 
   try {
     const contacts = await dbQuery.query(searchQuery, [companyId]);
@@ -255,7 +255,7 @@ const totalContacts = async (companyId) => {
 
 const graph = async (companyId) => {
 
-  const searchQuery = `select date_part('month', a.updated_at) as month, date_part('day', a.updated_at) as day, count(distinct a.job_applicant_id)
+  const searchQuery = `select date_part('month', a.updated_at) as month, date_part('day', a.updated_at) as day, count(distinct a.job_application_id)
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
                       where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
@@ -285,13 +285,13 @@ const graph = async (companyId) => {
 
 const cities = async (companyId) => {
 
-  const searchQuery = `select u.city, count(a.job_applicant_id)
+  const searchQuery = `select u.city, count(a.job_application_id)
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
                       left join gethired.users u on u.uid = a.candidate_id 
                       where j.company_id = $1 and city notnull 
                       group by u.city
-                      order by count(a.job_applicant_id) desc limit 5`;
+                      order by count(a.job_application_id) desc limit 5`;
 
   try {
     const city = await dbQuery.query(searchQuery, [companyId]);

@@ -10,7 +10,7 @@ const dbSchema = env.schema;
 const now = new Date();
 
 const candidateListByJobId = async (jobId) => {
-  const searchQuery = `SELECT job_applicant_id, job_id, date_applied, updated_at, candidate_id, application_status_id, is_archived,
+  const searchQuery = `SELECT job_application_id, job_id, date_applied, updated_at, candidate_id, application_status_id, is_archived,
   u.firstname, u.lastname,
     FROM ${dbSchema}.job_applicants j 
     LEFT JOIN user u
@@ -130,6 +130,8 @@ const createApplicationProfile = async (applicant) => {
           return await uploadAndSaveAttachment(
             document,
             rows[0].applicant_profile_id,
+            "documents",
+            "application_id",
             index
           );
         })
@@ -287,6 +289,8 @@ const updateApplicationProfile = async (applicant) => {
           return await uploadAndSaveAttachment(
             document,
             applicantProfileId,
+            "documents",
+            "application_id",
             index
           );
         })
@@ -680,7 +684,7 @@ const mappedProfile = async (raw) => {
   };
 };
 
-const uploadAndSaveAttachment = async (attachment, applicantId, index = 0) => {
+const uploadAndSaveAttachment = async (attachment, applicantId, tableName, column, index = 0) => {
   let rawUrl = "";
   let generalQuery = "";
   let dbResponse = {};
@@ -692,8 +696,8 @@ const uploadAndSaveAttachment = async (attachment, applicantId, index = 0) => {
       rawUrl = await uploadInStorage("Applicant-Documents", filename, file);
     }
 
-    generalQuery = `INSERT INTO ${dbSchema}.documents
-      (fileurl, filename, "size", "type", applicant_id)
+    generalQuery = `INSERT INTO ${dbSchema}.${tableName}
+      (fileurl, filename, "size", "type", ${column})
       VALUES($1, $2, $3, $4, $5) returning *;`;
 
     const { rows } = await dbQuery.query(generalQuery, [
