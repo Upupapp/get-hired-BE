@@ -8,6 +8,9 @@ import {
   updateProfile,
   getUserProfile
 } from "../controllers/applicantsController";
+import {
+  submitApplication
+} from "../controllers/applicationController";
 import { getDashboard } from "../controllers/applicantsController";
 import verifyAuth from "../middleware/verifyAuth";
 
@@ -17,7 +20,7 @@ const router = express.Router();
 router.post("/application/create", createApplication);
 router.put("/application/updateJobs", updateApplication);
 router.delete("/application/delete", deleteApplication);
-
+router.post("/application/apply", submitApplication)
 // applicant
 router.put("/applicant/updateprofile", verifyAuth, updateProfile);
 router.post("/applicant/createprofile", verifyAuth, createProfile);

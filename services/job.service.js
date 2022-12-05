@@ -324,6 +324,7 @@ const mappedInterviewQuestions = (raw) => {
   return {
     question: raw.template_question,
     answerDuration: raw.template_answer_duration,
+    questionId: raw.template_question_id
   };
 };
 
