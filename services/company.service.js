@@ -216,8 +216,8 @@ const statistic = async (companyId) => {
   try {
     const contacts = await dbQuery.query(searchQuery, [companyId]);
     const applicants = await dbQuery.query(searchQuery2, [companyId]);
-
-    const applicantPercentage = parseInt(applicants.rows[0].applicant)/parseInt(contacts.rows[0].contact) * 100
+    const applicantPercentage = parseInt( applicants.rows[0]
+      ? applicants.rows[0].applicant : 0)/parseInt(contacts.rows[0].contact) * 100
     const contactPercentage = 100 - applicantPercentage 
     console.log(contactPercentage)
 
