@@ -11,8 +11,8 @@ const submitApplication = async (req, res) => {
     coverLetter,
     resume,
     governmentFiles,
-    applicationStatusId: 2,
-    interviewAnswers
+    interviewAnswers,
+    applicationStatusId: interviewAnswers.length > 0 ? 3:2
   };
   
   try {

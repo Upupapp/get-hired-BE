@@ -27,6 +27,6 @@ router.post("/applicant/createprofile", verifyAuth, createProfile);
 router.get("/applicant/userprofile", verifyAuth, getUserProfile);
 router.get("/applicant/userprofile", verifyAuth, getDashboard);
 
-router.get("/applicant/profile", getApplicantProfileById);
+router.get("/applicant/profile", verifyAuth, getApplicantProfileById);
 
 export default router;
