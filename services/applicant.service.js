@@ -156,7 +156,6 @@ const createApplicationProfile = async (applicant) => {
     }
 
     if (educationalBackground && educationalBackground.length != 0) {
-      saveApplicantEducationalBackground;
       const educBG = educationalBackground.map(
         async (educ) =>
           await saveApplicantEducationalBackground(
@@ -299,7 +298,6 @@ const updateApplicationProfile = async (applicant) => {
       );
     }
 
-    console.log(applicantProfileId);
     if (skills && skills.length != 0) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -432,18 +430,18 @@ const saveApplicantEducationalBackground = async (
     startYear,
     endMonth,
     endYear,
+    levelOfEducation
   } = educBackground;
 
   const insertQuery = `INSERT INTO ${dbSchema}.applicant_educational_background
-  (applicant_id, created_at, educ_level_id, educ_level_name, field_of_study, school, school_address, start_month, start_year, end_month, end_year)
-  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *;`;
+  (applicant_id, created_at, educ_level_name, field_of_study, school, school_address, start_month, start_year, end_month, end_year)
+  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning *;`;
 
   try {
     const { rows } = await dbQuery.query(insertQuery, [
       applicantId,
       now,
-      educLevelId,
-      educLevelName,
+      levelOfEducation,
       fieldOfStudy,
       school,
       schoolAddress,
@@ -467,7 +465,7 @@ const mappedEducationalBackground = (raw) => {
     endMonth: raw.end_month,
     endYear: raw.end_year,
     createdAt: raw.created_at,
-    educLevelId: raw.educ_level_id,
+    levelOfEducation: raw.educ_level_name,
     educLevelName: raw.educ_level_name,
     fieldOfStudy: raw.field_of_study,
     school: raw.school,
