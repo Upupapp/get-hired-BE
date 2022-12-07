@@ -541,7 +541,16 @@ const listOfContacts = async (companyId, groupName) => {
                             where group_list.email = c.email 
                             and g.group_name = '${groupName}') 
                             and c.company_id = '${companyId}'
-                            order by created_at DESC;`;
+                            union
+                            SELECT concat(c.firstname , ' ', c.lastname) as full_name, c.email, c.uid  
+                            FROM gethired.job_applicants j
+                            left join gethired.users c on c.uid = j.candidate_id
+                            left join gethired.jobs j2 on j2.job_id = j.job_id  
+                            where not exists(select email from gethired.group_list
+                            right join gethired."group" g on g.group_id = group_list.group_id
+                            where group_list.email = c.email 
+                            and g.group_name = '${groupName}') 
+                            and j2.company_id = '${companyId}'`;
 
         const { rows } = await dbQuery.query(searchQuery, []);
 
