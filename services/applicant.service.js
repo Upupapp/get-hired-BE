@@ -292,7 +292,7 @@ const updateApplicationProfile = async (applicant) => {
             document,
             applicantProfileId,
             "documents",
-            "application_id",
+            "applicant_id",
             index
           );
         })
