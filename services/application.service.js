@@ -235,17 +235,17 @@ const charts = async (uid) => {
 
 const graph = async (uid) => {
 
-  const searchQuery = `select date_part('month', a.updated_at) as month, date_part('day', a.updated_at) as day, count(distinct a.job_application_id)
+  const searchQuery = `select DATE(a.updated_at), count(distinct a.job_application_id)
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
                       where a.candidate_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                       OR a.application_status_id = '5' OR a.application_status_id = '6')
-                      group by date_part('month', a.updated_at), date_part('day', a.updated_at)`;
-  const selectQuery = `SELECT date_part('month', l.date_of_activity) as month, date_part('day', l.date_of_activity) as day, count(l.activity_id)
+                      group by DATE(a.updated_at)`;
+  const selectQuery = `SELECT DATE(l.date_of_activity), count(l.activity_id)
                       FROM gethired.logs l
                       left join gethired.jobs j on j.job_id = l.activity_id 
                       where l.activity_id = $1 and l.activity_name = 'Profile View'
-                      group by date_part('month', l.date_of_activity), date_part('day', l.date_of_activity)`;
+                      group by DATE(l.date_of_activity)`;
 
   try {
     const applicants = await dbQuery.query(searchQuery, [uid]);
