@@ -14,6 +14,7 @@ import {
   mappedJob,
   jobBasicDetails,
   jobApplicants,
+  applicationOfApplicant,
 } from "../services/job.service";
 
 import { listOfJobAppliedByApplicant } from "../services/applicant.service";
@@ -130,6 +131,20 @@ const createJobs = async (req, res) => {
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.data = "Operation was not successful. Error: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getJobApplicantDetails = async (req, res) => {
+  const { jobId, id } = req.query;
+
+  try {
+    const applicants = await applicationOfApplicant(jobId, id);
+
+    successMessage.data = applicants;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -561,4 +576,5 @@ export {
   getJobDetails,
   getJobShareableLink,
   getAllApplicantOfJob,
+  getJobApplicantDetails
 };

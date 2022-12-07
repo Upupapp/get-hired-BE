@@ -313,7 +313,6 @@ const contactList = async (companyId) => {
         }
 
         const output = await Promise.all(dbResponse.map(async (complete) => {
-            console.log(complete)
             return await checkGroups(complete);
         }));
 
@@ -340,7 +339,6 @@ const checkGroups = async (complete) => {
             throw Error(errorMessage);
         };
 
-        console.log(complete);
         const usersList = {
             ...complete,
             groups: dbResponse

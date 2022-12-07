@@ -248,7 +248,6 @@ const graph = async (uid) => {
   try {
     const applicants = await dbQuery.query(searchQuery, [uid]);
     const jobView = await dbQuery.query(selectQuery, [uid]);
-    console.log(applicants.rows)
 
     const result = {
         jobApplication: applicants.rows ? applicants.rows : 0,
@@ -276,11 +275,10 @@ const statistic = async (uid) => {
   try {
     const application = await dbQuery.query(searchQuery, [uid]);
     const interviews = await dbQuery.query(searchQuery2, [uid]);
-    console.log(interviews.rows[0].interviews, application.rows[0].applicant)
+
     const interviewsPercentage = parseInt( interviews.rows[0]
       ? interviews.rows[0].interviews : 0)/parseInt(application.rows[0].applicant) * 100
     const applicationPercentage = 100 - interviewsPercentage 
-    console.log(applicationPercentage)
 
     const result = {
       application: applicationPercentage ? applicationPercentage.toPrecision(3) : 0,

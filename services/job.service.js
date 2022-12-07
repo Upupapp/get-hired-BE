@@ -1,6 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import genericInsert from "../helpers/genericInsert";
+import { appplicantProfile } from "./applicant.service";
 
 const dbSchema = env.schema;
 
@@ -352,10 +353,98 @@ const jobApplicants = async (jobId) => {
   }
 };
 
+const applicationOfApplicant = async (jobId, id) => {
+  let docCoveredLetter = [];
+  let docResume = [];
+  let docGovFiles = [];
+
+  try {
+    const profile = await appplicantProfile(id);
+    const job = await jobDetails(jobId);
+
+    if (profile) {
+      docCoveredLetter = await getDocs(
+        profile.applicantProfileId,
+        "applicant_covered_letter"
+      );
+      docResume = await getDocs(profile.applicantProfileId, "applicant_resume");
+      docGovFiles = await getDocs(
+        profile.applicantProfileId,
+        "applicant_government_files"
+      );
+    }
+
+    const dbResponse = {
+      profile,
+      interviewQuestions: job.interviewQuestions,
+      profileDocs: {
+        coverLetter: [docCoveredLetter],
+        resume: [docResume],
+        governmentFiles: [docGovFiles],
+      },
+      answers: await getInterviewAnswers(profile.applicantProfileId, jobId)
+    };
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getInterviewAnswers = async (applicantId, jobId) => {
+  const searchQuery = `SELECT 
+  interview_answer_id, question_id, answer_url, created_at, job_id, applicant_id
+  FROM ${dbSchema}.interview_answers WHERE applicant_id = $1 and job_id = $2;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [applicantId, jobId]);
+
+    if (!rows || rows.length == 0) {
+      return [];
+    }
+
+    const dbResponse = rows.map((row) => {
+      return {
+        questionId: row.question_id,
+        answerUrl: row.answer_url,
+        createdAt: row.created_at,
+        jobId: row.job_id,
+        applicantId: row.applicant_id,
+      };
+    });
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getDocs = async (applicantId, tableName) => {
+  const searchQuery = `SELECT id, fileurl, filename, "size", "type", applicant_id, job_id, created_at
+  FROM ${dbSchema}.${tableName} WHERE applicant_id = $1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [applicantId]);
+
+    if (!rows || rows.length == 0) {
+      return [];
+    }
+
+    const dbResponse = {
+      ...rows[0],
+      applicantId: rows[0].applicant_id,
+      jobId: rows[0].job_id,
+      createdAt: rows[0].created_at,
+    };
+
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const mappedBasicApplicantDetails = (raw) => {
   return {
     applicantProfileId: raw.applicant_profile_id,
-    userId: raw.userId,
+    userId: raw.user_id,
     firstName: raw.firstName ? raw.firstName : raw.firstname,
     lastName: raw.lastName ? raw.lastName : raw.lastname,
     photoUrl: raw.photoUrl ? raw.photoUrl : raw.photo_url,
@@ -372,6 +461,7 @@ const mappedBasicApplicantDetails = (raw) => {
     workSetupName: raw.work_setup_name,
     jobTypeId: raw.job_type_id,
     jobTypeName: raw.job_type_name,
+    jobTitle: raw.job_title,
   };
 };
 
@@ -477,4 +567,5 @@ export {
   mappedJob,
   jobBasicDetails,
   jobApplicants,
+  applicationOfApplicant,
 };

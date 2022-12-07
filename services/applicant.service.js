@@ -138,7 +138,6 @@ const createApplicationProfile = async (applicant) => {
       );
     }
 
-    console.log(rows[0].applicant_profile_id);
     if (skills && skills.length != 0) {
       const skillList = await saveApplicantDetailsList(
         skills,
