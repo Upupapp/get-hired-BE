@@ -35,7 +35,8 @@ const addCandidates = async (candidate) => {
       jobId,
       companyId,
     ]);
-    if (!dbResponse) {
+    
+    if (!rows || rows.length == 0) {
       throw Error("Failed to Add Candidate");
     }
     const dbResponse = rows[0];
@@ -113,7 +114,6 @@ const editCandidate = async (candidate) => {
 
 const candidateList = async (companyId) => {
   try {
-
     const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.mobile_number, c.address, 
                                 c.created_at, c.job_id, j.job_title, c.status, c.candidate_id
                             FROM gethired.candidates c
@@ -121,7 +121,7 @@ const candidateList = async (companyId) => {
                             where c.company_id = '${companyId}'
                             order by created_at DESC;`;
 
-    const searchQuery2 =  `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.email, u.cell_number as mobile_number, u.address, 
+    const searchQuery2 = `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.email, u.cell_number as mobile_number, u.address, 
                             j.date_applied as created_at,  jo.job_id , jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
                            FROM gethired.job_applicants j
                            left join gethired.jobs jo on jo.job_id = j.job_id
@@ -137,10 +137,10 @@ const candidateList = async (companyId) => {
     if (!dbResponse) {
       throw Error(error);
     }
-    console.log(dbResponse)
-    applicants.rows.forEach(row => dbResponse.push(row))
-  
-    return dbResponse
+    console.log(dbResponse);
+    applicants.rows.forEach((row) => dbResponse.push(row));
+
+    return dbResponse;
   } catch (error) {
     throw Error(error);
   }
