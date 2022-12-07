@@ -197,4 +197,122 @@ const uploadApplicationAttachment = async (
   }
 };
 
-export { jobApply };
+const charts = async (uid) => {
+  const searchQuery = ` SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
+                      FROM gethired.job_applicants a
+                      left join gethired.jobs j on j.job_id = a.job_id
+                      where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '2'
+                      and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
+                      group by date_part('month', a.updated_at);`;
+  const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as interviews
+                    FROM gethired.job_applicants a
+                    left join gethired.jobs j on j.job_id = a.job_id
+                    where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '3'
+                    and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at) 
+                    group by date_part('month', a.updated_at);`;
+
+  try {
+    var today = new Date();
+    var mm = today.getMonth() + 1;
+    const activeApplication = await dbQuery.query(searchQuery, [uid]);
+    const videoInterview = await dbQuery.query(searchQuery3, [uid]);
+
+    const result = {
+      activeApplications: activeApplication.rows[0]
+        ? parseInt(activeApplication.rows[0].applicant)
+        : 0,
+        videoInterviews: videoInterview.rows[0]
+        ? parseInt(videoInterview.rows[0].interviews)
+        : 0,
+    };
+
+    return result
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  }
+};
+
+const graph = async (uid) => {
+
+  const searchQuery = `select date_part('month', a.updated_at) as month, date_part('day', a.updated_at) as day, count(distinct a.job_application_id)
+                      FROM gethired.job_applicants a
+                      left join gethired.jobs j on j.job_id = a.job_id
+                      where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
+                      group by date_part('month', a.updated_at), date_part('day', a.updated_at)`;
+  const selectQuery = `SELECT date_part('month', l.date_of_activity) as month, date_part('day', l.date_of_activity) as day, count(l.activity_id)
+                      FROM gethired.logs l
+                      left join gethired.jobs j on j.job_id = l.activity_id 
+                      where l.activity_id = $1 and l.activity_name = 'Profile View'
+                      group by date_part('month', l.date_of_activity), date_part('day', l.date_of_activity)`;
+
+  try {
+    const applicants = await dbQuery.query(searchQuery, [uid]);
+    const jobView = await dbQuery.query(selectQuery, [uid]);
+    console.log(applicants.rows)
+
+    const result = {
+        jobApplication: applicants.rows ? applicants.rows : 0,
+        profileView: jobView.rows ? jobView.rows : 0
+    }
+
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
+
+const statistic = async (uid) => {
+
+  const searchQuery = `SELECT count(a.job_application_id) as applicant
+                      FROM gethired.job_applicants a
+                      left join gethired.jobs j on j.job_id = a.job_id
+                      where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '2';`;
+  const searchQuery2 = `SELECT count(a.job_application_id) as interviews
+                     FROM gethired.job_applicants a
+                    left join gethired.jobs j on j.job_id = a.job_id
+                    where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '3';`;
+
+  try {
+    const application = await dbQuery.query(searchQuery, [uid]);
+    const interviews = await dbQuery.query(searchQuery2, [uid]);
+    console.log(interviews.rows[0].interviews, application.rows[0].applicant)
+    const interviewsPercentage = parseInt( interviews.rows[0]
+      ? interviews.rows[0].interviews : 0)/parseInt(application.rows[0].applicant) * 100
+    const applicationPercentage = 100 - interviewsPercentage 
+    console.log(applicationPercentage)
+
+    const result = {
+      application: applicationPercentage ? applicationPercentage.toPrecision(3) : 0,
+      interviews: interviewsPercentage ? interviewsPercentage.toPrecision(3) : 0,
+    }
+
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
+
+const totalJobs = async (uid) => {
+
+  const searchQuery = `SELECT count(a.job_application_id) as applicant
+                    FROM gethired.job_applicants a
+                    left join gethired.jobs j on j.job_id = a.job_id
+                    where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '2';`;
+
+  try {
+    const jobApplications = await dbQuery.query(searchQuery, [uid]);
+
+    const result = {
+      totalJobApplication: jobApplications.rows[0] ? parseInt(jobApplications.rows[0].applicant) : 0,
+    }
+
+    return result;
+
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  };
+};
+
+export { jobApply, charts, graph, statistic, totalJobs };

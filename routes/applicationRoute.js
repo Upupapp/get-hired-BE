@@ -25,7 +25,7 @@ router.post("/application/apply", submitApplication)
 router.put("/applicant/updateprofile", verifyAuth, updateProfile);
 router.post("/applicant/createprofile", verifyAuth, createProfile);
 router.get("/applicant/userprofile", verifyAuth, getUserProfile);
-router.get("/applicant/userprofile", verifyAuth, getDashboard);
+router.get("/applicant/dashboard", verifyAuth, getDashboard);
 
 router.get("/applicant/profile", verifyAuth, getApplicantProfileById);
 

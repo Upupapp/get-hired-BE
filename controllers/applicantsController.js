@@ -8,6 +8,8 @@ import {
   updateApplicationProfile,
 } from "../services/applicant.service";
 import { getUserProfileById } from "../helpers/userDetails";
+import { charts, graph, statistic, totalJobs } from "../services/application.service";
+import { insertLogs } from "../services/user.service";
 
 const dbSchema = env.schema;
 
@@ -161,6 +163,7 @@ const getApplicantProfileById = async (req, res) => {
 
   try {
     const profile = await appplicantProfile(id);
+    const click = await insertLogs("Profile View", "", id)
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -187,25 +190,23 @@ const getDashboard = async(req, res) => {
   const { uid } = req.user;
 
   try {
-    const userDetails = await getUserProfileById(id);
+    const userDetails = await getUserProfileById(uid);
+    const chart = await charts(uid);
+    const graphList = await graph(uid);
+    const statistics = await statistic(uid);
+    const totalJob = await totalJobs(uid);
     const dbResponse = {
       user: {
         firstName: userDetails.firstName,
         lastName: userDetails.lastName,
         email: userDetails.email,
         photoUrl: userDetails.photoUrl,
-        videoInterviews: 0,
-        activeApplications: 0
+        ...chart
       },
       charts: {
-        profileView: 0,
-        jobApplication: [
-          { createdAt: null, number: 0 }
-        ],
-        interviewed: 0,
-        hired: 0,
-        archived: 0,
-        totalJobApplication: 0
+        ...graphList,
+        ...statistics,
+        ...totalJob
       }
     };
 
