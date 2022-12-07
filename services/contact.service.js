@@ -559,9 +559,14 @@ const listOfContacts = async (companyId, groupName) => {
 };
 
 const checkContacts = async (complete) => {
-    const searchQuery = `SELECT l.email 
+    const searchQuery = ` SELECT l.email, u.firstname, u.lastname, u.email, u.cell_number, u.address
                         FROM gethired.group_list l
-                        right join gethired.contact c on c.email = l.email  
+                        right join gethired.users u on u.email = l.email
+                        where l.group_id = '${complete.group_id}'
+                        union
+                        SELECT l.email, c.first_name, c.last_name, c.email, c.mobile_number, c.address
+                        FROM gethired.group_list l
+                        right join gethired.contact c on c.email = l.email 
                         where l.group_id = '${complete.group_id}';`;
     let value = "";
     try {
@@ -575,7 +580,7 @@ const checkContacts = async (complete) => {
 
         const usersList = {
             ...complete,
-            emails: dbResponse
+            details: dbResponse
         };
 
         return usersList;
