@@ -24,7 +24,7 @@ const addCandidates = async (candidate) => {
     const insertQuery = `INSERT INTO ${dbSchema}.candidates
                           (user_id, first_name, last_name, email, mobile_number, address, 
                                created_at, job_id, company_id, status)
-                            VALUES($1, $2, $3, $4, $5, $6, current_timestamp, $7, $8, 'invited') returning *;`;
+                            VALUES($1, $2, $3, $4, $5, $6, current_timestamp, $7, $8, 'imported') returning *;`;
     const { rows } = await dbQuery.query(insertQuery, [
       userId,
       firstName,
@@ -113,7 +113,7 @@ const editCandidate = async (candidate) => {
 
 const candidateList = async (companyId) => {
   try {
-      
+
     const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.mobile_number, c.address, 
                                 c.created_at, c.job_id, j.job_title, c.status, c.candidate_id
                             FROM gethired.candidates c
@@ -121,15 +121,26 @@ const candidateList = async (companyId) => {
                             where c.company_id = '${companyId}'
                             order by created_at DESC;`;
 
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const searchQuery2 =  `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.email, u.cell_number as mobile_number, u.address, 
+                            j.date_applied as created_at,  j.job_application_id as job_id, jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
+                           FROM gethired.job_applicants j
+                           left join gethired.jobs jo on jo.job_id = j.job_id
+                           left join gethired.applicants_profile ap on ap.user_id = j.candidate_id
+                           left join gethired.users u on u.uid = ap.user_id
+                           left join gethired.job_applicant_status s on j.application_status_id = s.job_applicant_status_id
+                           where jo.company_id = '${companyId}'`;
 
+    const { rows } = await dbQuery.query(searchQuery, []);
+    const applicants = await dbQuery.query(searchQuery2, []);
     const dbResponse = rows;
 
     if (!dbResponse) {
       throw Error(error);
     }
-
-    return dbResponse;
+    console.log(dbResponse)
+    applicants.rows.forEach(row => dbResponse.push(row))
+  
+    return dbResponse
   } catch (error) {
     throw Error(error);
   }
