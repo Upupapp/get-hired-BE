@@ -744,6 +744,7 @@ const mappedProfile = async (raw) => {
     workExperience: await getWorkExperience(raw.applicant_profile_id),
     educationalBackground: await getEducBgDetails(raw.applicant_profile_id),
     skills: await appSkills(raw.applicant_profile_id),
+    certifications: await getcert(raw.applicant_profile_id),
     documents: await getApplicantArrayDetails(
       raw.applicant_profile_id,
       "documents"
