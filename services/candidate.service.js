@@ -122,7 +122,7 @@ const candidateList = async (companyId) => {
                             order by created_at DESC;`;
 
     const searchQuery2 =  `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.email, u.cell_number as mobile_number, u.address, 
-                            j.date_applied as created_at,  j.job_application_id as job_id, jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
+                            j.date_applied as created_at,  jo.job_id , jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
                            FROM gethired.job_applicants j
                            left join gethired.jobs jo on jo.job_id = j.job_id
                            left join gethired.applicants_profile ap on ap.user_id = j.candidate_id
