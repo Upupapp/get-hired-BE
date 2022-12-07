@@ -215,6 +215,8 @@ const updateApplicationProfile = async (applicant) => {
     documents,
   } = applicant;
 
+  console.log(certifications);
+  console.log(educationalBackground);
   try {
     if (videoCVFile && videoCVFile != "") {
       rawUrl = await uploadInStorage(
@@ -298,11 +300,13 @@ const updateApplicationProfile = async (applicant) => {
     }
 
     if (skills && skills.length != 0) {
-      await deleteArrayApplicantEntry(
+      const deleted = await deleteArrayApplicantEntry(
         applicantProfileId,
         "applicant_skills",
         "applicant_id"
       );
+
+      console.log(deleted);
       const skillList = await saveApplicantDetailsList(
         skills,
         "applicant_skills",
@@ -440,7 +444,7 @@ const saveApplicantEducationalBackground = async (
     const { rows } = await dbQuery.query(insertQuery, [
       applicantId,
       now,
-      levelOfEducation,
+      educLevelName,
       fieldOfStudy,
       school,
       schoolAddress,
@@ -526,9 +530,14 @@ const deleteArrayApplicantEntry = async (
   tableName,
   columnName
 ) => {
-  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1;`;
+  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1 returning *;`;
   try {
     const { rows } = await dbQuery.query(deleteQuery, [applicantId]);
+
+    if(!rows || rows.length == 0) {
+      return false;
+    }
+
     return true;
   } catch (error) {
     throw error;
