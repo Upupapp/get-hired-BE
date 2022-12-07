@@ -303,11 +303,28 @@ const contactList = async (companyId) => {
                             FROM gethired.contact c
                             where c.company_id = '${companyId}'
                             order by created_at DESC;`;
+        const searchQuery2 = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.first_name, c.last_name, c.email, c.mobile_number, c.address, 
+                            c.created_at, c.job_id, j.job_title, c.status, c.candidate_id
+                        FROM gethired.candidates c
+                        right join gethired.jobs j on j.job_id = c.job_id
+                        where c.company_id = '${companyId}'
+                        order by created_at DESC;`;
+
+        const searchQuery3 =  `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.firstname, u.lastname, u.email, u.cell_number as mobile_number, u.address, 
+                        j.date_applied as created_at,  jo.job_id , jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
+                       FROM gethired.job_applicants j
+                       left join gethired.jobs jo on jo.job_id = j.job_id
+                       left join gethired.applicants_profile ap on ap.user_id = j.candidate_id
+                       left join gethired.users u on u.uid = ap.user_id
+                       left join gethired.job_applicant_status s on j.application_status_id = s.job_applicant_status_id
+                       where jo.company_id = '${companyId}'`;
 
         const { rows } = await dbQuery.query(searchQuery, []);
-
+        const candidates = await dbQuery.query(searchQuery2, []);
+        const applicants = await dbQuery.query(searchQuery3, []);
         const dbResponse = rows;
-
+        candidates.rows.forEach(row => dbResponse.push(row))
+        applicants.rows.forEach(row => dbResponse.push(row))
         if (!dbResponse) {
             throw Error(error);
         }
