@@ -138,6 +138,7 @@ const createApplicationProfile = async (applicant) => {
       );
     }
 
+    console.log(rows[0].applicant_profile_id);
     if (skills && skills.length != 0) {
       const skillList = await saveApplicantDetailsList(
         skills,
@@ -298,6 +299,7 @@ const updateApplicationProfile = async (applicant) => {
       );
     }
 
+    console.log(applicantProfileId);
     if (skills && skills.length != 0) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -374,7 +376,7 @@ const saveApplicantWorkExperience = async (workExperience, applicantId) => {
 
   const insertQuery = `INSERT INTO ${dbSchema}.applicant_work_experience
   (job_title, company_name, "location", job_type_id, start_month, start_year, end_month, end_year, is_current_job, details, created_at, applicant_id)
-  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12);`;
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *;`;
 
   try {
     const { rows } = await dbQuery.query(insertQuery, [
@@ -542,13 +544,15 @@ const saveApplicantDetailsList = async (
   columnName,
   applicantId
 ) => {
+  const insertQuery = `INSERT INTO gethired.applicant_skills
+  (skills, applicant_id, created_at)
+  VALUES($1, $2, $3) returning *;`;
   try {
-    const insertedList = list.map(
-      async (item) =>
-        await genericInsert(tableName, columnName, item, {
-          column: "job_id",
-          value: applicantId,
-        })
+    const insertedList = await Promise.all(
+      list.map(
+        async (item) =>
+          await dbQuery.query(insertQuery, [item, applicantId, now])
+      )
     );
     return insertedList;
   } catch (error) {
@@ -610,7 +614,9 @@ const appSkills = async (applicationId) => {
     applicationId,
     "applicant_skills"
   );
-  return mappedSkip.map(async (raw) => raw.skills);
+
+  const skills = await Promise.all(mappedSkip.map(async (raw) => raw.skills));
+  return skills;
 };
 
 const getcert = async (applicantId) => {
