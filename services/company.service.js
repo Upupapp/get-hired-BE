@@ -165,16 +165,15 @@ const charts = async (companyId) => {
   const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
-                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' and a.application_status_id = '3', a.application_status_id = '4'
+                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4'
                       and a.application_status_id = '5' and a.application_status_id = '6'
                       and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
-  const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as interviews
-                    FROM gethired.job_applicants a
-                    left join gethired.jobs j on j.job_id = a.job_id
-                    where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4'
-                    and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at) 
-                    group by date_part('month', a.updated_at);`;
+  const searchQuery3 = `SELECT count(a.interview_answer_id) as interviews, date_part('month', a.created_at) as month
+                        FROM gethired.interview_answers a
+                        left join gethired.jobs j on j.job_id = a.job_id 
+                        where j.company_id = $1 and j.job_status_id = '2'
+                        group by date_part('month', a.created_at);`;
 
   try {
     var today = new Date();
@@ -238,15 +237,19 @@ const totalContacts = async (companyId) => {
   const searchQuery = `SELECT count(contact_id) as contact
                       FROM gethired.contact
                       where company_id = $1;`;
+  const searchQuery2 = `SELECT count(candidate_id) as candidate
+                        FROM gethired.candidates
+                      where company_id = $1;`;
 
   try {
     const contacts = await dbQuery.query(searchQuery, [companyId]);
+    const candidate = await dbQuery.query(searchQuery2, [companyId]);
+    const total = contacts.rows[0] ? parseInt(contacts.rows[0].contact) : 0 + candidate.rows[0] ? parseInt(candidate.rows[0].candidate) : 0
+    // const result = {
+    // //   total
+    // // }
 
-    const result = {
-        totalContacts: contacts.rows[0] ? parseInt(contacts.rows[0].contact) : 0,
-    }
-
-    return result;
+    return total;
 
   } catch (error) {
     throw Error("Operation Failed" + error);
