@@ -165,8 +165,8 @@ const charts = async (companyId) => {
   const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
-                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' and a.application_status_id = '3' and a.application_status_id = '4'
-                      and a.application_status_id = '5' and a.application_status_id = '6'
+                      where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
+                      OR a.application_status_id = '5' OR a.application_status_id = '6')
                       and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
   const searchQuery3 = `SELECT count(a.interview_answer_id) as interviews, date_part('month', a.created_at) as month
@@ -210,7 +210,8 @@ const statistic = async (companyId) => {
                         left join gethired.jobs j on j.job_id = a.job_id
                         right join gethired.users u on u.uid = a.candidate_id 
                         right join gethired.contact c on c.email = u.email 
-                        where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
+                        where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
+                        OR a.application_status_id = '5' OR a.application_status_id = '6')
                         group by a.job_application_id, c.email`;
 
   try {
@@ -261,7 +262,8 @@ const graph = async (companyId) => {
   const searchQuery = `select date_part('month', a.updated_at) as month, date_part('day', a.updated_at) as day, count(distinct a.job_application_id)
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
-                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' 
+                      where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
+                      OR a.application_status_id = '5' OR a.application_status_id = '6') 
                       group by date_part('month', a.updated_at), date_part('day', a.updated_at)`;
   const selectQuery = `SELECT date_part('month', l.date_of_activity) as month, date_part('day', l.date_of_activity) as day, count(l.activity_id)
                       FROM gethired.logs l
