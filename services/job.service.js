@@ -320,11 +320,66 @@ const jobBasicDetails = async (jobId) => {
   }
 };
 
+const jobApplicants = async (jobId) => {
+  const searchQuery = `SELECT 
+    j.job_application_id, j.date_applied, j.application_status_id, j.job_id,
+    ap.*, s.job_applicant_status_name, u.*,
+    jt.job_type_name, ws.work_setup_name
+  FROM ${dbSchema}.job_applicants j
+  left join ${dbSchema}.applicants_profile ap 
+  on ap.user_id = j.candidate_id
+  left join ${dbSchema}.users u
+    on u.uid = ap.user_id
+    left join ${dbSchema}.work_setup ws
+    on ws.work_setup_id  = ap.work_setup_id
+    left join ${dbSchema}.job_type jt
+    on jt.job_type_id = ap.job_type_id
+  left join ${dbSchema}.job_applicant_status s
+  on j.application_status_id = s.job_applicant_status_id
+  where j.job_id = $1`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [jobId]);
+
+    if (!rows || rows.length == 0) {
+      return [];
+    }
+
+    const dbResponse = rows.map((row) => mappedBasicApplicantDetails(row));
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const mappedBasicApplicantDetails = (raw) => {
+  return {
+    applicantProfileId: raw.applicant_profile_id,
+    userId: raw.userId,
+    firstName: raw.firstName ? raw.firstName : raw.firstname,
+    lastName: raw.lastName ? raw.lastName : raw.lastname,
+    photoUrl: raw.photoUrl ? raw.photoUrl : raw.photo_url,
+    salaryMinimum: raw.salary_minimum,
+    salaryMaximum: raw.salary_maximum,
+    email: raw.email,
+    city: raw.city,
+    country: raw.country,
+    videoCVUrl: raw.video_cv_url,
+    jobApplicationStatusId: raw.application_status_id,
+    jobApplicationStatusName: raw.job_applicant_status_name,
+    dateApplied: raw.date_applied,
+    workSetupId: raw.work_setup_id,
+    workSetupName: raw.work_setup_name,
+    jobTypeId: raw.job_type_id,
+    jobTypeName: raw.job_type_name,
+  };
+};
+
 const mappedInterviewQuestions = (raw) => {
   return {
     question: raw.template_question,
     answerDuration: raw.template_answer_duration,
-    questionId: raw.template_question_id
+    questionId: raw.template_question_id,
   };
 };
 
@@ -421,4 +476,5 @@ export {
   saveJobArray,
   mappedJob,
   jobBasicDetails,
+  jobApplicants,
 };

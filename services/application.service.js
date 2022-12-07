@@ -15,6 +15,7 @@ const jobApply = async (jobApplication) => {
     coverLetter,
     resume,
     governmentFiles,
+    interviewAnswers,
   } = jobApplication;
 
   const jobApplicantionId = idGenerator(6, "APPL");
@@ -78,6 +79,21 @@ const jobApply = async (jobApplication) => {
       );
     }
 
+    if (interviewAnswers.length > 0) {
+      const output = await Promise.all(
+        interviewAnswers.map(async (item, index) => {
+          const answer = {
+            questionId: item.questionId,
+            answerFile: item.answerFile,
+            jobId,
+            applicantId,
+          };
+
+          return await saveInterviewAnswer(answer);
+        })
+      );
+    }
+
     const dbResponse = rows[0];
 
     return {
@@ -92,17 +108,69 @@ const jobApply = async (jobApplication) => {
   }
 };
 
+const saveInterviewAnswer = async (answer) => {
+  const { questionId, answerFile, jobId, applicantId } = answer;
+  let rawUrl = "";
 
-const uploadApplicationAttachment = async (attachment, applicantId, tableName, column, jobId) => {
+  const insertQuery = `INSERT INTO ${dbSchema}.interview_answers
+  (question_id, answer_url, created_at, job_id, applicant_id)
+  VALUES($1, $2, $3, $4, $5) returning *;`;
+
+  const filename = `${jobId}-${questionId}-${applicantId}`;
+
+  try {
+    if (answerFile && answerFile != "") {
+      rawUrl = await uploadInStorage(
+        "Applicant-Interview-Answers",
+        filename,
+        answerFile,
+        1
+      );
+    }
+
+    const { rows } = await dbQuery.query(insertQuery, [
+      questionId,
+      rawUrl,
+      now,
+      jobId,
+      applicantId,
+    ]);
+
+    if (!rows || rows.length == 0) {
+      throw "Failed to save video";
+    }
+
+    const dbResponse = rows[0];
+    return {
+      questionId: dbResponse.question_id,
+      answerUrl: dbResponse.answer_url,
+      createdAt: dbResponse.created_at,
+      jobId: dbResponse.job_id,
+      applicantId: dbResponse.applicant_id,
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+const uploadApplicationAttachment = async (
+  attachment,
+  applicantId,
+  tableName,
+  column,
+  jobId
+) => {
   let rawUrl = "";
   let generalQuery = "";
   let dbResponse = {};
 
   const { id, file, fileUrl, size, type, filename } = attachment;
 
+  const name = `${filename}-${now}`;
+
   try {
     if (file && file != "") {
-      rawUrl = await uploadInStorage("Applicant-Documents", filename, file);
+      rawUrl = await uploadInStorage("Applicant-Documents", name, file);
     }
 
     generalQuery = `INSERT INTO ${dbSchema}.${tableName}
@@ -111,11 +179,11 @@ const uploadApplicationAttachment = async (attachment, applicantId, tableName, c
 
     const { rows } = await dbQuery.query(generalQuery, [
       rawUrl,
-      filename,
+      name,
       size,
       type,
       applicantId,
-      jobId
+      jobId,
     ]);
 
     if (rows && rows.length == 0) {

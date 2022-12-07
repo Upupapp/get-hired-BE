@@ -2,7 +2,7 @@ import { jobApply } from "../services/application.service";
 import { successMessage, errorMessage, status } from "../helpers/status";
 
 const submitApplication = async (req, res) => {
-  const { jobId, candidateId, applicantId, coverLetter, resume, governmentFiles } = req.body;
+  const { jobId, candidateId, applicantId, coverLetter, resume, governmentFiles, interviewAnswers } = req.body;
 
   const application = {
     jobId,
@@ -12,6 +12,7 @@ const submitApplication = async (req, res) => {
     resume,
     governmentFiles,
     applicationStatusId: 2,
+    interviewAnswers
   };
   
   try {

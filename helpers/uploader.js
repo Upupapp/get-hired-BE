@@ -3,7 +3,6 @@ import { firebaseConfig } from "../middleware/firebaseApp";
 
 const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
   new Promise((resolve, reject) => {
-    console.log("Uploading image ...");
     let img = "";
     let imgType = uploadedFile.slice(
       uploadedFile.indexOf(":") + 1,
@@ -11,11 +10,16 @@ const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
     );
 
     if (withCodecs == 0) {
+      console.log("Uploading image ...");
+
       img = uploadedFile.slice(uploadedFile.indexOf(",") + 1);
     } else {
+      console.log("Uploading video ...");
       let result = uploadedFile.substring(uploadedFile.indexOf(";") + 1);
       let result2 = result.substring(result.indexOf(";") + 1);
       img = result2.slice(result2.indexOf(",") + 1);
+      console.log(img);
+
     }
 
     const app = firebase.initializeApp(firebaseConfig);

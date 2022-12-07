@@ -13,7 +13,10 @@ import {
   saveJobArray,
   mappedJob,
   jobBasicDetails,
+  jobApplicants,
 } from "../services/job.service";
+
+import { listOfJobAppliedByApplicant } from "../services/applicant.service";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
@@ -318,7 +321,6 @@ const industryList = async () => {
   }
 };
 
-
 const getIndustryList = async (req, res) => {
   try {
     const dbResponse = await industryList();
@@ -370,7 +372,6 @@ const getJobRoleList = async (req, res) => {
     return res.status(status.error).send(errorMessage);
   }
 };
-
 
 const getCategoryList = async (req, res) => {
   const searchQuery = `SELECT * FROM ${dbSchema}.category;`;
@@ -467,12 +468,22 @@ const getAllPublishedJobs = async (req, res) => {
 };
 
 const getJobDetails = async (req, res) => {
-  const { id } = req.query;
+  const { id, uid } = req.query;
+  let isApplied = false;
 
   try {
+    if (uid) {
+      const applied = await listOfJobAppliedByApplicant(uid);
+      const filtered = applied.filter((item) => item.jobId == id);
+      isApplied = filtered.length != 0;
+    }
+
     const details = await jobDetails(id);
-    const click = await insertLogs("Job View", "", id)
-    successMessage.data = details;
+    const click = await insertLogs("Job View", "", id);
+    successMessage.data = {
+      ...details,
+      isApplied,
+    };
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -487,12 +498,25 @@ const getJobShareableLink = async (req, res) => {
     const job = await jobBasicDetails(id);
     const postLink = `/jobs/details/${id}`;
     const link = await createDynamicLink(
-      job.jobTitle + ' - ' + job.jobCity + ' ' + job.jobCountry,
+      job.jobTitle + " - " + job.jobCity + " " + job.jobCountry,
       job.companyName,
       job.companyLogoUrl,
       postLink
     );
     successMessage.data = link;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getAllApplicantOfJob = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const list = await jobApplicants(id);
+    successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -535,5 +559,6 @@ export {
   industryList,
   getAllPublishedJobs,
   getJobDetails,
-  getJobShareableLink
+  getJobShareableLink,
+  getAllApplicantOfJob,
 };

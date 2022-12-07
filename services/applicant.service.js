@@ -221,7 +221,8 @@ const updateApplicationProfile = async (applicant) => {
       rawUrl = await uploadInStorage(
         "Applicant-CVs",
         `${applicantProfileId}-CV`,
-        videoCVFile, 1
+        videoCVFile,
+        1
       );
     } else {
       rawUrl = videoCVUrl;
@@ -581,8 +582,12 @@ const appplicantProfile = async (userId) => {
   }
 };
 
-const getApplicantArrayDetails = async (applicantId, tableName, joinQuery = "") => {
-  let join = `left join `
+const getApplicantArrayDetails = async (
+  applicantId,
+  tableName,
+  joinQuery = ""
+) => {
+  let join = `left join `;
   const searchQuery = `SELECT *
       FROM ${dbSchema}.${tableName} t
       ${joinQuery}
@@ -615,7 +620,9 @@ const getcert = async (applicantId) => {
   );
 
   if (certs.length > 0) {
-    return await Promise.all(certs.map(async (cert) => mappedCertifications(cert)));
+    return await Promise.all(
+      certs.map(async (cert) => mappedCertifications(cert))
+    );
   } else {
     return [];
   }
@@ -627,9 +634,7 @@ const getWorkExperience = async (applicantId) => {
     `left join ${dbSchema}.job_type jt on jt.job_type_id = t.job_type_id`
   );
   if (we.length > 0) {
-    return await Promise.all(
-      we.map(async (w) => mappedWorkExperience(w))
-    );
+    return await Promise.all(we.map(async (w) => mappedWorkExperience(w)));
   } else {
     return [];
   }
@@ -649,42 +654,13 @@ const getEducBgDetails = async (applicantId) => {
   }
 };
 
-const mappedProfile = async (raw) => {
-  return {
-    applicantProfileId: raw.applicant_profile_id,
-    userId: raw.userId,
-    firstName: raw.firstName ? raw.firstName: raw.firstname,
-    lastName: raw.lastName ? raw.lastName: raw.lastname,
-    photoUrl: raw.photoUrl ? raw.photoUrl: raw.photo_url,
-    videoCVUrl: raw.video_cv_url,
-    jobTitle: raw.job_title,
-    rating: raw.applicant_rating,
-    workSetupId: raw.work_setup_id,
-    workSetupName: raw.work_setup_name,
-    email: raw.email,
-    address: raw.address,
-    city: raw.city,
-    country: raw.country,
-    contactNumber: raw.contactNumber ? raw.contactNumber : raw.cell_number,
-    shortBio: raw.short_bio,
-    servicesProvided: raw.services_provided,
-    jobTypeId: raw.job_type_id,
-    jobTypeName: raw.job_type_name,
-    jobLevelId: raw.job_level_id,
-    jobLevelName: raw.job_level_name,
-    salaryMinimum: raw.salary_minimum,
-    salaryMaximum: raw.salary_maximum,
-    workExperience: await getWorkExperience(raw.applicant_profile_id),
-    educationalBackground: await getEducBgDetails(raw.applicant_profile_id),
-    skills: await appSkills(raw.applicant_profile_id),
-    documents: await getApplicantArrayDetails(
-      raw.applicant_profile_id,
-      "documents"
-    ),
-  };
-};
-
-const uploadAndSaveAttachment = async (attachment, applicantId, tableName, column, index = 0) => {
+const uploadAndSaveAttachment = async (
+  attachment,
+  applicantId,
+  tableName,
+  column,
+  index = 0
+) => {
   let rawUrl = "";
   let generalQuery = "";
   let dbResponse = {};
@@ -719,10 +695,67 @@ const uploadAndSaveAttachment = async (attachment, applicantId, tableName, colum
   }
 };
 
+const listOfJobAppliedByApplicant = async (uid) => {
+  const selectQuery = `select * from ${dbSchema}.job_applicants where candidate_id = $1`;
+  try {
+    const { rows } = await dbQuery.query(selectQuery, [uid]);
+
+    const dbResponse = rows.map((row) => {
+      return {
+        jobApplicationId: row.job_application_id,
+        jobId: row.job_id,
+        dateApplied: row.date_applied,
+        candidateId: row.candidate_id,
+        applicationStatusId: row.application_status_id,
+      };
+    });
+
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const mappedProfile = async (raw) => {
+  return {
+    applicantProfileId: raw.applicant_profile_id,
+    userId: raw.userId,
+    firstName: raw.firstName ? raw.firstName : raw.firstname,
+    lastName: raw.lastName ? raw.lastName : raw.lastname,
+    photoUrl: raw.photoUrl ? raw.photoUrl : raw.photo_url,
+    videoCVUrl: raw.video_cv_url,
+    jobTitle: raw.job_title,
+    rating: raw.applicant_rating,
+    workSetupId: raw.work_setup_id,
+    workSetupName: raw.work_setup_name,
+    email: raw.email,
+    address: raw.address,
+    city: raw.city,
+    country: raw.country,
+    contactNumber: raw.contactNumber ? raw.contactNumber : raw.cell_number,
+    shortBio: raw.short_bio,
+    servicesProvided: raw.services_provided,
+    jobTypeId: raw.job_type_id,
+    jobTypeName: raw.job_type_name,
+    jobLevelId: raw.job_level_id,
+    jobLevelName: raw.job_level_name,
+    salaryMinimum: raw.salary_minimum,
+    salaryMaximum: raw.salary_maximum,
+    workExperience: await getWorkExperience(raw.applicant_profile_id),
+    educationalBackground: await getEducBgDetails(raw.applicant_profile_id),
+    skills: await appSkills(raw.applicant_profile_id),
+    documents: await getApplicantArrayDetails(
+      raw.applicant_profile_id,
+      "documents"
+    ),
+  };
+};
+
 export {
   candidateListByJobId,
   appplicantProfile,
   createApplicationProfile,
   updateApplicationProfile,
   uploadAndSaveAttachment,
+  listOfJobAppliedByApplicant,
 };

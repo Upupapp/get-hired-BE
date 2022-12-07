@@ -12,7 +12,8 @@ import {
   updateStatusOfJob,
   getAllPublishedJobs,
   getJobDetails,
-  getJobShareableLink
+  getJobShareableLink,
+  getAllApplicantOfJob
 } from "../controllers/jobsController";
 
 import verifyAuth from "../middleware/verifyAuth";
@@ -31,6 +32,7 @@ router.get("/job/industries", verifyAuth, getIndustryList);
 router.get("/job/badges", verifyAuth, getBadgeList);
 router.get("/job/rolelist", verifyAuth, getJobRoleList);
 router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
+router.get("/job/applicants", getAllApplicantOfJob);
 
 // public api
 router.get("/job/published", getAllPublishedJobs);
