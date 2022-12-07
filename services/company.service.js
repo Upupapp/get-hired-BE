@@ -165,7 +165,8 @@ const charts = async (companyId) => {
   const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
                       FROM gethired.job_applicants a
                       left join gethired.jobs j on j.job_id = a.job_id
-                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2'
+                      where j.company_id = $1 and j.job_status_id = '2' and a.application_status_id = '2' and a.application_status_id = '3', a.application_status_id = '4'
+                      and a.application_status_id = '5' and a.application_status_id = '6'
                       and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
   const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as interviews
