@@ -48,6 +48,7 @@ const createApplicationProfile = async (applicant) => {
     workSetupId,
     salaryMinimum,
     salaryMaximum,
+    salaryCurrency,
     videoCVFile,
     profileImage,
     isProfileReady,
@@ -85,8 +86,8 @@ const createApplicationProfile = async (applicant) => {
 
     const insertQuery = `INSERT INTO ${dbSchema}.applicants_profile
       (applicant_profile_id, user_id, photo_url, job_title, short_bio, services_provided, job_type_id, job_level_id, work_setup_id, salary_minimum, salary_maximum, 
-      video_cv_url, is_profile_ready, created_at)
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *;`;
+      video_cv_url, is_profile_ready, created_at, salary_currency)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning *;`;
 
     const { rows } = await dbQuery.query(insertQuery, [
       applicantProfileId,
@@ -103,6 +104,7 @@ const createApplicationProfile = async (applicant) => {
       rawUrl,
       isProfileReady,
       now,
+      salaryCurrency
     ]);
 
     if (!rows && rows.length == 0) {
@@ -213,6 +215,7 @@ const updateApplicationProfile = async (applicant) => {
     educationalBackground,
     certifications,
     documents,
+    salaryCurrency
   } = applicant;
 
   console.log(certifications);
@@ -242,8 +245,8 @@ const updateApplicationProfile = async (applicant) => {
     const updateQuery = `UPDATE ${dbSchema}.applicants_profile
     SET photo_url=$1, job_title=$2, short_bio=$3, services_provided=$4, 
     job_type_id=$5, job_level_id=$6, work_setup_id=$7, salary_minimum=$8,
-    salary_maximum=$9, video_cv_url=$10,  updated_at=$11, is_profile_ready=$12
-    WHERE user_id=$13 returning *;`;
+    salary_maximum=$9, video_cv_url=$10,  updated_at=$11, is_profile_ready=$12, salary_currency=$13
+    WHERE user_id=$14 returning *;`;
 
     const { rows } = await dbQuery.query(updateQuery, [
       rawUrlPhoto,
@@ -258,6 +261,7 @@ const updateApplicationProfile = async (applicant) => {
       rawUrl,
       now,
       isProfileReady,
+      salaryCurrency,
       userId,
     ]);
 
@@ -753,6 +757,7 @@ const mappedProfile = async (raw) => {
     jobLevelName: raw.job_level_name,
     salaryMinimum: raw.salary_minimum,
     salaryMaximum: raw.salary_maximum,
+    salaryCurrency: raw.salary_currency,
     workExperience: await getWorkExperience(raw.applicant_profile_id),
     educationalBackground: await getEducBgDetails(raw.applicant_profile_id),
     skills: await appSkills(raw.applicant_profile_id),

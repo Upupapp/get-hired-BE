@@ -45,6 +45,7 @@ const createJobs = async (req, res) => {
     workSetupId,
     salaryMinimum,
     salaryMaximum,
+    salaryCurrency,
     rate,
     jobAddress,
     expirationDate,
@@ -62,7 +63,7 @@ const createJobs = async (req, res) => {
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
   (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, job_status_id, job_city, job_category_id, job_country)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18, $19) returning *;`;
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18, $19, $20) returning *;`;
 
   try {
     if (bannerFile && bannerFile.length != 0) {
@@ -93,6 +94,7 @@ const createJobs = async (req, res) => {
       jobCity,
       jobCategoryId,
       jobCountry,
+      salaryCurrency
     ]);
 
     if (!rows || rows.length == 0) {
@@ -199,8 +201,8 @@ const updateJob = async (req, res) => {
       job_description=$7, job_duties=$8, work_setup_id=$9,
       salary_minimum=$10, salary_maximum=$11, rate=$12, 
       job_address=$13, job_city=$14, job_category_id=$15,
-      job_country= $16, job_status_id = $17
-      WHERE job_id =$18 returning *;`;
+      job_country= $16, job_status_id = $17, salary_currency=$18
+      WHERE job_id =$19 returning *;`;
 
   const {
     jobBanner,
@@ -215,6 +217,7 @@ const updateJob = async (req, res) => {
     workSetupId,
     salaryMinimum,
     salaryMaximum,
+    salaryCurrency,
     rate,
     jobAddress,
     jobCity,
@@ -260,6 +263,7 @@ const updateJob = async (req, res) => {
       jobCategoryId,
       jobCountry,
       jobStatusId,
+      salaryCurrency,
       jobId,
     ]);
 
@@ -550,6 +554,7 @@ const mappedBasicJob = (raw) => {
     workSetupName: raw.work_setup_name,
     salaryMinimum: raw.salary_minimum,
     salaryMaximum: raw.salary_maximum,
+    salaryCurrency: raw.salary_currency,
     createdAt: raw.created_at,
     jobStatusId: raw.job_status_id,
     jobCity: raw.job_city,
