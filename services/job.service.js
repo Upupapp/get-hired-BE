@@ -38,7 +38,7 @@ const getPublishedJobs = async (companyId) => {
   const searchQuery = `SELECT 
         j.job_id, j.job_banner, j.job_title, 
         j.company_id, j.job_type_id, j.work_setup_id,
-        j.job_country, j.job_city, j.salary_minimum, j.salary_maximum,
+        j.job_country, j.job_city, j.salary_minimum, j.salary_maximum, j.salary_currency,
         c.company_name, t.job_type_name, w.work_setup_name
     FROM ${dbSchema}.jobs j
     LEFT JOIN ${dbSchema}.companies c
@@ -249,7 +249,8 @@ const jobDetails = async (jobId) => {
   j.job_level_id, jl.job_level_name,
   j.job_description, j.job_duties, 
   j.work_setup_id, ws.work_setup_name,
-  j.salary_minimum, j.salary_maximum, j.rate, j.job_address, j.created_at, j.updated_at, j.expiration_date, 
+  j.salary_minimum, j.salary_maximum, j.salary_currency,
+  j.rate, j.job_address, j.created_at, j.updated_at, j.expiration_date, 
   j.job_status_id, 
   j.job_city, 
   j.job_category_id, cat.job_category_name, 

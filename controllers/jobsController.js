@@ -428,7 +428,8 @@ const getBasicJobList = async (companyId, statusId) => {
 
   const searchQuery = `SELECT 
   j.job_id, j.job_title, j.created_at, j.company_id,
-  j.job_city, j.work_setup_id, j.job_type_id,  j.salary_minimum, j.salary_maximum,
+  j.job_city, j.work_setup_id, j.job_type_id, 
+  j.salary_minimum, j.salary_maximum, j.salary_currency,
   j.job_status_id, ws.work_setup_name, jt.job_type_name, j.rate
   FROM gethired.jobs j
   left join gethired.work_setup ws 
