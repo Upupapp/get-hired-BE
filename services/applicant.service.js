@@ -448,7 +448,7 @@ const saveApplicantEducationalBackground = async (
     const { rows } = await dbQuery.query(insertQuery, [
       applicantId,
       now,
-      educLevelName,
+      levelOfEducation,
       fieldOfStudy,
       school,
       schoolAddress,
