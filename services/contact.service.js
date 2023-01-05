@@ -296,6 +296,11 @@ let message = "";
     }
 };
 
+function removeDuplicates(arr) {
+    return arr.filter((item, 
+        index) => arr.indexOf(item) === index);
+}
+
 const contactList = async (companyId) => {
     try {
         const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.first_name, c.last_name, c.email, c.mobile_number, c.address, c.contact_id,
@@ -328,8 +333,13 @@ const contactList = async (companyId) => {
         if (!dbResponse) {
             throw Error(error);
         }
-
-        const output = await Promise.all(dbResponse.map(async (complete) => {
+        function getUniqueListBy(arr, key) {
+            return [...new Map(arr.map(item => [item[key], item])).values()]
+        }
+        
+        const arr1 = getUniqueListBy(dbResponse, 'email')
+        
+        const output = await Promise.all(arr1.map(async (complete) => {
             return await checkGroups(complete);
         }));
 
