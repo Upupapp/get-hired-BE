@@ -32,6 +32,8 @@ import {
   cities,
 } from "../services/company.service";
 
+import {contactList} from "../services/contact.service"
+
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 
@@ -240,13 +242,14 @@ const getDashboard = async (req, res) => {
     const totalContact = await totalContacts(userCompany.companyId);
     const graphList = await graph(userCompany.companyId);
     const cityList = await cities(userCompany.companyId);
+   const contact = await contactList(userCompany.companyId);
     const dbResponse = {
       company: userCompany,
       charts: chart,
       statistic: statistics,
       ...graphList,
       ...cityList,
-      totalContacts: totalContact,
+      totalContacts: contact.length,
     };
 
     successMessage.data = dbResponse;

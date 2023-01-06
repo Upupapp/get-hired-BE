@@ -137,10 +137,16 @@ const candidateList = async (companyId) => {
     if (!dbResponse) {
       throw Error(error);
     }
-    console.log(dbResponse);
     applicants.rows.forEach((row) => dbResponse.push(row));
+    console.log(dbResponse)
+    function getUniqueListBy(arr, key) {
+        return [...new Map(arr.map(item => [item[key], item])).values()]
+    }
+    
+    const arr1 = getUniqueListBy(dbResponse, 'email')
+ 
 
-    return dbResponse;
+    return arr1;
   } catch (error) {
     throw Error(error);
   }

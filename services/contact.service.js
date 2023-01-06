@@ -338,7 +338,7 @@ const contactList = async (companyId) => {
         }
         
         const arr1 = getUniqueListBy(dbResponse, 'email')
-        
+
         const output = await Promise.all(arr1.map(async (complete) => {
             return await checkGroups(complete);
         }));
@@ -597,9 +597,15 @@ const checkContacts = async (complete) => {
             throw Error(errorMessage);
         };
 
+        function getUniqueListBy(arr, key) {
+            return [...new Map(arr.map(item => [item[key], item])).values()]
+        }
+        
+        const arr1 = getUniqueListBy(dbResponse, 'email')
+    
         const usersList = {
             ...complete,
-            details: dbResponse
+            details: arr1
         };
 
         return usersList;

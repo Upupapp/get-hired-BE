@@ -245,7 +245,7 @@ const totalContacts = async (companyId) => {
   try {
     const contacts = await dbQuery.query(searchQuery, [companyId]);
     const candidate = await dbQuery.query(searchQuery2, [companyId]);
-    const total = contacts.rows[0] ? parseInt(contacts.rows[0].contact) : 0 + candidate.rows[0] ? parseInt(candidate.rows[0].candidate) : 0
+    const total = (contacts.rows[0] ? parseInt(contacts.rows[0].contact) : 0) + (candidate.rows[0] ? parseInt(candidate.rows[0].candidate) : 0)
     // const result = {
     // //   total
     // // }
