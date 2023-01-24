@@ -6,9 +6,16 @@ import {
 const sgMail = require('@sendgrid/mail');
 
 sgMail.setApiKey(env.mailerKey);
+const isStaging = process.env.is_staging == 'true';
 
-const templates = {
+const templates = isStaging ? {
   // TODO to add template here once created
+  verify_email: "d-acbbb666db9a4958ae2b45f0f06728bd",
+  pw_reset: "d-f750b17fac53437ab663f75b0b641d4e",
+  add_user: "d-50e5c815421d407799988169ccf3ac3c",
+  invite: "d-822df45e7ba644d2b748d07b3284a884",
+  contact: "d-a2ffda953c6046b7828fda40a13d3b67"
+} : {
   verify_email: "d-f476e852447940a4a3acfee5f4a7f63d",
   pw_reset: "d-3517d64c1dd1403fb4d857af16b9e8a4",
   add_user: "d-0140cd7cd48743efa350e9c044381b3d",

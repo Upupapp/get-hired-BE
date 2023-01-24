@@ -1,5 +1,5 @@
 import express from "express";
-import { createCandidate, deleteCandidate, list, multipleCandidate, updateCandidate } from "../controllers/candidateController";
+import { createCandidate, deleteCandidate, list, multipleCandidate, updateCandidate, getJobAppliedList } from "../controllers/candidateController";
 
 import { getJobApplicantDetails } from "../controllers/jobsController";
 
@@ -12,5 +12,7 @@ router.delete("/candidates/deletecandidate", deleteCandidate);
 router.put("/candidates/updatecandidate", updateCandidate);
 router.get("/candidates/list", list)
 router.get("/candidates/applicantdetails", getJobApplicantDetails);
+
+router.get("/candidates/appliedjobslist", getJobAppliedList);
 
 export default router;

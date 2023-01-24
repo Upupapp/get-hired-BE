@@ -516,11 +516,12 @@ const getJobShareableLink = async (req, res) => {
 
   try {
     const job = await jobBasicDetails(id);
+    console.log(job);
     const postLink = `/jobs/details/${id}`;
     const link = await createDynamicLink(
       job.jobTitle + " - " + job.jobCity + " " + job.jobCountry,
       job.companyName,
-      job.companyLogoUrl,
+      job.jobBanner,
       postLink
     );
     successMessage.data = link;

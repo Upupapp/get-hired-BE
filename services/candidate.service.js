@@ -35,7 +35,7 @@ const addCandidates = async (candidate) => {
       jobId,
       companyId,
     ]);
-    
+
     if (!rows || rows.length == 0) {
       throw Error("Failed to Add Candidate");
     }
@@ -138,13 +138,12 @@ const candidateList = async (companyId) => {
       throw Error(error);
     }
     applicants.rows.forEach((row) => dbResponse.push(row));
-    console.log(dbResponse)
+    console.log(dbResponse);
     function getUniqueListBy(arr, key) {
-        return [...new Map(arr.map(item => [item[key], item])).values()]
+      return [...new Map(arr.map((item) => [item[key], item])).values()];
     }
-    
-    const arr1 = getUniqueListBy(dbResponse, 'email')
- 
+
+    const arr1 = getUniqueListBy(dbResponse, "email");
 
     return arr1;
   } catch (error) {
@@ -174,4 +173,36 @@ const sendEmailInvite = async (email, firstName, jobName) => {
   return { msg: "Email has been sent", link: `${env.app_url}/signup` };
 };
 
-export { addCandidates, checkCandidateIfExist, editCandidate, candidateList };
+const listOfAppliedJobsById = async (candidateId) => {
+  const searchQuery = `SELECT a.*, s.application_status_name FROM ${dbSchema}.job_applicants a 
+  right join ${dbSchema}.job_applicant_status s 
+  on a.application_status_id = s.application_status_id
+  where a.candidate_id = $1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [candidateId]);
+
+    if (rows && rows.length > 0) {
+      return mappedApplication(rows);
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
+const mappedApplication = (raw) => {
+  return {
+    jobApplicationId: raw.job_application_id,
+    jobId: raw.job_id,
+    dateApplied: raw.date_applied,
+    updatedAt: raw.updated_at,
+    candidateId: raw.candidate_id,
+    applicationStatusId: raw.application_status_id,
+    isArchived: raw.is_archived,
+    applicantStatusName: raw.application_status_name,
+  };
+};
+
+export { addCandidates, checkCandidateIfExist, editCandidate, candidateList, listOfAppliedJobsById };

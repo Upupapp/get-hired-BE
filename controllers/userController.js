@@ -179,6 +179,38 @@ const resendVerification = async (req, res) => {
   }
 };
 
+const getVerificationLink = async (req, res) => {
+  const { email } = req.query;
+
+  try {
+    const verify = await sendEmailVerificationFirebase(email);
+    console.log(verify);
+
+    if (!verify) {
+      return res
+        .status(status.error)
+        .send("Failed to generate Verification link");
+    }
+
+    successMessage.data = verify;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "Operation Not Successful. " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const verifyEmailFileManually = async (req, res) => {
+// try {
+// const dbResponse = await ;
+// successMessage.data = dbResponse;
+// return res.status(status.success).send(successMessage);
+// } catch(error) {
+// errorMessage.error = 'ERROR: ' + error;
+// return res.status(status.error).send(errorMessage);
+// }
+};
+
 const verifyEmail = async (req, res) => {
   const { oobCode } = req.query;
 
@@ -453,7 +485,7 @@ const changePWinDB = async (email, password) => {
 
 const getVerification = async (email) => {
   const verify = await sendEmailVerificationFirebase(email);
-
+  console.log(verify);
   if (!verify) {
     throw Error("Failed Verification");
   }
@@ -533,5 +565,7 @@ export {
   getUserProfile,
   updateUserProfile,
   registerUserInDB,
-  getVerification
+  getVerification,
+  getVerificationLink,
+  verifyEmailFileManually
 };
