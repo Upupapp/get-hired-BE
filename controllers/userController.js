@@ -109,10 +109,10 @@ const registerUser = async (req, res) => {
     }
 
     // Use this if we have different mailer
-    const userData = await registerNewUserInFirebase(user);
+    // const userData = await registerNewUserInFirebase(user);
 
     // Use this if we need firebase mailer
-    // const userData = await registerNewUserInFirebaseWithEmail(user);
+    const userData = await registerNewUserInFirebaseWithEmail(user);
 
     const dbData = {
       uid: userData.uid,
@@ -129,12 +129,12 @@ const registerUser = async (req, res) => {
       errorMessage.error = "Operation not Successful.";
       return res.status(status.error).send(errorMessage);
     }
-    const isVerified = await getVerification(email, user.firstName);
-    if (!isVerified) {
-      return res
-        .status(status.error)
-        .send("Failed to generate Verification link");
-    }
+    // const isVerified = await getVerification(email, user.firstName);
+    // if (!isVerified) {
+    //   return res
+    //     .status(status.error)
+    //     .send("Failed to generate Verification link");
+    // }
 
     successMessage.data = dbRegister;
     return res.status(status.created).send(successMessage);
