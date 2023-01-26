@@ -109,10 +109,10 @@ const registerUser = async (req, res) => {
     }
 
     // Use this if we have different mailer
-    // const userData = await registerNewUserInFirebase(user);
+    const userData = await registerNewUserInFirebase(user);
 
     // Use this if we need firebase mailer
-    const userData = await registerNewUserInFirebaseWithEmail(user);
+    // const userData = await registerNewUserInFirebaseWithEmail(user);
 
     const dbData = {
       uid: userData.uid,
