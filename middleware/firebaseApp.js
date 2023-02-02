@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import admin from 'firebase-admin';
-import adminServiceAccount from "../serviceAccountKey.json";
-
 import env from '../env';
+
+const adminServiceAccount = require('../' + env.projectName + '-serviceAccountKey.json');
 
 const isStaging = process.env.is_staging;
 

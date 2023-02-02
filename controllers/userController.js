@@ -129,12 +129,12 @@ const registerUser = async (req, res) => {
       errorMessage.error = "Operation not Successful.";
       return res.status(status.error).send(errorMessage);
     }
-    // const isVerified = await getVerification(email, user.firstName);
-    // if (!isVerified) {
-    //   return res
-    //     .status(status.error)
-    //     .send("Failed to generate Verification link");
-    // }
+    const isVerified = await getVerification(email, user.firstName);
+    if (!isVerified) {
+      return res
+        .status(status.error)
+        .send("Failed to generate Verification link");
+    }
 
     successMessage.data = dbRegister;
     return res.status(status.created).send(successMessage);

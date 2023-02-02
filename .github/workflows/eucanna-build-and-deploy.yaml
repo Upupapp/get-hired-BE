@@ -1,0 +1,31 @@
+name: NodeJS CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build_and_push:
+    runs-on: [self-hosted, linux, x64, eucanna]
+    steps:
+      - name: Checkout the repo 
+        uses: actions/checkout@v2
+        with:
+          clean: false
+      
+      - name: Setup NodeJS
+        uses: actions/setup-node@v1
+        with:
+          node-version: ${{ matrix.node-version }}
+      
+      - name: Install dependencies
+        run: npm i
+
+      - name: Restart PM2
+        run: |
+          pm2 stop 0
+          pm2 start 0
+          pm2 save
+          sudo service nginx restart

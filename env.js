@@ -9,6 +9,7 @@ let config = {};
 
 if(isStaging == 'false') {
     config = {
+        projectName: process.env.PROJECT_NAME,
         port: process.env.PORT || 3000,
         environment: process.env.NODE_ENV,
         user: process.env.DB_USER,
@@ -33,6 +34,7 @@ if(isStaging == 'false') {
     }
 } else {
     config = {
+        projectName: process.env.PROJECT_NAME,
         port: process.env.PORT || 3000,
         environment: process.env.NODE_ENV,
         user: process.env.DB_USER_DEV,

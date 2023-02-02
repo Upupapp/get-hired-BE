@@ -174,9 +174,9 @@ const sendEmailInvite = async (email, firstName, jobName) => {
 };
 
 const listOfAppliedJobsById = async (candidateId) => {
-  const searchQuery = `SELECT a.*, s.application_status_name FROM ${dbSchema}.job_applicants a 
+  const searchQuery = `SELECT a.*, s.job_applicant_status_name FROM ${dbSchema}.job_applicants a 
   right join ${dbSchema}.job_applicant_status s 
-  on a.application_status_id = s.job_application_status_id
+  on a.application_status_id = s.job_applicant_status_id
   where a.candidate_id = $1;`;
 
   try {
