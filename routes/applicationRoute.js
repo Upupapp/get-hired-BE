@@ -6,7 +6,10 @@ import {
   createProfile,
   getApplicantProfileById,
   updateProfile,
-  getUserProfile
+  getUserProfile,
+  saveWorkExp,
+  saveCert,
+  saveEducBg
 } from "../controllers/applicantsController";
 import {
   submitApplication
@@ -28,5 +31,8 @@ router.get("/applicant/userprofile", verifyAuth, getUserProfile);
 router.get("/applicant/dashboard", verifyAuth, getDashboard);
 
 router.get("/applicant/profile", verifyAuth, getApplicantProfileById);
+router.post("/applicant/workexp", verifyAuth, saveWorkExp);
+router.post("/applicant/educbg", verifyAuth, saveEducBg);
+router.post("/applicant/cert", verifyAuth, saveCert);
 
 export default router;

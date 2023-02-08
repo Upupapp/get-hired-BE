@@ -6,9 +6,18 @@ import {
   appplicantProfile,
   createApplicationProfile,
   updateApplicationProfile,
+  deleteArrayApplicantEntry,
+  saveApplicantWorkExperience,
+  saveApplicantEducationalBackground,
+  saveCertifications
 } from "../services/applicant.service";
 import { getUserProfileById } from "../helpers/userDetails";
-import { charts, graph, statistic, totalJobs } from "../services/application.service";
+import {
+  charts,
+  graph,
+  statistic,
+  totalJobs,
+} from "../services/application.service";
 import { insertLogs } from "../services/user.service";
 
 const dbSchema = env.schema;
@@ -163,7 +172,7 @@ const getApplicantProfileById = async (req, res) => {
 
   try {
     const profile = await appplicantProfile(id);
-    const click = await insertLogs("Profile View", "", id)
+    const click = await insertLogs("Profile View", "", id);
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -186,7 +195,7 @@ const getUserProfile = async (req, res) => {
   }
 };
 
-const getDashboard = async(req, res) => {
+const getDashboard = async (req, res) => {
   const { uid } = req.user;
 
   try {
@@ -201,22 +210,91 @@ const getDashboard = async(req, res) => {
         lastName: userDetails.lastName,
         email: userDetails.email,
         photoUrl: userDetails.photoUrl,
-        ...chart
+        ...chart,
       },
       charts: {
         ...graphList,
         ...statistics,
-        ...totalJob
-      }
+        ...totalJob,
+      },
     };
 
-  successMessage.data = dbResponse;
-  return res.status(status.success).send(successMessage);
-  } catch(error) {
-  errorMessage.error = 'ERROR: ' + error;
-  return res.status(status.error).send(errorMessage);
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
   }
-}
+};
+
+const saveWorkExp = async (req, res) => {
+  const { workExperience, applicantProfileId } = req.body;
+  try {
+    if (workExperience && workExperience.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId,
+        "applicant_work_experience",
+        "applicant_id"
+      );
+      const work = workExperience.map(
+        async (exp) =>
+          await saveApplicantWorkExperience(exp, applicantProfileId)
+      );
+    }
+
+    successMessage.data = workExperience;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const saveEducBg = async (req, res) => {
+  const { educationalBackground, applicantProfileId } = req.body;
+  try {
+    if (educationalBackground && educationalBackground.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId,
+        "applicant_educational_background",
+        "applicant_id"
+      );
+      const educBG = educationalBackground.map(
+        async (educ) =>
+          await saveApplicantEducationalBackground(educ, applicantProfileId)
+      );
+    }
+
+    successMessage.data = educationalBackground;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const saveCert = async (req, res) => {
+  const { certifications, applicantProfileId } = req.body;
+  try {
+    if (certifications && certifications.length != 0) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId,
+        "applicant_certificates",
+        "applicant_id"
+      );
+      const cert = certifications.map(
+        async (cert) => await saveCertifications(cert, applicantProfileId)
+      );
+    }
+
+    successMessage.data = certifications;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 
 export {
   createApplication,
@@ -226,5 +304,8 @@ export {
   getApplicantProfileById,
   updateProfile,
   getUserProfile,
-  getDashboard
+  getDashboard,
+  saveWorkExp,
+  saveEducBg,
+  saveCert
 };

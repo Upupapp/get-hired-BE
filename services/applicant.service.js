@@ -284,12 +284,15 @@ const updateApplicationProfile = async (applicant) => {
       throw "Failed to update basic info";
     }
 
-    if (documents.length > 0) {
-      await deleteArrayApplicantEntry(
+    if (documents && documents.length != 0) {
+      const deleted = await deleteArrayApplicantEntry(
         applicantProfileId,
         "documents",
         "applicant_id"
       );
+
+      console.log(deleted);
+
       const output = await Promise.all(
         documents.map(async (document, index) => {
           return await uploadAndSaveAttachment(
@@ -310,7 +313,6 @@ const updateApplicationProfile = async (applicant) => {
         "applicant_id"
       );
 
-      console.log(deleted);
       const skillList = await saveApplicantDetailsList(
         skills,
         "applicant_skills",
@@ -776,4 +778,8 @@ export {
   updateApplicationProfile,
   uploadAndSaveAttachment,
   listOfJobAppliedByApplicant,
+  deleteArrayApplicantEntry,
+  saveApplicantWorkExperience,
+  saveApplicantEducationalBackground,
+  saveCertifications
 };
