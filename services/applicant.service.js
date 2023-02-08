@@ -126,7 +126,7 @@ const createApplicationProfile = async (applicant) => {
       throw "Failed to update basic info";
     }
 
-    if (documents.length > 0) {
+    if (documents && documents.length != 0) {
       const output = await Promise.all(
         documents.map(async (document, index) => {
           return await uploadAndSaveAttachment(
@@ -218,8 +218,8 @@ const updateApplicationProfile = async (applicant) => {
     salaryCurrency
   } = applicant;
 
-  console.log(certifications);
-  console.log(educationalBackground);
+  console.log(documents);
+
   try {
     if (videoCVFile && videoCVFile != "") {
       rawUrl = await uploadInStorage(
