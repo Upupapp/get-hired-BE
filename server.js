@@ -49,7 +49,7 @@ app.use("/api", optionsRoutes);
 app.use("/api", candidateRoutes);
 app.use("/api", adminRoutes);
 
-app.get("/", (req, res) => res.send("Welcome to Get Hired API"));
+app.get("/", (req, res) => res.send(`Welcome to ${env.projectName} API`));
 
 app.listen(env.port).on("listening", () => {
   console.log(`running server on port ${env.port}`);

@@ -9,7 +9,11 @@ import {
   deleteArrayApplicantEntry,
   saveApplicantWorkExperience,
   saveApplicantEducationalBackground,
-  saveCertifications
+  saveCertifications,
+  saveApplicantDetailsList,
+  updateProfileBasicInfo,
+  uploadAndSaveAttachment,
+  updateProfileSaveVideoCV,
 } from "../services/applicant.service";
 import { getUserProfileById } from "../helpers/userDetails";
 import {
@@ -157,6 +161,17 @@ const createProfile = async (req, res) => {
   }
 };
 
+const updateBasicProfileInfo = async (req, res) => {
+  try {
+    const profile = await updateProfileBasicInfo(req.body);
+    successMessage.data = profile;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const updateProfile = async (req, res) => {
   try {
     const profile = await updateApplicationProfile(req.body);
@@ -230,16 +245,19 @@ const getDashboard = async (req, res) => {
 const saveWorkExp = async (req, res) => {
   const { workExperience, applicantProfileId } = req.body;
   try {
-    if (workExperience && workExperience.length != 0) {
+    if (workExperience) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
         "applicant_work_experience",
         "applicant_id"
       );
-      const work = workExperience.map(
-        async (exp) =>
-          await saveApplicantWorkExperience(exp, applicantProfileId)
-      );
+
+      if (workExperience.length != 0) {
+        const work = workExperience.map(
+          async (exp) =>
+            await saveApplicantWorkExperience(exp, applicantProfileId)
+        );
+      }
     }
 
     successMessage.data = workExperience;
@@ -253,16 +271,19 @@ const saveWorkExp = async (req, res) => {
 const saveEducBg = async (req, res) => {
   const { educationalBackground, applicantProfileId } = req.body;
   try {
-    if (educationalBackground && educationalBackground.length != 0) {
+    if (educationalBackground) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
         "applicant_educational_background",
         "applicant_id"
       );
-      const educBG = educationalBackground.map(
-        async (educ) =>
-          await saveApplicantEducationalBackground(educ, applicantProfileId)
-      );
+
+      if (educationalBackground.length != 0) {
+        const educBG = educationalBackground.map(
+          async (educ) =>
+            await saveApplicantEducationalBackground(educ, applicantProfileId)
+        );
+      }
     }
 
     successMessage.data = educationalBackground;
@@ -276,15 +297,18 @@ const saveEducBg = async (req, res) => {
 const saveCert = async (req, res) => {
   const { certifications, applicantProfileId } = req.body;
   try {
-    if (certifications && certifications.length != 0) {
+    if (certifications) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
         "applicant_certificates",
         "applicant_id"
       );
-      const cert = certifications.map(
-        async (cert) => await saveCertifications(cert, applicantProfileId)
-      );
+
+      if (certifications.length != 0) {
+        const cert = certifications.map(
+          async (cert) => await saveCertifications(cert, applicantProfileId)
+        );
+      }
     }
 
     successMessage.data = certifications;
@@ -295,6 +319,81 @@ const saveCert = async (req, res) => {
   }
 };
 
+const saveSkillsArray = async (req, res) => {
+  const { skills, applicantProfileId } = req.body;
+  try {
+    if (skills) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId,
+        "applicant_skills",
+        "applicant_id"
+      );
+      if (skills.length != 0) {
+        const skillArr = await saveApplicantDetailsList(
+          skills,
+          "applicant_skills",
+          "skills",
+          applicantProfileId
+        );
+      }
+    }
+
+    successMessage.data = skills;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const saveDocuments = async (req, res) => {
+  const { documents, applicantProfileId } = req.body;
+  try {
+    if (documents) {
+      await deleteArrayApplicantEntry(
+        applicantProfileId,
+        "documents",
+        "applicant_id"
+      );
+
+      if (documents.length != 0) {
+        const output = await Promise.all(
+          documents.map(async (document, index) => {
+            return await uploadAndSaveAttachment(
+              document,
+              applicantProfileId,
+              "documents",
+              "applicant_id",
+              index
+            );
+          })
+        );
+      }
+    }
+    successMessage.data = documents;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const saveVideoCV = async (req, res) => {
+  const { video, applicantProfileId } = req.body;
+  const { uid } = req.user;
+  try {
+    const dbResponse = await updateProfileSaveVideoCV(
+      video,
+      applicantProfileId,
+      uid
+    );
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
 
 export {
   createApplication,
@@ -307,5 +406,9 @@ export {
   getDashboard,
   saveWorkExp,
   saveEducBg,
-  saveCert
+  saveCert,
+  saveSkillsArray,
+  saveDocuments,
+  updateBasicProfileInfo,
+  saveVideoCV,
 };

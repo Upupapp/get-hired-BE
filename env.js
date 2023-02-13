@@ -30,15 +30,15 @@ if(isStaging == 'false') {
         appId: process.env.APP_ID,
         measurementId: process.env.MEASUREMENT_ID,
         schema: process.env.SCHEMA,
-        paymongo_sk: process.env.PAYMONGO_SK
+        paymongo_sk: process.env.PAYMONGO_SK,
     }
 } else {
     config = {
-        projectName: process.env.PROJECT_NAME,
+        projectName: process.env.PROJECT_NAME_DEV,
         port: process.env.PORT || 3000,
         environment: process.env.NODE_ENV,
         user: process.env.DB_USER_DEV,
-        host: isProduction ? `/cloudsql/${process.env.INSTANCE_NAME}` : process.env.DB_HOST_DEVs,
+        host: isProduction ? `/cloudsql/${process.env.INSTANCE_NAME_DEV}` : process.env.DB_HOST_DEVs,
         database: process.env.DB_DATABASE_DEV,
         password: process.env.DB_PASSWORD_DEV,
         db_port: process.env.DB_PORT,
