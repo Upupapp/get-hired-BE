@@ -199,15 +199,15 @@ const uploadApplicationAttachment = async (
 
 const charts = async (uid) => {
   const searchQuery = ` SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
-                      FROM gethired.job_applicants a
-                      left join gethired.jobs j on j.job_id = a.job_id
+                      FROM ${dbSchema}.job_applicants a
+                      left join ${dbSchema}.jobs j on j.job_id = a.job_id
                       where a.candidate_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                       OR a.application_status_id = '5' OR a.application_status_id = '6')
                       and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
   const searchQuery3 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as interviews
-                    FROM gethired.job_applicants a
-                    left join gethired.jobs j on j.job_id = a.job_id
+                    FROM ${dbSchema}.job_applicants a
+                    left join ${dbSchema}.jobs j on j.job_id = a.job_id
                     where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '3'
                     and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at) 
                     group by date_part('month', a.updated_at);`;
@@ -236,14 +236,14 @@ const charts = async (uid) => {
 const graph = async (uid) => {
 
   const searchQuery = `select DATE(a.updated_at), count(distinct a.job_application_id)
-                      FROM gethired.job_applicants a
-                      left join gethired.jobs j on j.job_id = a.job_id
+                      FROM ${dbSchema}.job_applicants a
+                      left join ${dbSchema}.jobs j on j.job_id = a.job_id
                       where a.candidate_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                       OR a.application_status_id = '5' OR a.application_status_id = '6')
                       group by DATE(a.updated_at)`;
   const selectQuery = `SELECT DATE(l.date_of_activity), count(l.activity_id)
-                      FROM gethired.logs l
-                      left join gethired.jobs j on j.job_id = l.activity_id 
+                      FROM ${dbSchema}.logs l
+                      left join ${dbSchema}.jobs j on j.job_id = l.activity_id 
                       where l.activity_id = $1 and l.activity_name = 'Profile View'
                       group by DATE(l.date_of_activity)`;
 
@@ -266,12 +266,12 @@ const graph = async (uid) => {
 const statistic = async (uid) => {
 
   const searchQuery = `SELECT count(a.job_application_id) as applicant
-                      FROM gethired.job_applicants a
-                      left join gethired.jobs j on j.job_id = a.job_id
+                      FROM ${dbSchema}.job_applicants a
+                      left join ${dbSchema}.jobs j on j.job_id = a.job_id
                       where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '2';`;
   const searchQuery2 = `SELECT count(a.job_application_id) as interviews
-                     FROM gethired.job_applicants a
-                    left join gethired.jobs j on j.job_id = a.job_id
+                     FROM ${dbSchema}.job_applicants a
+                    left join ${dbSchema}.jobs j on j.job_id = a.job_id
                     where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '3';`;
 
   try {
@@ -297,8 +297,8 @@ const statistic = async (uid) => {
 const totalJobs = async (uid) => {
 
   const searchQuery = `SELECT count(a.job_application_id) as applicant
-                    FROM gethired.job_applicants a
-                    left join gethired.jobs j on j.job_id = a.job_id
+                    FROM ${dbSchema}.job_applicants a
+                    left join ${dbSchema}.jobs j on j.job_id = a.job_id
                     where a.candidate_id = $1 and j.job_status_id = '2' and a.application_status_id = '2';`;
 
   try {

@@ -766,7 +766,7 @@ const saveApplicantDetailsList = async (
   columnName,
   applicantId
 ) => {
-  const insertQuery = `INSERT INTO gethired.applicant_skills
+  const insertQuery = `INSERT INTO ${dbSchema}.applicant_skills
   (skills, applicant_id, created_at)
   VALUES($1, $2, $3) returning *;`;
   try {

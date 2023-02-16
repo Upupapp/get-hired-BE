@@ -66,7 +66,7 @@ const createInitialCompany = async (req, res) => {
 };
 
 const updateCompany = async (req, res) => {
-  const updateQuery = `UPDATE gethired.companies
+  const updateQuery = `UPDATE ${dbSchema}.companies
   SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11
   WHERE company_id=$12 returning *;`;
   let rawUrl = "";

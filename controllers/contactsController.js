@@ -263,7 +263,7 @@ const contactslist = async (req, res) => {
 const deleteGroup = async (req, res) => {
     const { groupId } = req.query;
 
-    const deleteQuery = `DELETE FROM gethired."group"
+    const deleteQuery = `DELETE FROM ${dbSchema}."group"
                         WHERE group_id='${groupId}';`;
 
     const checkInDb = await checkGroupIfExist(groupId);

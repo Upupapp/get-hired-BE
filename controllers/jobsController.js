@@ -431,10 +431,10 @@ const getBasicJobList = async (companyId, statusId) => {
   j.job_city, j.work_setup_id, j.job_type_id, 
   j.salary_minimum, j.salary_maximum, j.salary_currency,
   j.job_status_id, ws.work_setup_name, jt.job_type_name, j.rate
-  FROM gethired.jobs j
-  left join gethired.work_setup ws 
+  FROM ${dbSchema}.jobs j
+  left join ${dbSchema}.work_setup ws 
   on ws.work_setup_id = j.work_setup_id
-  left join gethired.job_type jt 
+  left join ${dbSchema}.job_type jt 
   on jt.job_type_id = j.job_type_id
   where company_id = $1 ${filteredStatus} ORDER BY j.created_at DESC;`;
 

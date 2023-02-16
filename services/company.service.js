@@ -158,20 +158,20 @@ const mappedCompany = (raw) => {
 
 const charts = async (companyId) => {
   const searchQuery = `SELECT date_part('month', updated_at) as month, count(job_id) as activejobs
-                      FROM gethired.jobs
+                      FROM ${dbSchema}.jobs
                       where job_status_id = '2' and company_id  = $1 
                       and date_part('month', CURRENT_DATE) = date_part('month', updated_at)
                       group by date_part('month', updated_at);`;
   const searchQuery2 = `SELECT date_part('month', a.updated_at) as month, count(a.job_application_id) as applicant
-                      FROM gethired.job_applicants a
-                      left join gethired.jobs j on j.job_id = a.job_id
+                      FROM ${dbSchema}.job_applicants a
+                      left join ${dbSchema}.jobs j on j.job_id = a.job_id
                       where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                       OR a.application_status_id = '5' OR a.application_status_id = '6')
                       and date_part('month', CURRENT_DATE) = date_part('month', a.updated_at)
                       group by date_part('month', a.updated_at);`;
   const searchQuery3 = `SELECT count(a.interview_answer_id) as interviews, date_part('month', a.created_at) as month
-                        FROM gethired.interview_answers a
-                        left join gethired.jobs j on j.job_id = a.job_id 
+                        FROM ${dbSchema}.interview_answers a
+                        left join ${dbSchema}.jobs j on j.job_id = a.job_id 
                         where j.company_id = $1 and j.job_status_id = '2'
                         group by date_part('month', a.created_at);`;
 
@@ -203,13 +203,13 @@ const charts = async (companyId) => {
 const statistic = async (companyId) => {
 
   const searchQuery = `SELECT count(contact_id) as contact
-                      FROM gethired.contact
+                      FROM ${dbSchema}.contact
                       where company_id = $1;`;
   const searchQuery2 = `select count(distinct a.job_application_id) as applicant
-                        FROM gethired.job_applicants a
-                        left join gethired.jobs j on j.job_id = a.job_id
-                        right join gethired.users u on u.uid = a.candidate_id 
-                        right join gethired.contact c on c.email = u.email 
+                        FROM ${dbSchema}.job_applicants a
+                        left join ${dbSchema}.jobs j on j.job_id = a.job_id
+                        right join ${dbSchema}.users u on u.uid = a.candidate_id 
+                        right join ${dbSchema}.contact c on c.email = u.email 
                         where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                         OR a.application_status_id = '5' OR a.application_status_id = '6')
                         group by a.job_application_id, c.email`;
@@ -236,10 +236,10 @@ const statistic = async (companyId) => {
 const totalContacts = async (companyId) => {
 
   const searchQuery = `SELECT count(contact_id) as contact
-                      FROM gethired.contact
+                      FROM ${dbSchema}.contact
                       where company_id = $1;`;
   const searchQuery2 = `SELECT count(candidate_id) as candidate
-                        FROM gethired.candidates
+                        FROM ${dbSchema}.candidates
                       where company_id = $1;`;
 
   try {
@@ -260,14 +260,14 @@ const totalContacts = async (companyId) => {
 const graph = async (companyId) => {
 
   const searchQuery = `select DATE(a.updated_at), count(distinct a.job_application_id)
-                      FROM gethired.job_applicants a
-                      left join gethired.jobs j on j.job_id = a.job_id
+                      FROM ${dbSchema}.job_applicants a
+                      left join ${dbSchema}.jobs j on j.job_id = a.job_id
                       where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                       OR a.application_status_id = '5' OR a.application_status_id = '6') 
                       group by DATE(a.updated_at)`;
   const selectQuery = `SELECT DATE(l.date_of_activity), count(l.activity_id)
-                      FROM gethired.logs l
-                      left join gethired.jobs j on j.job_id = l.activity_id 
+                      FROM ${dbSchema}.logs l
+                      left join ${dbSchema}.jobs j on j.job_id = l.activity_id 
                       where j.company_id = $1 and l.activity_name = 'Job View'
                       group by DATE(l.date_of_activity)`;
 
@@ -290,9 +290,9 @@ const graph = async (companyId) => {
 const cities = async (companyId) => {
 
   const searchQuery = `select u.city, count(a.job_application_id)
-                      FROM gethired.job_applicants a
-                      left join gethired.jobs j on j.job_id = a.job_id
-                      left join gethired.users u on u.uid = a.candidate_id 
+                      FROM ${dbSchema}.job_applicants a
+                      left join ${dbSchema}.jobs j on j.job_id = a.job_id
+                      left join ${dbSchema}.users u on u.uid = a.candidate_id 
                       where j.company_id = $1 and city notnull 
                       group by u.city
                       order by count(a.job_application_id) desc limit 5`;

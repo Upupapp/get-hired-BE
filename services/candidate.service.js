@@ -116,18 +116,18 @@ const candidateList = async (companyId) => {
   try {
     const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.mobile_number, c.address, 
                                 c.created_at, c.job_id, j.job_title, c.status, c.candidate_id
-                            FROM gethired.candidates c
-                            right join gethired.jobs j on j.job_id = c.job_id
+                            FROM ${dbSchema}.candidates c
+                            right join ${dbSchema}.jobs j on j.job_id = c.job_id
                             where c.company_id = '${companyId}'
                             order by created_at DESC;`;
 
     const searchQuery2 = `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.email, u.cell_number as mobile_number, u.address, 
                             j.date_applied as created_at,  jo.job_id , jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
-                           FROM gethired.job_applicants j
-                           left join gethired.jobs jo on jo.job_id = j.job_id
-                           left join gethired.applicants_profile ap on ap.user_id = j.candidate_id
-                           left join gethired.users u on u.uid = ap.user_id
-                           left join gethired.job_applicant_status s on j.application_status_id = s.job_applicant_status_id
+                           FROM ${dbSchema}.job_applicants j
+                           left join ${dbSchema}.jobs jo on jo.job_id = j.job_id
+                           left join ${dbSchema}.applicants_profile ap on ap.user_id = j.candidate_id
+                           left join ${dbSchema}.users u on u.uid = ap.user_id
+                           left join ${dbSchema}.job_applicant_status s on j.application_status_id = s.job_applicant_status_id
                            where jo.company_id = '${companyId}'`;
 
     const { rows } = await dbQuery.query(searchQuery, []);
