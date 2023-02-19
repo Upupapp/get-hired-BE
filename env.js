@@ -37,6 +37,8 @@ if (isStaging == "false") {
     paymongo_sk: process.env.PAYMONGO_SK,
   };
 } else {
+  console.log(process.env.PROJECT_NAME_DEV)
+
   switch (process.env.PROJECT_NAME_DEV) {
     case "jobhunt":
       config = {
