@@ -25,5 +25,5 @@ jobs:
 
       - name: Restart PM2
         run: |
-          pm2 restart start --update-env
+          pm2 restart start --watch
           sudo service nginx restart
