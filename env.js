@@ -74,7 +74,7 @@ if (isStaging == "false") {
       break;
     case "eucannajobs":
       config = {
-        projectName: process.env.PROJECT_NAME_EUCANNAJOBS,
+        projectName: process.env.PROJECT_NAME_DEV,
         port: process.env.PORT || 3000,
         environment: process.env.NODE_ENV,
         user: process.env.DB_USER_EUCANNAJOBS,
