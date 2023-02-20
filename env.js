@@ -35,6 +35,7 @@ if (isStaging == "false") {
     measurementId: process.env.MEASUREMENT_ID,
     schema: process.env.SCHEMA,
     paymongo_sk: process.env.PAYMONGO_SK,
+    mailerTemplate: process.env.MAILER_TEMPLATE
   };
 } else {
   console.log(process.env.PROJECT_NAME_DEV)
@@ -68,6 +69,7 @@ if (isStaging == "false") {
         measurementId: process.env.MEASUREMENT_ID_DEV,
         schema: process.env.SCHEMA_DEV,
         paymongo_sk: process.env.PAYMONGO_SK_DEV,
+        mailerTemplate: process.env.MAILER_TEMPLATE_DEV
       };
       break;
     case "eucannajobs":
@@ -96,6 +98,7 @@ if (isStaging == "false") {
         measurementId: process.env.MEASUREMENT_ID_EUCANNAJOBS,
         schema: process.env.SCHEMA_EUCANNAJOBS,
         paymongo_sk: process.env.PAYMONGO_SK_EUCANNAJOBS,
+        mailerTemplate: process.env.MAILER_TEMPLATE_EUCANNAJOBS
       };
       break;
   }
