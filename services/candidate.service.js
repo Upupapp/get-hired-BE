@@ -183,7 +183,8 @@ const listOfAppliedJobsById = async (candidateId) => {
     const { rows } = await dbQuery.query(searchQuery, [candidateId]);
 
     if (rows && rows.length > 0) {
-      return mappedApplication(rows);
+      const listOfJobs = rows.map(row => mappedApplication(row));
+      return listOfJobs;
     } else {
       return [];
     }
