@@ -162,9 +162,9 @@ const resendVerification = async (req, res) => {
   const { email } = req.query;
 
   try {
-    const firstName = await getUserNameByEmail(email);
+    // const firstName = await getUserNameByEmail(email);
 
-    const isVerified = await getVerification(email, firstName);
+    const isVerified = await getVerification(email);
     if (!isVerified) {
       return res
         .status(status.error)
@@ -244,7 +244,7 @@ const passwordResetLink = async (req, res) => {
 
     send(email, "pw_reset", {
       url: pwRequestLink + `&role=${userRole}&email=${email}`,
-      first_name: name,
+      name,
       email,
     });
 
@@ -495,7 +495,7 @@ const getVerification = async (email) => {
 
   send(email, "verify_email", {
     verify_url: verify + `&role=${userRole}`,
-    first_name: firstName,
+    name: firstName,
     email,
   });
 

@@ -6,8 +6,7 @@ const sgMail = require("@sendgrid/mail");
 sgMail.setApiKey(env.mailerKey);
 const isStaging = process.env.is_staging == "true";
 
-const gethiredSendgrid = {
-  // TODO to add template here once created
+const jobhuntSendgrid = {
   verify_email: "d-acbbb666db9a4958ae2b45f0f06728bd",
   add_user: "d-50e5c815421d407799988169ccf3ac3c",
   invite: "d-822df45e7ba644d2b748d07b3284a884",
@@ -15,7 +14,7 @@ const gethiredSendgrid = {
   pw_reset: "d-f750b17fac53437ab663f75b0b641d4e",
 };
 
-const jobhuntSendgrid = {
+const gethiredSendgrid = {
   verify_email: "d-f476e852447940a4a3acfee5f4a7f63d",
   pw_reset: "d-3517d64c1dd1403fb4d857af16b9e8a4",
   add_user: "d-0140cd7cd48743efa350e9c044381b3d",
@@ -31,16 +30,29 @@ const eucannajobsSendgrid = {
   contacts: "d-8be3ed55dd8740ffae9381e76af12302",
 };
 
+const getTemplate = (template) => {
+  switch (env.mailerTemplate) {
+    case "gethiredSendgrid":
+      return gethiredSendgrid[template];
+    case "jobhuntSendgrid":
+      return jobhuntSendgrid[template];
+    case "eucannajobsSendgrid":
+      return eucannajobsSendgrid[template];
+  }
+};
+
 const send = (recipient, templateToUse, data) => {
   const email = isValidEmail(recipient.trim()) ? recipient : env.mailerSender;
   const msg = {
     to: email,
     from: env.mailerSender,
-    templateId: env.mailerTemplate[templateToUse],
+    templateId: getTemplate(templateToUse),
     dynamic_template_data: {
       ...data,
     },
   };
+
+  console.log(msg);
 
   sgMail.send(msg).then(
     () => {
