@@ -23,7 +23,7 @@ const createQuestion = async (questionDetails, templateId) => {
       answerDuration,
       retakes,
       templateId,
-      now
+      now,
     ]);
 
     if (!rows || rows.length == 0) {
@@ -61,10 +61,37 @@ const createInterviewTemplateQuestions = async (jobId, templateName) => {
       jobInterviewTemplateName: rows[0].job_interview_template_name,
       createdAt: rows[0].created_at,
       updatedAt: rows[0].updated_at,
-      jobId: rows[0].job_id
+      jobId: rows[0].job_id,
     };
-  
+
     return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const updateQuestionById = async (interviewQuestion) => {
+  const { questionId, question, answerDuration, retakes } = interviewQuestion;
+
+  const updateQuery = `UPDATE ${dbSchema}.interview_template_question
+  SET template_question=$1, template_answer_duration=$2, 
+    template_question_retakes=$3, updated_at=$4
+  WHERE template_question_id=$5 returning *; `;
+
+  try {
+    const { rows } = await dbQuery.query(updateQuery, [
+      question,
+      answerDuration,
+      retakes,
+      now,
+      questionId,
+    ]);
+
+    if (!rows && rows.length == 0) {
+      throw "Failed to update question";
+    }
+
+    return mappedQuestion(rows[0]);
   } catch (error) {
     throw error;
   }
@@ -78,8 +105,8 @@ const mappedQuestion = (raw) => {
     retakes: raw.retakes,
     createdAt: raw.created_at,
     updatedAt: raw.updatedAt,
-    templateId: raw.templateId
+    templateId: raw.templateId,
   };
 };
 
-export { createQuestion, createInterviewTemplateQuestions };
+export { createQuestion, createInterviewTemplateQuestions, updateQuestionById };

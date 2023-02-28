@@ -279,7 +279,7 @@ const updateJob = async (req, res) => {
     });
 
     if(interviewQuestions) {
-      await interviewQuestionsUpdate(interviewQuestions, interviewTemplateId)
+      await interviewQuestionsUpdate(jobId, interviewQuestions, interviewTemplateId)
     }
 
     if (!rows || rows.length == 0) {

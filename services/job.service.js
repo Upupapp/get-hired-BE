@@ -5,9 +5,11 @@ import { appplicantProfile } from "./applicant.service";
 import {
   createInterviewTemplateQuestions,
   createQuestion,
+  updateQuestionById
 } from "../controllers/interviewController";
 
 const dbSchema = env.schema;
+const now = Date.now();
 
 const companyPublishedJobs = async (companyId) => {
   const searchQuery = `SELECT job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, updated_at, expiration_date, job_status_id, job_city, job_category_id, job_country
@@ -164,7 +166,7 @@ const saveJobArray = async (jobId, arrays) => {
       "job_badges",
       "job_id"
     );
-    if(badges.length != 0) {
+    if (badges.length != 0) {
       const jobBadges = await saveJobDetailsList(
         badges,
         "job_badges",
@@ -181,7 +183,7 @@ const saveJobArray = async (jobId, arrays) => {
       "job_id"
     );
 
-    if(requirements.length != 0) {
+    if (requirements.length != 0) {
       const jobRequirements = await saveJobDetailsList(
         requirements,
         "job_requirement",
@@ -198,7 +200,7 @@ const saveJobArray = async (jobId, arrays) => {
       "job_id"
     );
 
-    if(goodToHave.length != 0) {
+    if (goodToHave.length != 0) {
       const jobGoodToHave = await saveJobDetailsList(
         goodToHave,
         "job_goodtohave",
@@ -215,14 +217,14 @@ const saveJobArray = async (jobId, arrays) => {
       "job_id"
     );
 
-    if(educationalBackground.length != 0) {
+    if (educationalBackground.length != 0) {
       const jobEducationalBackground = await saveJobDetailsList(
         educationalBackground,
         "job_educationalbackground",
         "educationalbackground",
         jobId
       );
-    }    
+    }
   }
 
   if (skills) {
@@ -232,20 +234,20 @@ const saveJobArray = async (jobId, arrays) => {
       "job_id"
     );
 
-    if(skills.length != 0) {
+    if (skills.length != 0) {
       const jobSkillList = await saveJobDetailsList(
         skills,
         "job_skills",
         "skills",
         jobId
       );
-    }    
+    }
   }
 
   if (tags) {
     const deleteArrays = await deleteArrayJobEntry(jobId, "job_tags", "job_id");
 
-    if(tags.length != 0) {
+    if (tags.length != 0) {
       const jobTagsList = await saveJobDetailsList(
         tags,
         "job_tags",
@@ -256,21 +258,30 @@ const saveJobArray = async (jobId, arrays) => {
   }
 };
 
-const interviewQuestionsUpdate = async(interviewQuestions, interviewTemplateId) => {
+const interviewQuestionsUpdate = async (
+  jobId,
+  interviewQuestions,
+  interviewTemplateId,
+) => {
   let templateToUse = interviewTemplateId;
-  interviewQuestions.map(async(question) => {
-    if(question.questionId) {
-      // TODO Update question by id
+  interviewQuestions.map(async (question) => {
+    if (question.questionId) {
+      await updateQuestionById(question);
     } else {
-      if(!interviewTemplateId) {
-          //  Create template first
-          templateToUse = await createInterviewTemplateQuestions(jobId,"default");
+      if (!interviewTemplateId) {
+        //  Create template first
+        const newTemplate = await createInterviewTemplateQuestions(
+          jobId,
+          "default"
+        );
+
+        templateToUse = newTemplate.jobInterviewTemplateId;
       }
-      await createQuestion(question, templateToUse)
+      await createQuestion(question, templateToUse);
     }
-  })
+  });
 };
- 
+
 const jobDetails = async (jobId) => {
   const searchQuery = `SELECT 
   j.job_id, j.job_banner, j.job_title, 
@@ -415,7 +426,7 @@ const applicationOfApplicant = async (jobId, id) => {
         resume: [docResume],
         governmentFiles: [docGovFiles],
       },
-      answers: await getInterviewAnswers(profile.applicantProfileId, jobId)
+      answers: await getInterviewAnswers(profile.applicantProfileId, jobId),
     };
     return dbResponse;
   } catch (error) {
@@ -474,20 +485,20 @@ const getDocs = async (applicantId, tableName) => {
   }
 };
 
-const getInterviewTemplateId = async(jobId) => {
-  const seachrQuery = `Select * from ${dbSchema}.job_interview_template where job_id=$1;`
+const getInterviewTemplateId = async (jobId) => {
+  const seachrQuery = `Select * from ${dbSchema}.job_interview_template where job_id=$1;`;
   try {
-  const { rows } = await dbQuery.query(seachrQuery, [jobId]);
-  
-  if(rows && rows.length > 0) {
-    return rows[0];
-  } else {
-    return null
+    const { rows } = await dbQuery.query(seachrQuery, [jobId]);
+
+    if (rows && rows.length > 0) {
+      return rows[0].job_interview_template_id;
+    } else {
+      return null;
+    }
+  } catch (error) {
+    throw error;
   }
-  } catch(error) {
-  throw(error)
-  }
-}
+};
 
 const mappedBasicApplicantDetails = (raw) => {
   return {
@@ -518,6 +529,7 @@ const mappedInterviewQuestions = (raw) => {
     question: raw.template_question,
     answerDuration: raw.template_answer_duration,
     questionId: raw.template_question_id,
+    retakes: raw.template_question_retakes
   };
 };
 
@@ -605,7 +617,7 @@ const mappedJob = async (raw) => {
       "educationalbackground"
     ),
     interviewQuestions: await getJobInterviewQuestions(raw.job_id, "default"),
-    interviewTemplateId: await getInterviewTemplateId(raw.job_id)
+    interviewTemplateId: await getInterviewTemplateId(raw.job_id),
   };
 };
 
@@ -619,5 +631,5 @@ export {
   jobBasicDetails,
   jobApplicants,
   applicationOfApplicant,
-  interviewQuestionsUpdate
+  interviewQuestionsUpdate,
 };

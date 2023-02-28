@@ -1,7 +1,10 @@
 import dbQuery from "../db/dbQuery";
 import { send } from "../helpers/mailer";
 import env from "../env";
+import { jobDetails } from "./job.service";
+
 const dbSchema = env.schema;
+
 const addCandidates = async (candidate) => {
   let message = "";
   const {
@@ -174,6 +177,8 @@ const sendEmailInvite = async (email, firstName, jobName) => {
 };
 
 const listOfAppliedJobsById = async (candidateId) => {
+  let listOfJobs = [];
+
   const searchQuery = `SELECT a.*, s.job_applicant_status_name FROM ${dbSchema}.job_applicants a 
   right join ${dbSchema}.job_applicant_status s 
   on a.application_status_id = s.job_applicant_status_id
@@ -183,7 +188,16 @@ const listOfAppliedJobsById = async (candidateId) => {
     const { rows } = await dbQuery.query(searchQuery, [candidateId]);
 
     if (rows && rows.length > 0) {
-      const listOfJobs = rows.map(row => mappedApplication(row));
+      const listOfJobs = await Promise.all(
+        rows.map(async (row) => {
+          const job = await jobDetails(row.job_id);
+          return {
+            ...job,
+            ...mappedApplication(row),
+          };
+        })
+      );
+
       return listOfJobs;
     } else {
       return [];
@@ -206,4 +220,10 @@ const mappedApplication = (raw) => {
   };
 };
 
-export { addCandidates, checkCandidateIfExist, editCandidate, candidateList, listOfAppliedJobsById };
+export {
+  addCandidates,
+  checkCandidateIfExist,
+  editCandidate,
+  candidateList,
+  listOfAppliedJobsById,
+};
