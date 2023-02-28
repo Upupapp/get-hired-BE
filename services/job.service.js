@@ -2,6 +2,10 @@ import dbQuery from "../db/dbQuery";
 import env from "../env";
 import genericInsert from "../helpers/genericInsert";
 import { appplicantProfile } from "./applicant.service";
+import {
+  createInterviewTemplateQuestions,
+  createQuestion,
+} from "../controllers/interviewController";
 
 const dbSchema = env.schema;
 
@@ -153,92 +157,120 @@ const saveJobArray = async (jobId, arrays) => {
     skills,
     tags,
   } = arrays;
-  if (badges && badges.length != 0) {
+
+  if (badges) {
     const deleteArrays = await deleteArrayJobEntry(
       jobId,
       "job_badges",
       "job_id"
     );
-    const jobBadges = await saveJobDetailsList(
-      badges,
-      "job_badges",
-      "badge_id",
-      jobId
-    );
+    if(badges.length != 0) {
+      const jobBadges = await saveJobDetailsList(
+        badges,
+        "job_badges",
+        "badge_id",
+        jobId
+      );
+    }
   }
 
-  if (requirements && requirements.length != 0) {
+  if (requirements) {
     const deleteArrays = await deleteArrayJobEntry(
       jobId,
       "job_requirement",
       "job_id"
     );
 
-    const jobRequirements = await saveJobDetailsList(
-      requirements,
-      "job_requirement",
-      "requirement",
-      jobId
-    );
+    if(requirements.length != 0) {
+      const jobRequirements = await saveJobDetailsList(
+        requirements,
+        "job_requirement",
+        "requirement",
+        jobId
+      );
+    }
   }
 
-  if (goodToHave && goodToHave.length != 0) {
+  if (goodToHave) {
     const deleteArrays = await deleteArrayJobEntry(
       jobId,
       "job_goodtohave",
       "job_id"
     );
 
-    const jobGoodToHave = await saveJobDetailsList(
-      goodToHave,
-      "job_goodtohave",
-      "goodtohave",
-      jobId
-    );
+    if(goodToHave.length != 0) {
+      const jobGoodToHave = await saveJobDetailsList(
+        goodToHave,
+        "job_goodtohave",
+        "goodtohave",
+        jobId
+      );
+    }
   }
 
-  if (educationalBackground && educationalBackground.length != 0) {
+  if (educationalBackground) {
     const deleteArrays = await deleteArrayJobEntry(
       jobId,
       "job_educationalbackground",
       "job_id"
     );
 
-    const jobEducationalBackground = await saveJobDetailsList(
-      educationalBackground,
-      "job_educationalbackground",
-      "educationalbackground",
-      jobId
-    );
+    if(educationalBackground.length != 0) {
+      const jobEducationalBackground = await saveJobDetailsList(
+        educationalBackground,
+        "job_educationalbackground",
+        "educationalbackground",
+        jobId
+      );
+    }    
   }
 
-  if (skills && skills.length != 0) {
+  if (skills) {
     const deleteArrays = await deleteArrayJobEntry(
       jobId,
       "job_skills",
       "job_id"
     );
 
-    const jobSkillList = await saveJobDetailsList(
-      skills,
-      "job_skills",
-      "skills",
-      jobId
-    );
+    if(skills.length != 0) {
+      const jobSkillList = await saveJobDetailsList(
+        skills,
+        "job_skills",
+        "skills",
+        jobId
+      );
+    }    
   }
 
-  if (tags && tags.length != 0) {
+  if (tags) {
     const deleteArrays = await deleteArrayJobEntry(jobId, "job_tags", "job_id");
 
-    const jobTagsList = await saveJobDetailsList(
-      tags,
-      "job_tags",
-      "tags",
-      jobId
-    );
+    if(tags.length != 0) {
+      const jobTagsList = await saveJobDetailsList(
+        tags,
+        "job_tags",
+        "tags",
+        jobId
+      );
+    }
   }
 };
 
+const interviewQuestionsUpdate = async(interviewQuestions, interviewTemplateId) => {
+  let templateToUse = interviewTemplateId;
+  interviewQuestions.map(async(question) => {
+    if(question.questionId) {
+      // TODO Update question by id
+    } else {
+      if(!interviewTemplateId) {
+          //  Create template first
+          templateToUse = await createInterviewTemplateQuestions(jobId,"default");
+      }
+      await createQuestion(question, templateToUse)
+    }
+  })
+};
+ 
 const jobDetails = async (jobId) => {
   const searchQuery = `SELECT 
   j.job_id, j.job_banner, j.job_title, 
@@ -442,6 +474,21 @@ const getDocs = async (applicantId, tableName) => {
   }
 };
 
+const getInterviewTemplateId = async(jobId) => {
+  const seachrQuery = `Select * from ${dbSchema}.job_interview_template where job_id=$1;`
+  try {
+  const { rows } = await dbQuery.query(seachrQuery, [jobId]);
+  
+  if(rows && rows.length > 0) {
+    return rows[0];
+  } else {
+    return null
+  }
+  } catch(error) {
+  throw(error)
+  }
+}
+
 const mappedBasicApplicantDetails = (raw) => {
   return {
     applicantProfileId: raw.applicant_profile_id,
@@ -558,6 +605,7 @@ const mappedJob = async (raw) => {
       "educationalbackground"
     ),
     interviewQuestions: await getJobInterviewQuestions(raw.job_id, "default"),
+    interviewTemplateId: await getInterviewTemplateId(raw.job_id)
   };
 };
 
@@ -571,4 +619,5 @@ export {
   jobBasicDetails,
   jobApplicants,
   applicationOfApplicant,
+  interviewQuestionsUpdate
 };

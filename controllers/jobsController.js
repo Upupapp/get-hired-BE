@@ -15,6 +15,7 @@ import {
   jobBasicDetails,
   jobApplicants,
   applicationOfApplicant,
+  interviewQuestionsUpdate
 } from "../services/job.service";
 
 import { listOfJobAppliedByApplicant } from "../services/applicant.service";
@@ -232,6 +233,7 @@ const updateJob = async (req, res) => {
     skills,
     tags,
     interviewQuestions,
+    interviewTemplateId
   } = req.body;
 
   try {
@@ -275,6 +277,10 @@ const updateJob = async (req, res) => {
       skills,
       tags,
     });
+
+    if(interviewQuestions) {
+      await interviewQuestionsUpdate(interviewQuestions, interviewTemplateId)
+    }
 
     if (!rows || rows.length == 0) {
       errorMessage.error = "Failed to Update Job";
