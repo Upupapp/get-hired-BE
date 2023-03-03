@@ -9,10 +9,10 @@ const dbSchema = env.schema;
 const now = new Date();
 
 const createQuestion = async (questionDetails, templateId) => {
-  const { question, answerDuration, retakes } = questionDetails;
+  const { question, answerDuration, retakes, sequence } = questionDetails;
   const insertQuery = `INSERT INTO ${dbSchema}.interview_template_question
-  (template_question_id, template_question, template_answer_duration, template_question_retakes, job_interview_template_id, created_at)  
-    VALUES($1, $2, $3, $4, $5, $6) returning *;`;
+  (template_question_id, template_question, template_answer_duration, template_question_retakes, job_interview_template_id, created_at, sequence)  
+    VALUES($1, $2, $3, $4, $5, $6, $7) returning *;`;
 
   const questionId = idGenerator(6, "QN");
 
@@ -24,6 +24,7 @@ const createQuestion = async (questionDetails, templateId) => {
       retakes,
       templateId,
       now,
+      sequence,
     ]);
 
     if (!rows || rows.length == 0) {
@@ -71,12 +72,13 @@ const createInterviewTemplateQuestions = async (jobId, templateName) => {
 };
 
 const updateQuestionById = async (interviewQuestion) => {
-  const { questionId, question, answerDuration, retakes } = interviewQuestion;
+  const { questionId, question, answerDuration, retakes, sequence } =
+    interviewQuestion;
 
   const updateQuery = `UPDATE ${dbSchema}.interview_template_question
   SET template_question=$1, template_answer_duration=$2, 
-    template_question_retakes=$3, updated_at=$4
-  WHERE template_question_id=$5 returning *; `;
+    template_question_retakes=$3, updated_at=$4, sequence=$5
+  WHERE template_question_id=$6 returning *; `;
 
   try {
     const { rows } = await dbQuery.query(updateQuery, [
@@ -84,14 +86,32 @@ const updateQuestionById = async (interviewQuestion) => {
       answerDuration,
       retakes,
       now,
+      sequence,
       questionId,
     ]);
 
     if (!rows && rows.length == 0) {
       throw "Failed to update question";
     }
+    const dbResponse = mappedQuestion(rows[0]);
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
 
-    return mappedQuestion(rows[0]);
+const changeQuestionSequence = async (questionId, sequence) => {
+  const updateQuery = `UPDATE ${dbSchema}.interview_template_question
+    SET sequence = $1 WHERE template_question_id = $2 returning *;`;
+  try {
+    const { rows } = await dbQuery.query(updateQuery, [sequence, questionId]);
+
+    if (!rows && rows.length == 0) {
+      throw "Failed to Update Questions";
+    }
+
+    const dbResponse = mappedQuestion(rows[0]);
+    return dbResponse;
   } catch (error) {
     throw error;
   }
@@ -99,14 +119,20 @@ const updateQuestionById = async (interviewQuestion) => {
 
 const mappedQuestion = (raw) => {
   return {
-    questionId: raw.question_id,
-    question: raw.question,
-    answerDuration: raw.answer_duration,
-    retakes: raw.retakes,
+    questionId: raw.template_question_id,
+    question: raw.template_question,
+    answerDuration: raw.template_answer_duration,
+    retakes: raw.template_question_retakes,
     createdAt: raw.created_at,
-    updatedAt: raw.updatedAt,
-    templateId: raw.templateId,
+    updatedAt: raw.updated_at,
+    templateId: raw.job_interview_template_id,
+    sequence: raw.sequence,
   };
 };
 
-export { createQuestion, createInterviewTemplateQuestions, updateQuestionById };
+export {
+  createQuestion,
+  createInterviewTemplateQuestions,
+  updateQuestionById,
+  changeQuestionSequence,
+};

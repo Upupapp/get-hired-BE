@@ -92,7 +92,8 @@ const getJobInterviewQuestions = async (jobId, templateName) => {
       FROM ${dbSchema}.job_interview_template j
       left join ${dbSchema}.interview_template_question i
       on i.job_interview_template_id = j.job_interview_template_id
-      WHERE job_id = $1 and job_interview_template_name = $2;`;
+      WHERE j.job_id = $1 and j.job_interview_template_name = $2 
+      ORDER BY i.job_interview_template_id, i.sequence ASC;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId, templateName]);
@@ -526,10 +527,12 @@ const mappedBasicApplicantDetails = (raw) => {
 
 const mappedInterviewQuestions = (raw) => {
   return {
+    createdAt: raw.created_at,
     question: raw.template_question,
     answerDuration: raw.template_answer_duration,
     questionId: raw.template_question_id,
-    retakes: raw.template_question_retakes
+    retakes: raw.template_question_retakes,
+    sequence: raw.sequence
   };
 };
 
@@ -632,4 +635,5 @@ export {
   jobApplicants,
   applicationOfApplicant,
   interviewQuestionsUpdate,
+  getJobInterviewQuestions
 };

@@ -6,6 +6,8 @@ import uploadInStorage from "../helpers/uploader";
 import {
   createInterviewTemplateQuestions,
   createQuestion,
+  updateQuestionById,
+  changeQuestionSequence,
 } from "./interviewController";
 import {
   getPublishedJobs,
@@ -15,7 +17,8 @@ import {
   jobBasicDetails,
   jobApplicants,
   applicationOfApplicant,
-  interviewQuestionsUpdate
+  interviewQuestionsUpdate,
+  getJobInterviewQuestions,
 } from "../services/job.service";
 
 import { listOfJobAppliedByApplicant } from "../services/applicant.service";
@@ -95,7 +98,7 @@ const createJobs = async (req, res) => {
       jobCity,
       jobCategoryId,
       jobCountry,
-      salaryCurrency
+      salaryCurrency,
     ]);
 
     if (!rows || rows.length == 0) {
@@ -233,7 +236,7 @@ const updateJob = async (req, res) => {
     skills,
     tags,
     interviewQuestions,
-    interviewTemplateId
+    interviewTemplateId,
   } = req.body;
 
   try {
@@ -278,8 +281,12 @@ const updateJob = async (req, res) => {
       tags,
     });
 
-    if(interviewQuestions) {
-      await interviewQuestionsUpdate(jobId, interviewQuestions, interviewTemplateId)
+    if (interviewQuestions) {
+      await interviewQuestionsUpdate(
+        jobId,
+        interviewQuestions,
+        interviewTemplateId
+      );
     }
 
     if (!rows || rows.length == 0) {
@@ -551,6 +558,35 @@ const getAllApplicantOfJob = async (req, res) => {
   }
 };
 
+const updateJobInterviewQuestion = async (req, res) => {
+  try {
+    const question = await updateQuestionById(req.body);
+    successMessage.data = question;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const deleteInterviewQuestion = async (req, res) => {
+  const { questionId, jobId } = req.query;
+  const deleteQuery = `DELETE FROM ${dbSchema}.interview_template_question WHERE template_question_id = $1 returning *`;
+  try {
+    await dbQuery.query(deleteQuery, [questionId]);
+    const rawQuestions = await getJobInterviewQuestions(jobId, "default");
+
+    const dbResponse = rawQuestions.map(async (question, index) => {
+      return await changeQuestionSequence(question.questionId, index + 1);
+    });
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const mappedBasicJob = (raw) => {
   return {
     jobId: raw.job_id,
@@ -589,5 +625,7 @@ export {
   getJobDetails,
   getJobShareableLink,
   getAllApplicantOfJob,
-  getJobApplicantDetails
+  getJobApplicantDetails,
+  updateJobInterviewQuestion,
+  deleteInterviewQuestion,
 };

@@ -14,7 +14,9 @@ import {
   getJobDetails,
   getJobShareableLink,
   getAllApplicantOfJob,
-  getJobApplicantDetails
+  getJobApplicantDetails,
+  updateJobInterviewQuestion,
+  deleteInterviewQuestion
 } from "../controllers/jobsController";
 
 import verifyAuth from "../middleware/verifyAuth";
@@ -35,6 +37,8 @@ router.get("/job/rolelist", verifyAuth, getJobRoleList);
 router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
 router.get("/job/applicants", getAllApplicantOfJob);
 router.get("/job/applicantdetails", verifyAuth, getJobApplicantDetails);
+router.put("/job/updatejobinterview", verifyAuth, updateJobInterviewQuestion);
+router.delete("/job/deleteinterviewquestion", verifyAuth, deleteInterviewQuestion);
 
 // public api
 router.get("/job/published", getAllPublishedJobs);
