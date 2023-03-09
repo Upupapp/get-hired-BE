@@ -32,7 +32,7 @@ import {
   cities,
 } from "../services/company.service";
 
-import {contactList} from "../services/contact.service"
+import { contactList } from "../services/contact.service";
 
 import dbQuery from "../db/dbQuery";
 import env from "../env";
@@ -68,7 +68,9 @@ const createInitialCompany = async (req, res) => {
 const updateCompany = async (req, res) => {
   const updateQuery = `UPDATE ${dbSchema}.companies
   SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11
-  WHERE company_id=$12 returning *;`;
+  company_state=$12, company_mapurl=$13, company_suburb=$14, company_zip=$15, company_address_one=$16
+  WHERE company_id=$17 returning *;`;
+
   let rawUrl = "";
 
   const {
@@ -85,6 +87,11 @@ const updateCompany = async (req, res) => {
     workSetupId,
     numberOfEmployee,
     companyLogoFile,
+    companyState,
+    companyTown,
+    companyZip,
+    companyMapUrl,
+    companyAddressOne,
   } = req.body;
 
   try {
@@ -110,6 +117,11 @@ const updateCompany = async (req, res) => {
       companyContactNumber,
       companyCountry,
       companyAddress,
+      companyState,
+      companyTown,
+      companyZip,
+      companyMapUrl,
+      companyAddressOne,
       companyId,
     ]);
 
@@ -178,8 +190,9 @@ const createCompany = async (company, uid) => {
   const companyId = idGenerator(6, "COM");
 
   const insertQuery = `INSERT INTO ${dbSchema}.companies
-  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_at, created_by)
-  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *;`;
+  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_at, created_by, 
+  company_state, company_mapurl, company_suburb, company_zip, company_address_one)
+  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning *;`;
 
   const {
     companyLogoFile,
@@ -193,6 +206,11 @@ const createCompany = async (company, uid) => {
     companyContactNumber,
     companyCountry,
     companyAddress,
+    companyState,
+    companyTown,
+    companyZip,
+    companyMapUrl,
+    companyAddressOne,
   } = company;
 
   if (companyLogoFile && companyLogoFile != "") {
@@ -219,6 +237,11 @@ const createCompany = async (company, uid) => {
       companyAddress,
       now,
       uid,
+      companyState,
+      companyTown,
+      companyZip,
+      companyMapUrl,
+      companyAddressOne,
     ]);
 
     if (!rows && rows.length == 0) {
@@ -242,7 +265,7 @@ const getDashboard = async (req, res) => {
     const totalContact = await totalContacts(userCompany.companyId);
     const graphList = await graph(userCompany.companyId);
     const cityList = await cities(userCompany.companyId);
-   const contact = await contactList(userCompany.companyId);
+    const contact = await contactList(userCompany.companyId);
     const dbResponse = {
       company: userCompany,
       charts: chart,
@@ -300,6 +323,11 @@ const mappedCompany = (raw) => {
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
     companyIndustryName: raw.company_industry_name,
+    companyState: raw.company_state,
+    companyMapUrl: raw.company_mapurl,
+    companyTown: raw.company_suburb,
+    companyZip: raw.company_zip,
+    comapnyAddressOne: raw.company_address_one,
   };
 };
 
@@ -340,15 +368,17 @@ const addCompanyUser = async (req, res) => {
       await emails.map(async (item) => {
         const adding = await addCompanyUserByEmail(item.email, companyId, uid);
         return {
-          email: item.email, status: adding.status, msg: adding.msg
-        }
+          email: item.email,
+          status: adding.status,
+          msg: adding.msg,
+        };
       })
     );
 
     successMessage.data = {
       companyId,
-      emails: userStatus
-    }
+      emails: userStatus,
+    };
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -363,7 +393,7 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
     if (userInFirebase && userInFirebase.length !== 0) {
       return {
         msg: "Email already a user.",
-        status: 'failed'
+        status: "failed",
       };
     }
 
@@ -393,7 +423,7 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
     if (!userData || !dbRegister) {
       return {
         msg: "Failed to Create credentials",
-        status: 'failed'
+        status: "failed",
       };
     }
 
@@ -408,7 +438,7 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
     if (!assigned) {
       return {
         msg: "Failed to assign User to a Company",
-        status: 'failed'
+        status: "failed",
       };
     }
 
@@ -427,13 +457,13 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
       ...dbRegister,
     };
     return {
-      msg: 'Successfully added',
-      status: 'success'
+      msg: "Successfully added",
+      status: "success",
     };
   } catch (error) {
     return {
       msg: `Failed: ${error}`,
-      status: 'failed'
+      status: "failed",
     };
   }
 };
