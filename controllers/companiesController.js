@@ -67,7 +67,7 @@ const createInitialCompany = async (req, res) => {
 
 const updateCompany = async (req, res) => {
   const updateQuery = `UPDATE ${dbSchema}.companies
-  SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11
+  SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11,
   company_state=$12, company_mapurl=$13, company_suburb=$14, company_zip=$15, company_address_one=$16
   WHERE company_id=$17 returning *;`;
 
@@ -327,7 +327,7 @@ const mappedCompany = (raw) => {
     companyMapUrl: raw.company_mapurl,
     companyTown: raw.company_suburb,
     companyZip: raw.company_zip,
-    comapnyAddressOne: raw.company_address_one,
+    companyAddressOne: raw.company_address_one,
   };
 };
 
