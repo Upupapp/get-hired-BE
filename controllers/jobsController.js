@@ -462,6 +462,21 @@ const getBasicJobList = async (companyId, statusId) => {
   }
 };
 
+const getPublishedJobsWithinDateRange = async (companyId, startRange, newest) => {
+  const endMili = new Date(newest);
+  const startMili = new Date(startRange);
+
+  try {
+    const published = await getBasicJobList(companyId, 2);
+    const filteredByDate = published.filter(
+      (job) => new Date(job.createdAt) > startMili && new Date(job.createdAt) < endMili
+    );
+    return filteredByDate;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const getJobList = async (companyId) => {
   const selectQuery = `
     SELECT 
@@ -628,4 +643,5 @@ export {
   getJobApplicantDetails,
   updateJobInterviewQuestion,
   deleteInterviewQuestion,
+  getPublishedJobsWithinDateRange
 };

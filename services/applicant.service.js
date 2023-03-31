@@ -393,7 +393,6 @@ const updateApplicationProfile = async (applicant) => {
     salaryCurrency,
   } = applicant;
 
-  console.log(workExperience);
 
   try {
     if (videoCVFile && videoCVFile != "") {

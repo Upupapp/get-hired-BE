@@ -328,6 +328,7 @@ const mappedCompany = (raw) => {
     companyTown: raw.company_suburb,
     companyZip: raw.company_zip,
     companyAddressOne: raw.company_address_one,
+    withActiveSubscription: raw.with_active_subscription
   };
 };
 

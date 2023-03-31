@@ -70,7 +70,8 @@ const loginUser = async (req, res) => {
       ...credentials,
       withCompany: userCompany && userCompany.length != 0,
       companyName: userCompany.companyName || "",
-      companyId: userCompany.companyId || null
+      companyId: userCompany.companyId || null,
+      withActiveSubscription: userCompany.withActiveSubscription
     };
     return res.status(status.success).send(successMessage);
   } catch (err) {

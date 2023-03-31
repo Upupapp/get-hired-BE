@@ -5,7 +5,7 @@ import { appplicantProfile } from "./applicant.service";
 import {
   createInterviewTemplateQuestions,
   createQuestion,
-  updateQuestionById
+  updateQuestionById,
 } from "../controllers/interviewController";
 
 const dbSchema = env.schema;
@@ -262,7 +262,7 @@ const saveJobArray = async (jobId, arrays) => {
 const interviewQuestionsUpdate = async (
   jobId,
   interviewQuestions,
-  interviewTemplateId,
+  interviewTemplateId
 ) => {
   let templateToUse = interviewTemplateId;
   interviewQuestions.map(async (question) => {
@@ -462,6 +462,23 @@ const getInterviewAnswers = async (applicantId, jobId) => {
   }
 };
 
+const getAllVideoResponsesByJobIds = async (jobIds) => {
+  var str =  "'" + jobIds.join("','") + "'";
+  const searchQuery = `select * from ${dbSchema}.interview_answers ia where job_id in (${str})`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, []);
+
+    if (!rows && rows.length == 0) {
+      return [];
+    }
+    const dbResponse = rows;
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const getDocs = async (applicantId, tableName) => {
   const searchQuery = `SELECT id, fileurl, filename, "size", "type", applicant_id, job_id, created_at
   FROM ${dbSchema}.${tableName} WHERE applicant_id = $1;`;
@@ -532,7 +549,7 @@ const mappedInterviewQuestions = (raw) => {
     answerDuration: raw.template_answer_duration,
     questionId: raw.template_question_id,
     retakes: raw.template_question_retakes,
-    sequence: raw.sequence
+    sequence: raw.sequence,
   };
 };
 
@@ -635,5 +652,6 @@ export {
   jobApplicants,
   applicationOfApplicant,
   interviewQuestionsUpdate,
-  getJobInterviewQuestions
+  getJobInterviewQuestions,
+  getAllVideoResponsesByJobIds
 };
