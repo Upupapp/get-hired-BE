@@ -33,6 +33,7 @@ import {
 } from "../services/company.service";
 
 import { contactList } from "../services/contact.service";
+import { companySubscriptions } from "../controllers/subscriptionController";
 
 import dbQuery from "../db/dbQuery";
 import env from "../env";
@@ -144,12 +145,13 @@ const getUserCompany = async (id) => {
     from ${dbSchema}.company_employees ce 
       left join ${dbSchema}.companies c 
       on c.company_id = ce.company_id 
-      RIGHT JOIN ${dbSchema}.industry i
+      LEFT JOIN ${dbSchema}.industry i
       on c.industry_id = i.industry_id
       where ce.employee_uuid = $1`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [id]);
+    console.log(rows);
 
     if (!rows || rows.length == 0) {
       return [];
@@ -159,6 +161,8 @@ const getUserCompany = async (id) => {
       ...mappedCompany(rows[0]),
       employeedCompanyId: rows[0].employee_id,
     };
+
+    console.log(dbResponse);
     return dbResponse;
   } catch (error) {
     throw error;
@@ -172,6 +176,8 @@ const getSpecificCompany = async (req, res) => {
   try {
     if (!id || id == "") {
       const { uid } = req.user;
+
+      console.log(uid);
       company = await getUserCompany(uid);
     } else {
       company = await companyDetailsById(id);
@@ -328,7 +334,7 @@ const mappedCompany = (raw) => {
     companyTown: raw.company_suburb,
     companyZip: raw.company_zip,
     companyAddressOne: raw.company_address_one,
-    withActiveSubscription: raw.with_active_subscription
+    withActiveSubscription: raw.with_active_subscription,
   };
 };
 
@@ -504,6 +510,58 @@ const getCompanyShareableLink = async (req, res) => {
   }
 };
 
+const getSubscriptionRestrictions = async (req, res) => {
+  const { companyId } = req.query;
+  try {
+    const dbResponse = await companySubscriptions(companyId);
+
+    if (dbResponse.length == 0) {
+      throw "Company is not subscribed to any plan";
+    }
+
+    successMessage.data = dbResponse[0];
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getAllCompanies = async (req, res) => {
+  const seachrQuery = `SELECT company_id, company_name FROM ${dbSchema}.companies`;
+  try {
+    const { rows } = await dbQuery.query(seachrQuery, []);
+    const dbResponse = rows.map((row) => {
+      return {
+        companyId: row.company_id,
+        companyName: row.companyName,
+      };
+    });
+    successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getUserCompanyByEmail = async (email) => {
+  const searchQuery = `Select company_id from ${dbSchema}.company_employees ce
+    left join ${dbSchema}.user_credentials uc
+    on ce.employee_uuid=uc.uid where uc.email = $1`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [email]);
+
+    if (!rows || rows.length == 0) {
+      return null;
+    }
+    return rows[0].company_id;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const mappedCompanyUser = (raw) => {
   return {
     employeeId: raw.employee_id,
@@ -548,4 +606,7 @@ export {
   getIndustryListCompany,
   getFeaturedCompanies,
   getCompanyShareableLink,
+  getSubscriptionRestrictions,
+  getAllCompanies,
+  getUserCompanyByEmail,
 };

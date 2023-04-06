@@ -26,6 +26,9 @@ import { listOfJobAppliedByApplicant } from "../services/applicant.service";
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
 
+import { companySubscriptions } from "../controllers/subscriptionController";
+
+
 const dbSchema = env.schema;
 const now = Date.now();
 
@@ -602,6 +605,23 @@ const deleteInterviewQuestion = async (req, res) => {
   }
 };
 
+const getSubscriptionRestrictions = async (req, res) => {
+  const { companyId } = req.query;
+  try {
+    const dbResponse = await companySubscriptions(companyId);
+
+    if (dbResponse.length == 0) {
+      throw "Company is not subscribed to any plan";
+    }
+
+    successMessage.data = dbResponse[0];
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
 const mappedBasicJob = (raw) => {
   return {
     jobId: raw.job_id,
@@ -643,5 +663,6 @@ export {
   getJobApplicantDetails,
   updateJobInterviewQuestion,
   deleteInterviewQuestion,
-  getPublishedJobsWithinDateRange
+  getPublishedJobsWithinDateRange,
+  getSubscriptionRestrictions
 };

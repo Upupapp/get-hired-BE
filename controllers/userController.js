@@ -19,6 +19,8 @@ import {
 import { getUserCompany } from "./companiesController";
 import uploadInStorage from "../helpers/uploader";
 
+import { companySubscriptions } from "./subscriptionController";
+
 import {
   revokeTokenInFirebase,
   registerNewUserInFirebase,
@@ -36,8 +38,10 @@ import {
 import env from "../env";
 
 const dbSchema = env.schema;
+const now = Date.now();
 
 const loginUser = async (req, res) => {
+  let isActive = false;
   const { email, password } = req.body;
 
   if (isEmpty(email) || isEmpty(password)) {
@@ -66,6 +70,19 @@ const loginUser = async (req, res) => {
     // user logged in new DB
     const credentials = await loginUserInDBAndFirebase(email, password);
     const userCompany = await getUserCompany(credentials.id);
+
+    if(userCompany && userCompany.companyId) {
+      const subs = await companySubscriptions(userCompany.companyId);
+
+      if(subs && subs.length > 0) {
+        const endSubs = new Date(subs[0].endAt);
+        const nowMili = new Date(now)
+        console.log(endSubs);
+        console.log(nowMili);
+        isActive = endSubs > nowMili;
+      }
+    }
+
     successMessage.data = {
       ...credentials,
       withCompany: userCompany && userCompany.length != 0,

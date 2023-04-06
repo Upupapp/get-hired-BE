@@ -14,7 +14,8 @@ import contactRoutes from "./routes/contactRoutes"
 import optionsRoutes from "./routes/optionsRoute";
 import candidateRoutes from "./routes/candidateRoutes";
 import adminRoutes from "./routes/adminRoute";
-import serverRoutes from "./routes/subscriptionRoute";
+import subscriptionRoutes from "./routes/subscriptionRoute";
+import paymentRoutes from "./routes/paymentRoute";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -49,7 +50,9 @@ app.use("/api", contactRoutes);
 app.use("/api", optionsRoutes);
 app.use("/api", candidateRoutes);
 app.use("/api", adminRoutes);
-app.use("/api", serverRoutes);
+app.use("/api", subscriptionRoutes);
+app.use("/api", paymentRoutes);
+
 
 app.get("/", (req, res) => res.send(`Welcome to ${env.projectName} API`));
 

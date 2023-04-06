@@ -4,12 +4,104 @@ import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
 
 import { insertLogs } from "../services/user.service";
-import { getPublishedJobsWithinDateRange } from "./jobsController";
+import {
+  getPublishedJobsWithinDateRange,
+  getBasicJobList,
+} from "./jobsController";
 import { companyUsers } from "../services/company.service";
-import { getAllVideoResponsesByJobIds } from '../services/job.service';
+import { getAllVideoResponsesByJobIds } from "../services/job.service";
 
+import { getUserCompanyByEmail } from "./companiesController";
+import { createPaymongoLink } from "./paymentController";
 const dbSchema = env.schema;
-const now = Date.now();
+
+const now = new Date();
+
+const createPaymentIntent = async (req, res) => {
+  const { email, subscriptionId, price } = req.body;
+
+  const cartId = idGenerator(6, "SUBS");
+
+  const insertQuery = `INSERT INTO ${dbSchema}.cart_table
+    (cart_id, company_id, created_at, subscription_id, price)
+    VALUES($1, $2, $3, $4, $5) returning *`;
+
+  try {
+    const companyId = await getUserCompanyByEmail(email);
+
+    if (!companyId) {
+      throw "User not registered in any Company";
+    }
+
+    const amnt = parseFloat(price * 55).toFixed(2);
+    console.log(amnt);
+
+    const { rows } = await dbQuery.query(insertQuery, [
+      cartId,
+      companyId,
+      now,
+      subscriptionId,
+      amnt,
+    ]);
+
+    if (!rows || rows.length == 0) {
+      throw "Failed to create Cart";
+    }
+
+    const dbResponse = rows.map((row) => {
+      return {
+        cartId: row.cart_id,
+        companyId: row.company_id,
+        createdAt: row.created_at,
+        subscriptionId: row.subscription_id,
+        price: row.price,
+      };
+    });
+
+    const link = await createPaymongoLink(
+      dbResponse[0].cartId,
+      dbResponse[0].companyId + "-" + dbResponse[0].subscriptionId,
+      dbResponse[0].price
+    );
+
+    // TODO insert logs here
+
+    if (!link) {
+      throw "Failed to create payment link";
+    }
+
+    successMessage.data = link.attributes.checkout_url;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const createCompanySubscription = async (companyId, subscriptionId) => {
+  const insertQuery = `INSERT INTO ${dbSchema}.companies_subscription
+  (company_id, subscription_id, created_at, is_paid, payment_date)
+  VALUES($1, $2, $3, $4, $5) returning *`;
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      companyId,
+      subscriptionId,
+      now,
+      true,
+      now,
+    ]);
+
+    if (!rows || rows.length == 0) {
+      throw "Failed to create Subscription";
+    }
+
+    const dbResponse = rows;
+    return dbResponse;
+  } catch (error) {
+    throw error;
+  }
+};
 
 const getAllSubscription = async (req, res) => {
   const searchQuery = `SELECT * FROM ${dbSchema}."subscription"`;
@@ -30,16 +122,28 @@ const getAllSubscription = async (req, res) => {
 
 const getCompanySubscriptions = async (req, res) => {
   const { companyId } = req.query;
+  try {
+    const subList = await companySubscriptions(companyId);
+
+    successMessage.data = subList;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const companySubscriptions = async (companyId) => {
   const seachrQuery = `select cs.company_id, cs.created_at, cs.is_paid, cs.payment_date, s.* from ${dbSchema}.companies_subscription cs
-left join ${dbSchema}."subscription" s 
-on s.subscription_id = cs.subscription_id 
-where cs.company_id = $1 order by created_at DESC`;
+    left join ${dbSchema}."subscription" s 
+    on s.subscription_id = cs.subscription_id 
+    where cs.company_id = $1 order by created_at DESC`;
 
   try {
     const { rows } = await dbQuery.query(seachrQuery, [companyId]);
 
-    if (!rows || rows.length == 0) {
-      throw "User does not have Subscription";
+    if (!rows && rows.length == 0) {
+      return null;
     }
 
     const formattedSubs = Promise.all(
@@ -60,11 +164,9 @@ where cs.company_id = $1 order by created_at DESC`;
 
     const allSubs = await formattedSubs;
 
-    successMessage.data = allSubs;
-    return res.status(status.success).send(successMessage);
+    return allSubs;
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
+    throw error;
   }
 };
 
@@ -72,16 +174,11 @@ const getCompanyUsage = async (companyId, startRange, endRange) => {
   let videoCount = 0;
 
   try {
-    const jobPost = await getPublishedJobsWithinDateRange(
-      companyId,
-      startRange,
-      endRange
-    );
+    const jobPost = await getBasicJobList(companyId, 2);
 
-    if(jobPost.length != 0) {
-        const jobIds = jobPost.map(job => job.jobId);
-        videoCount = await getAllVideoResponsesByJobIds(jobIds)
-
+    if (jobPost.length != 0) {
+      const jobIds = jobPost.map((job) => job.jobId);
+      videoCount = await getAllVideoResponsesByJobIds(jobIds);
     }
 
     const users = await companyUsers(companyId);
@@ -89,7 +186,7 @@ const getCompanyUsage = async (companyId, startRange, endRange) => {
     const dbResponse = {
       jobPostCount: jobPost.length,
       adminCount: users.length,
-      videoResponseCount: videoCount.length
+      videoResponseCount: videoCount.length,
     };
     return dbResponse;
   } catch (error) {
@@ -124,4 +221,10 @@ const mappedSubscription = (raw) => {
   };
 };
 
-export { getAllSubscription, getCompanySubscriptions };
+export {
+  getAllSubscription,
+  getCompanySubscriptions,
+  companySubscriptions,
+  createPaymentIntent,
+  createCompanySubscription
+};
