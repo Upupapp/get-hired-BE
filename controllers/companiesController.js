@@ -8,6 +8,7 @@ import {
   registerNewUserInFirebase,
   createDynamicLink,
 } from "../helpers/firebaseFunctions";
+
 import {
   hashPassword,
   comparePassword,
@@ -33,7 +34,10 @@ import {
 } from "../services/company.service";
 
 import { contactList } from "../services/contact.service";
-import { companySubscriptions } from "../controllers/subscriptionController";
+import {
+  companySubscriptions,
+  createCompanySubscription,
+} from "../controllers/subscriptionController";
 
 import dbQuery from "../db/dbQuery";
 import env from "../env";
@@ -42,6 +46,31 @@ const dbSchema = env.schema;
 const now = new Date();
 
 const createInitialCompany = async (req, res) => {
+  const { companyName, companyEmail } = req.body;
+  const { uid } = req.user;
+
+  try {
+    const company = await createBasicCompany(companyName, companyEmail, uid);
+
+    if (!company) {
+      throw "No company created";
+    }
+
+    const assigned = await assignEmployeeToCompany(company.companyId, uid, uid);
+
+    if (!assigned) {
+      throw "Failed to assign Creator as Employee";
+    }
+
+    successMessage.data = company;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const createCompanyFull = async (req, res) => {
   const details = req.body;
   const { uid } = req.user;
 
@@ -188,6 +217,35 @@ const getSpecificCompany = async (req, res) => {
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
+  }
+};
+
+const createBasicCompany = async (companyName, companyEmail, userId) => {
+  const companyId = idGenerator(6, "COM");
+  const insertQuery = `INSERT INTO ${dbSchema}.companies
+  (company_id, company_name, company_email, created_at, created_by)
+  VALUES($1, $2, $3, $4, $5) returning *;`;
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      companyId,
+      companyName,
+      companyEmail,
+      now,
+      userId,
+    ]);
+
+    if (!rows && rows.length == 0) {
+      throw "Failed to create company";
+    }
+
+    const dbResponse = mappedCompany(rows[0]);
+
+    const subs = await createCompanySubscription(dbResponse.companyId, 1);
+
+    return dbResponse;
+  } catch (error) {
+    throw error;
   }
 };
 
@@ -609,4 +667,6 @@ export {
   getSubscriptionRestrictions,
   getAllCompanies,
   getUserCompanyByEmail,
+  createCompanyFull,
+  createBasicCompany,
 };

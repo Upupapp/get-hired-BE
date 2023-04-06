@@ -19,13 +19,15 @@ import {
   getFeaturedCompanies,
   getCompanyShareableLink,
   getSubscriptionRestrictions,
-  getAllCompanies
+  getAllCompanies,
+  createCompanyFull
 } from "../controllers/companiesController";
 import verifyAuth from "../middleware/verifyAuth";
 
 const router = express.Router();
 
-router.post("/company/createcompany", verifyAuth, createInitialCompany);
+router.post("/company/createinitial", verifyAuth, createInitialCompany);
+router.post("/company/createcompany", verifyAuth, createCompanyFull);
 router.put("/company/update", updateCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
 router.delete("/company/removecompanyuser", removeCompanyUser);
