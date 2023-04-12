@@ -180,7 +180,6 @@ const getUserCompany = async (id) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [id]);
-    console.log(rows);
 
     if (!rows || rows.length == 0) {
       return [];
@@ -191,7 +190,6 @@ const getUserCompany = async (id) => {
       employeedCompanyId: rows[0].employee_id,
     };
 
-    console.log(dbResponse);
     return dbResponse;
   } catch (error) {
     throw error;
@@ -206,7 +204,6 @@ const getSpecificCompany = async (req, res) => {
     if (!id || id == "") {
       const { uid } = req.user;
 
-      console.log(uid);
       company = await getUserCompany(uid);
     } else {
       company = await companyDetailsById(id);
