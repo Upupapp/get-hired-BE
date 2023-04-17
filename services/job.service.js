@@ -320,6 +320,7 @@ const jobDetails = async (jobId) => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId]);
     if (rows && rows.length != 0) {
+      console.log(rows[0]);
       return await mappedJob(rows[0]);
     } else {
       return [];
@@ -567,6 +568,7 @@ const mappedBasicJob = async (raw) => {
     jobBanner: raw.job_banner,
     jobTitle: raw.job_title,
     companyId: raw.company_id,
+    companyLogoUrl: raw.company_logo,
     jobTypeId: raw.job_type_id,
     workSetupId: raw.work_setup_id,
     jobCountry: raw.job_country,
@@ -588,6 +590,7 @@ const mappedJob = async (raw) => {
     jobBanner: raw.job_banner,
     jobTitle: raw.job_title,
     companyId: raw.company_id,
+    companyName: raw.company_name,
     industryId: raw.industry_id,
     industryName: raw.industry_name,
     jobRoleId: raw.job_role_id,
