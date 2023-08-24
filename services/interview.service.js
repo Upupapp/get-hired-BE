@@ -201,7 +201,8 @@ const createGroupInterview = async (groupInterview, userId) => {
     groupIds,
     recipients,
     companyId,
-    externalJobLink
+    externalJobLink,
+    groups
   } = groupInterview
 
   try {
@@ -222,6 +223,14 @@ const createGroupInterview = async (groupInterview, userId) => {
 
     if (!rows || rows.length == 0) {
       throw 'Failed to save group interview'
+    }
+
+    if(recipients && recipients.length != 0) {
+         // TODO get detail property, get email, send interview details
+    }
+
+    if(groups && groups.length != 0) {
+        // TODO get detail property, get email, send interview details
     }
 
     const dbResponse = await Promise.all(
