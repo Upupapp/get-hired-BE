@@ -393,7 +393,6 @@ const updateApplicationProfile = async (applicant) => {
     salaryCurrency,
   } = applicant;
 
-
   try {
     if (videoCVFile && videoCVFile != "") {
       rawUrl = await uploadInStorage(
@@ -943,6 +942,35 @@ const listOfJobAppliedByApplicant = async (uid) => {
   }
 };
 
+const listOfAllUniqueApplicantsByCompany = async (companyId) => {
+  const seachrQuery = `SELECT 
+      distinct(ja.candidate_id) as candidate_id, uc.email 
+        from ${dbSchema}.job_applicants ja
+          left join ${dbSchema}.jobs j
+          on ja.job_id = j.job_id
+          left join ${dbSchema}.user_credentials uc 
+          on ja.candidate_id = uc.uid 
+          where j.company_id = $1 and ja.is_archived = false`;
+
+  try {
+    const { rows } = await dbQuery.query(seachrQuery, [companyId]);
+    if (rows && rows.length != 0) {
+      return await Promise.all(
+        rows.map(async (row) => {
+          return {
+            id: row.candidate_id,
+            email: row.email,
+          };
+        })
+      );
+    } else {
+      return [];
+    }
+  } catch (error) {
+    throw error;
+  }
+};
+
 const mappedBasicProfile = async (raw) => {
   return {
     applicantProfileId: raw.applicant_profile_id,
@@ -1022,4 +1050,5 @@ export {
   saveApplicantDetailsList,
   updateProfileBasicInfo,
   updateProfileSaveVideoCV,
+  listOfAllUniqueApplicantsByCompany,
 };

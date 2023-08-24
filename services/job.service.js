@@ -6,7 +6,7 @@ import {
   createInterviewTemplateQuestions,
   createQuestion,
   updateQuestionById,
-} from "../controllers/interviewController";
+} from "./interview.service";
 
 const dbSchema = env.schema;
 const now = Date.now();

@@ -8,7 +8,7 @@ import {
   createQuestion,
   updateQuestionById,
   changeQuestionSequence,
-} from "./interviewController";
+} from "../services/interview.service";
 import {
   getPublishedJobs,
   jobDetails,
