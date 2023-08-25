@@ -1,5 +1,4 @@
 import dbQuery from '../db/dbQuery'
-import uploadInStorage from '../helpers/uploader'
 import idGenerator from '../helpers/randomNumberForId'
 
 import env from '../env'
@@ -147,7 +146,9 @@ const getAllInterviews = async companyId => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [companyId])
     if (rows && rows.length != 0) {
-      return await Promise.all(rows.map(async row => mappedInterviews(row)))
+      return await Promise.all(
+        rows.map(async row => await mappedGroupInterview(row))
+      )
     } else {
       return []
     }
@@ -286,6 +287,25 @@ function merge(array1, array2) {
   )
 }
 
+const getGroupRecipients = async groupIds => {
+  try {
+    let groups = []
+    if (groupIds && groupIds.length != 0) {
+      groups = await Promise.all(
+        groupIds.map(async id => await checkContacts({ group_id: id }))
+      )
+
+      const formatted = getEmailFromNestedGroupDetails(groups)
+      console.log(formatted)
+      return formatted
+    }
+
+    return groups
+  } catch (error) {
+    throw error
+  }
+}
+
 
 const getEmailFromNestedGroupDetails = groupArr => {
   return groupArr.map(group => {
@@ -309,8 +329,9 @@ const mappedGroupInterview = async(raw) => {
     updatedAt: raw.updated_at,
     companyId: raw.company_id,
     groups: await getGroupRecipients(raw.group_ids),
-    numberOfRecipient: raw.numberOfRecipient
     // groups:raw.group_interview_id,
+    recipientOpened: [], // TODO
+    recipientAnswered: [] // TODO
   }
 }
 
@@ -327,24 +348,6 @@ const mappedTemplateList = raw => {
     jobId: raw.job_id,
     numberOfQuestions: raw.number_of_questions,
     jobTitle: raw.job_title
-  }
-}
-
-const mappedInterviews = raw => {
-  return {
-    groupInterviewId: raw.group_interview_id,
-    groupInterviewName: raw.group_interview_name,
-    interviewTemplateQuestionId: raw.interview_template_question_id,
-    jobId: raw.job_id,
-    jobName: raw.job_title,
-    groupId: raw.group_id,
-    groupRecipientName: raw.group_name,
-    externalJobLink: raw.external_job_link,
-    recipients: raw.recipients,
-    createdAt: raw.created_at,
-    createdBy: raw.created_by,
-    updatedAt: raw.updated_at,
-    companyId: raw.company_id
   }
 }
 
