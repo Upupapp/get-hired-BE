@@ -197,10 +197,10 @@ const createGroupInterview = async (groupInterview, userId) => {
     (group_interview_id, group_interview_name, interview_template_question_id, job_id, group_ids, created_at, created_by, updated_at, recipients, company_id, external_job_link)
     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`
 
-  let thisIsRecipient = [];
-  let recipients2 = [];
+  let thisIsRecipient = []
+  let recipients2 = []
   let recipientsList = []
-  let numberOfRecipient = 0;
+  let numberOfRecipient = 0
   const {
     groupInterviewName,
     interviewTemplateQuestionId,
@@ -242,19 +242,18 @@ const createGroupInterview = async (groupInterview, userId) => {
     }
 
     const removeDuplicates = merge(recipientsList, recipients2)
-    const companyName = await getCompanyNameByCompanyId(companyId);
+    const companyName = await getCompanyNameByCompanyId(companyId)
     let multiple = new Promise((resolve, reject) => {
       removeDuplicates.forEach(async recipient => {
-        const sendEmail = await sendEmailInterview(recipient, companyName);
+        const sendEmail = await sendEmailInterview(recipient, companyName)
 
-        thisIsRecipient.push(recipient);
-        if (thisIsRecipient.length == removeDuplicates.length) resolve();
-      });
-    });
+        thisIsRecipient.push(recipient)
+        if (thisIsRecipient.length == removeDuplicates.length) resolve()
+      })
+    })
     multiple.then(() => {
-
-      numberOfRecipient = thisIsRecipient.length;
-    });
+      numberOfRecipient = thisIsRecipient.length
+    })
 
     const dbResponse = await Promise.all(
       rows.map(async row => {
@@ -263,9 +262,9 @@ const createGroupInterview = async (groupInterview, userId) => {
           ...mappedGrouped,
           numberOfRecipient
         }
-      }
-      ))
-      return dbResponse;
+      })
+    )
+    return dbResponse
   } catch (error) {
     throw error
   }
@@ -274,30 +273,24 @@ const createGroupInterview = async (groupInterview, userId) => {
 const sendEmailInterview = async (email, companyName) => {
   const userData = {
     company_name: companyName,
-    app_url: `${env.app_url}/signup`,
-  };
-  send(email, "interview", userData);
-  return { msg: "Email has been sent", link: `${env.app_url}/signup` };
-};
+    app_url: `${env.app_url}/signup`
+  }
+  send(email, 'interview', userData)
+  return { msg: 'Email has been sent', link: `${env.app_url}/signup` }
+}
 
-function merge(array1, array2) {
+function merge (array1, array2) {
   let arrayMerge = array1.concat(array2)
-  return arrayMerge.filter((item, index) =>
-    arrayMerge.indexOf(item) == index
-  )
+  return arrayMerge.filter((item, index) => arrayMerge.indexOf(item) == index)
 }
 
 const getGroupRecipients = async groupIds => {
   try {
     let groups = []
     if (groupIds && groupIds.length != 0) {
-      groups = await Promise.all(
+      return groups = await Promise.all(
         groupIds.map(async id => await checkContacts({ group_id: id }))
       )
-
-      const formatted = getEmailFromNestedGroupDetails(groups)
-      console.log(formatted)
-      return formatted
     }
 
     return groups
@@ -306,14 +299,17 @@ const getGroupRecipients = async groupIds => {
   }
 }
 
-
 const getEmailFromNestedGroupDetails = groupArr => {
   return groupArr.map(group => {
     return group.details.map(detail => detail.email)
   })
 }
 
-const mappedGroupInterview = async(raw) => {
+const mappedGroupInterview = async raw => {
+    const group = await getGroupRecipients(raw.group_ids)
+    const recipeintsFromGroups = getEmailFromNestedGroupDetails(group)
+    const recipients2 = recipeintsFromGroups.flat()
+
   return {
     groupInterviewId: raw.group_interview_id,
     groupInterviewName: raw.group_interview_name,
@@ -328,8 +324,8 @@ const mappedGroupInterview = async(raw) => {
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
     companyId: raw.company_id,
-    groups: await getGroupRecipients(raw.group_ids),
-    // groups:raw.group_interview_id,
+    groups: recipeintsFromGroups,
+    numberOfRecipient: merge(raw.recipients, recipients2).length,
     recipientOpened: [], // TODO
     recipientAnswered: [] // TODO
   }
