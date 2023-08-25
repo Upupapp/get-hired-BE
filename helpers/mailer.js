@@ -20,6 +20,7 @@ const gethiredSendgrid = {
   add_user: "d-0140cd7cd48743efa350e9c044381b3d",
   invite: "d-0561f943fa504c80a2ea47eb18f52cd0",
   contact: "d-ed57e2ed8a8c4638ad899f5af80c322a",
+  interview: "d-c3bab8dfcd8f42d6b091dfcea491c17e"
 };
 
 const eucannajobsSendgrid = {
