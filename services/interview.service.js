@@ -7,7 +7,7 @@ import env from '../env'
 const dbSchema = env.schema
 const now = new Date()
 
-import { groupList, contactList } from './contact.service'
+import { groupList, contactList, checkContacts } from './contact.service'
 
 import { listOfAllUniqueApplicantsByCompany } from './applicant.service'
 
@@ -192,7 +192,7 @@ const getInterviewRecipients = async companyId => {
 const createGroupInterview = async (groupInterview, userId) => {
   const insertQuery = `INSERT INTO ${dbSchema}.group_interviews
     (group_interview_id, group_interview_name, interview_template_question_id, job_id, group_ids, created_at, created_by, updated_at, recipients, company_id, external_job_link)
-    VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`;
+    VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`
 
   const {
     groupInterviewName,
@@ -225,16 +225,16 @@ const createGroupInterview = async (groupInterview, userId) => {
       throw 'Failed to save group interview'
     }
 
-    if(recipients && recipients.length != 0) {
-         // TODO get detail property, get email, send interview details
+    if (recipients && recipients.length != 0) {
+      // TODO get detail property, get email, send interview details
     }
 
-    if(groups && groups.length != 0) {
-        // TODO get detail property, get email, send interview details
+    if (groups && groups.length != 0) {
+      // TODO get detail property, get email, send interview details
     }
 
     const dbResponse = await Promise.all(
-      rows.map(row => mappedGroupInterview(row))
+      rows.map(async row => await mappedGroupInterview(row))
     )
     return dbResponse
   } catch (error) {
@@ -242,7 +242,30 @@ const createGroupInterview = async (groupInterview, userId) => {
   }
 }
 
-const mappedGroupInterview = raw => {
+const getGroupRecipients = async groupIds => {
+  try {
+    let groups = []
+    if (groupIds && groupIds.length != 0) {
+      groups = await Promise.all(
+        groupIds.map(async id => await checkContacts({ group_id: id }))
+      );
+
+      return getEmailFromNestedGroupDetails(groups);
+    }
+
+    return groups
+  } catch (error) {
+    throw error
+  }
+}
+
+const getEmailFromNestedGroupDetails = groupArr => {
+  return groupArr.map(group => {
+    return group.details.email
+  })
+}
+
+const mappedGroupInterview = async raw => {
   return {
     groupInterviewId: raw.group_interview_id,
     groupInterviewName: raw.group_interview_name,
@@ -256,8 +279,8 @@ const mappedGroupInterview = raw => {
     createdAt: raw.created_at,
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
-    companyId: raw.company_id
-    // groups:raw.group_interview_id,
+    companyId: raw.company_id,
+    groups: await getGroupRecipients(raw.group_ids)
   }
 }
 

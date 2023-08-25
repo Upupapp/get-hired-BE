@@ -651,4 +651,5 @@ export {
   checkEmailIfExistInContact,
   groupList,
   sendEmailAdded,
+  checkContacts
 };
