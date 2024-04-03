@@ -15,7 +15,6 @@ import {
   getJobShareableLink,
   getAllApplicantOfJob,
   getJobApplicantDetails,
-  updateJobInterviewQuestion,
   deleteInterviewQuestion,
   getSubscriptionRestrictions
 } from "../controllers/jobsController";
@@ -38,7 +37,6 @@ router.get("/job/rolelist", verifyAuth, getJobRoleList);
 router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
 router.get("/job/applicants", getAllApplicantOfJob);
 router.get("/job/applicantdetails", verifyAuth, getJobApplicantDetails);
-router.put("/job/updatejobinterview", verifyAuth, updateJobInterviewQuestion);
 router.delete("/job/deleteinterviewquestion", verifyAuth, deleteInterviewQuestion);
 router.get("/job/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestrictions);
 

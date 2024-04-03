@@ -10,7 +10,8 @@ import {
   getUserProfile,
   updateUserProfile,
   getVerificationLink,
-  verifyEmailFileManually
+  verifyEmailFileManually,
+  deleteAccountById
 } from "../controllers/userController";
 import verifyAuth from '../middleware/verifyAuth';
 
@@ -27,5 +28,6 @@ router.get("/auth/getpwresetlink", passwordResetLink);
 router.post("/auth/changepassword", changePw);
 router.get("/auth/getprofile", verifyAuth, getUserProfile);
 router.put("/auth/updateprofile", verifyAuth, updateUserProfile);
+router.put("/auth/archive", verifyAuth, deleteAccountById);
 
 export default router;

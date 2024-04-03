@@ -28,7 +28,7 @@ router.post("/application/create", createApplication);
 
 router.put("/application/updateJobs", updateApplication);
 router.delete("/application/delete", deleteApplication);
-router.post("/application/apply", submitApplication)
+router.post("/application/apply", verifyAuth, submitApplication)
 
 
 // applicant

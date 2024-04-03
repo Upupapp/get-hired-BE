@@ -521,10 +521,10 @@ const getVerification = async (email) => {
 };
 
 const deleteAccountById = async (req, res) => {
-  const { uid } = req.query;
+  const { userId } = req.query;
 
   try {
-    const account = await deleteUserAccount(uid);
+    const account = await deleteUserAccount(userId);
     successMessage.data = account;
     return res.status(status.success).send(successMessage);
   } catch (error) {

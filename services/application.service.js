@@ -2,11 +2,18 @@ import idGenerator from "../helpers/randomNumberForId";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
+import { send } from "../helpers/mailer";
+
+import { getUserProfileById } from '../helpers/userDetails';
+
+import {
+  jobDetails
+} from './job.service';
 
 const dbSchema = env.schema;
 const now = new Date();
 
-const jobApply = async (jobApplication) => {
+const jobApply = async (jobApplication, userId) => {
   const {
     jobId,
     candidateId,
@@ -95,6 +102,16 @@ const jobApply = async (jobApplication) => {
     }
 
     const dbResponse = rows[0];
+    const user = await getUserProfileById(userId);
+
+    const job = await jobDetails(jobId);
+    // Send email application
+    const data = {
+      job_name: job.jobTitle,
+      company_name: job.companyName,
+      app_url: `${env.app_url}/user/dashboard`,
+    };
+    send(user.email, "application", data);
 
     return {
       jobApplicantionId: dbResponse.job_application_id,

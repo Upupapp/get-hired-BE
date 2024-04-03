@@ -424,9 +424,9 @@ const applicationOfApplicant = async (jobId, id) => {
       profile,
       interviewQuestions: job.interviewQuestions,
       profileDocs: {
-        coverLetter: [docCoveredLetter],
-        resume: [docResume],
-        governmentFiles: [docGovFiles],
+        coverLetter: docCoveredLetter && docCoveredLetter.length !=0 ? [docCoveredLetter]: [],
+        resume: docResume && docResume.length !=0 ? [docResume]: [],
+        governmentFiles: docGovFiles && docGovFiles.length !=0 ? [docGovFiles]: [],
       },
       answers: await getInterviewAnswers(profile.applicantProfileId, jobId),
     };

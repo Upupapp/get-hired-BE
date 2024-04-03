@@ -42,32 +42,28 @@ const createQuestion = async (questionDetails, templateId) => {
   }
 }
 
-const createInterviewTemplateQuestions = async (jobId, templateName) => {
+const createInterviewTemplateQuestions = async (jobId, templateName, companyId = null, createdBy = null) => {
   const templateId = idGenerator(6, 'ITPL')
 
   const insertQuery = `INSERT INTO ${dbSchema}.job_interview_template
-  (job_interview_template_id, job_interview_template_name, created_at, job_id)
-  VALUES($1, $2, $3, $4) returning *;`
+  (job_interview_template_id, job_interview_template_name, created_at, job_id, company_id, created_by)
+  VALUES($1, $2, $3, $4, $5, $6) returning *;`
 
   try {
     const { rows } = await dbQuery.query(insertQuery, [
       templateId,
       templateName,
       now,
-      jobId
+      jobId,
+      companyId,
+      createdBy
     ])
 
     if (!rows || rows.length == 0) {
       throw 'Failed to create template'
     }
 
-    const dbResponse = {
-      jobInterviewTemplateId: rows[0].job_interview_template_id,
-      jobInterviewTemplateName: rows[0].job_interview_template_name,
-      createdAt: rows[0].created_at,
-      updatedAt: rows[0].updated_at,
-      jobId: rows[0].job_id
-    }
+    const dbResponse = mappedQuestionTemplate(rows[0]);
 
     return dbResponse
   } catch (error) {
@@ -165,7 +161,7 @@ const getAllInterviewTemplates = async companyId => {
     from ${dbSchema}.job_interview_template jit
     left join ${dbSchema}.jobs j 
     on jit.job_id = j.job_id 
-    where j.company_id = $1`
+    where j.company_id = $1 or jit.company_id = $1 order by jit.created_at DESC`
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [companyId])
@@ -288,9 +284,9 @@ const getGroupRecipients = async groupIds => {
   try {
     let groups = []
     if (groupIds && groupIds.length != 0) {
-      return groups = await Promise.all(
+      return (groups = await Promise.all(
         groupIds.map(async id => await checkContacts({ group_id: id }))
-      )
+      ))
     }
 
     return groups
@@ -305,10 +301,21 @@ const getEmailFromNestedGroupDetails = groupArr => {
   })
 }
 
+const mappedQuestionTemplate = raw => {
+  return {
+    jobInterviewTemplateId: raw.job_interview_template_id,
+    jobInterviewTemplateName: raw.job_interview_template_name,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+    jobId: raw.job_id,
+    companyId: raw.company_id
+  }
+}
+
 const mappedGroupInterview = async raw => {
-    const group = await getGroupRecipients(raw.group_ids)
-    const recipeintsFromGroups = getEmailFromNestedGroupDetails(group)
-    const recipients2 = recipeintsFromGroups.flat()
+  const group = await getGroupRecipients(raw.group_ids)
+  const recipeintsFromGroups = getEmailFromNestedGroupDetails(group)
+  const recipients2 = recipeintsFromGroups.flat()
 
   return {
     groupInterviewId: raw.group_interview_id,

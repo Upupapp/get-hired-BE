@@ -37,6 +37,7 @@ const createJobs = async (req, res) => {
 
   const jobId = idGenerator(6, "JB");
   let rawUrl = "";
+  const { uid } = req.user
 
   const {
     jobTitle,
@@ -122,7 +123,9 @@ const createJobs = async (req, res) => {
       if (interviewQuestions && interviewQuestions.length != 0) {
         const template = await createInterviewTemplateQuestions(
           jobId,
-          "default"
+          "default",
+          companyId,
+          uid
         );
         const rawQuestions = Promise.all(
           await interviewQuestions.map(
@@ -575,17 +578,6 @@ const getAllApplicantOfJob = async (req, res) => {
   }
 };
 
-const updateJobInterviewQuestion = async (req, res) => {
-  try {
-    const question = await updateQuestionById(req.body);
-    successMessage.data = question;
-    return res.status(status.success).send(successMessage);
-  } catch (error) {
-    errorMessage.error = "ERROR: " + error;
-    return res.status(status.error).send(errorMessage);
-  }
-};
-
 const deleteInterviewQuestion = async (req, res) => {
   const { questionId, jobId } = req.query;
   const deleteQuery = `DELETE FROM ${dbSchema}.interview_template_question WHERE template_question_id = $1 returning *`;
@@ -660,7 +652,6 @@ export {
   getJobShareableLink,
   getAllApplicantOfJob,
   getJobApplicantDetails,
-  updateJobInterviewQuestion,
   deleteInterviewQuestion,
   getPublishedJobsWithinDateRange,
   getSubscriptionRestrictions
