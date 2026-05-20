@@ -15,13 +15,13 @@ const jobhuntSendgrid = {
 };
 
 const gethiredSendgrid = {
-  verify_email: "d-f476e852447940a4a3acfee5f4a7f63d",
-  pw_reset: "d-3517d64c1dd1403fb4d857af16b9e8a4",
-  add_user: "d-0140cd7cd48743efa350e9c044381b3d",
-  invite: "d-0561f943fa504c80a2ea47eb18f52cd0",
-  contact: "d-ed57e2ed8a8c4638ad899f5af80c322a",
-  interview: "d-c3bab8dfcd8f42d6b091dfcea491c17e",
-  application: "d-8a9d4cc9603e4c7b9b65e2844da33788"
+  verify_email: "d-0dffbe21de484b3b9b9f7c113d92c5fd",
+  pw_reset: "d-0dffbe21de484b3b9b9f7c113d92c5fd",
+  add_user: "d-3ccde8af4bee41ef923e3baa2824ec2a",
+  invite: "d-db34d7fe16994377bcb29b1609f21b52",
+  contact: "d-f041a4c13a0f49c0a91b3aa425bb7b38",
+  interview: "d-998725e138f042399ac0142db104e86d",
+  application: "d-9775084a27d44a36834f0b43c8abe1fc"
 };
 
 const eucannajobsSendgrid = {

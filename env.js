@@ -13,9 +13,7 @@ if (isStaging == "false") {
     port: process.env.PORT || 3000,
     environment: process.env.NODE_ENV,
     user: process.env.DB_USER,
-    host: isProduction
-      ? `/cloudsql/${process.env.INSTANCE_NAME}`
-      : process.env.DB_HOST,
+    host: process.env.DB_HOST,
     database: process.env.DB_DATABASE,
     password: process.env.DB_PASSWORD,
     db_port: process.env.DB_PORT,
