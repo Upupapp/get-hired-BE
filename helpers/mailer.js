@@ -16,7 +16,7 @@ const jobhuntSendgrid = {
 
 const gethiredSendgrid = {
   verify_email: "d-0dffbe21de484b3b9b9f7c113d92c5fd",
-  pw_reset: "d-0dffbe21de484b3b9b9f7c113d92c5fd",
+  pw_reset: "d-673ee5e8ebdf4db6ac5efe19d7f6f57a",
   add_user: "d-3ccde8af4bee41ef923e3baa2824ec2a",
   invite: "d-db34d7fe16994377bcb29b1609f21b52",
   contact: "d-f041a4c13a0f49c0a91b3aa425bb7b38",
