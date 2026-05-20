@@ -9,11 +9,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      LINODE_HOST: ${{ secrets.LINODE_HOST }}
-      LINODE_USER: ${{ secrets.LINODE_USER }}
-      LINODE_SSH_KEY: ${{ secrets.LINODE_SSH_KEY }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,18 +21,33 @@ jobs:
           LINODE_HOST: ${{ secrets.LINODE_HOST }}
           LINODE_USER: ${{ secrets.LINODE_USER }}
           LINODE_SSH_KEY: ${{ secrets.LINODE_SSH_KEY }}
-      - name: Deploy to Linode
+      - name: Test SSH connection
+        env:
+          LINODE_HOST: ${{ secrets.LINODE_HOST }}
+          LINODE_USER: ${{ secrets.LINODE_USER }}
+          LINODE_SSH_KEY: ${{ secrets.LINODE_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
           echo "$LINODE_SSH_KEY" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$LINODE_HOST" >> ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LINODE_USER@$LINODE_HOST" "
-            cd /var/www/_work/get-hired-BE &&
-            git pull origin main &&
-            npm ci --omit=dev &&
-            npm run build --if-present &&
-            npm run migrate --if-present &&
-            pm2 restart 0 --update-env &&
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LINODE_USER@$LINODE_HOST" "echo SSH connection successful"
+      - name: Deploy to Linode
+        env:
+          LINODE_HOST: ${{ secrets.LINODE_HOST }}
+          LINODE_USER: ${{ secrets.LINODE_USER }}
+          LINODE_SSH_KEY: ${{ secrets.LINODE_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$LINODE_SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$LINODE_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LINODE_USER@$LINODE_HOST" << 'ENDSSH'
+            cd /var/www/_work/get-hired-BE
+            git pull origin main
+            npm ci --omit=dev
+            npm run build --if-present
+            npm run migrate --if-present
+            pm2 restart 0 --update-env
             pm2 save
-          "
+          ENDSSH
