@@ -12,30 +12,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Verify SSH key
-        run: |
-          echo "${{ secrets.LINODE_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keygen -lf ~/.ssh/deploy_key
-      - name: Setup SSH key
+
+      - name: Deploy to Linode
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.LINODE_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          ssh-keygen -lf ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Deploy to Linode via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.LINODE_HOST }}
-          username: ${{ secrets.LINODE_USER }}
-          key_path: ~/.ssh/deploy_key
-          port: 22
-          script: |
-            cd /var/www/_work/get-hired-BE
-            git pull origin main
-            npm ci --omit=dev
-            npm run build --if-present
-            npm run migrate --if-present
-            pm2 restart 0 --update-env
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }} "
+            cd /var/www/_work/get-hired-BE &&
+            git pull origin main &&
+            npm ci --omit=dev &&
+            npm run build --if-present &&
+            npm run migrate --if-present &&
+            pm2 restart 0 --update-env &&
             pm2 save
+          "
