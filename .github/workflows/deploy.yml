@@ -12,7 +12,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      - name: Verify SSH key
+        run: |
+          echo "${{ secrets.LINODE_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keygen -lf ~/.ssh/deploy_key
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
