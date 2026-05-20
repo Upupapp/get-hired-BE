@@ -9,18 +9,30 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      LINODE_HOST: ${{ secrets.LINODE_HOST }}
+      LINODE_USER: ${{ secrets.LINODE_USER }}
+      LINODE_SSH_KEY: ${{ secrets.LINODE_SSH_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      - name: Debug
+        run: |
+          echo "User: $LINODE_USER"
+          echo "Host chars: ${#LINODE_HOST}"
+          echo "Key chars: ${#LINODE_SSH_KEY}"
+        env:
+          LINODE_HOST: ${{ secrets.LINODE_HOST }}
+          LINODE_USER: ${{ secrets.LINODE_USER }}
+          LINODE_SSH_KEY: ${{ secrets.LINODE_SSH_KEY }}
       - name: Deploy to Linode
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.LINODE_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          echo "$LINODE_SSH_KEY" | base64 -d > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keygen -lf ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.LINODE_HOST }} >> ~/.ssh/known_hosts
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ${{ secrets.LINODE_USER }}@${{ secrets.LINODE_HOST }} "
+          ssh-keyscan -H "$LINODE_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LINODE_USER@$LINODE_HOST" "
             cd /var/www/_work/get-hired-BE &&
             git pull origin main &&
             npm ci --omit=dev &&
