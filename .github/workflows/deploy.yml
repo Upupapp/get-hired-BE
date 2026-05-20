@@ -24,13 +24,19 @@ jobs:
 
       # - name: Run tests
       #   run: npm run test --if-present
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LINODE_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
 
       - name: Deploy to Linode via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.LINODE_HOST }}
           username: ${{ secrets.LINODE_USER }}
-          key: ${{ secrets.LINODE_SSH_KEY }}
+          key_path: ~/.ssh/deploy_key
+          port: 22
           script: |
             cd /var/www/_work/get-hired-BE
             git pull origin main
