@@ -23,7 +23,7 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npm test --if-present
+        run: npm run test --if-present
 
       - name: Deploy to Linode via SSH
         uses: appleboy/ssh-action@v1.0.3
