@@ -44,7 +44,9 @@ jobs:
           ssh-keyscan -H "$LINODE_HOST" >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LINODE_USER@$LINODE_HOST" << 'ENDSSH'
             cd /var/www/_work/get-hired-BE
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             npm ci --omit=dev
             npm run build --if-present
             npm run migrate --if-present
