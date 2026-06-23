@@ -9,10 +9,14 @@ const dbSchema = env.schema;
 const now = new Date();
 
 const getEmployerCompany = async (req, res) => {
-  const { id } = req.query;
+  // Use the authenticated caller's own uid, never a client-supplied query
+  // param -- this endpoint has zero frontend consumers today (confirmed),
+  // so there is no legitimate "look up someone else" use case being
+  // removed. STITCH/security fix (object-level authorization, GH-ACT-006).
+  const { uid } = req.user;
 
   try {
-    const userCompany = await getUserCompany(id);
+    const userCompany = await getUserCompany(uid);
 
     successMessage.data = userCompany;
     return res.status(status.success).send(successMessage);
@@ -23,11 +27,12 @@ const getEmployerCompany = async (req, res) => {
 };
 
 const getEmployerProfile = async (req, res) => {
-  const { id } = req.query;
+  // Same fix as getEmployerCompany above.
+  const { uid } = req.user;
 
   try {
-    const user = await getUserProfileById(id);
-    const userCompany = await getUserCompany(id);
+    const user = await getUserProfileById(uid);
+    const userCompany = await getUserCompany(uid);
 
     const dbResponse = {
       ...user,

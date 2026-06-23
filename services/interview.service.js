@@ -133,6 +133,20 @@ const getTemplateQuestions = async interviewTemplateId => {
   }
 }
 
+// Used to authorize getInterviewTemplateQuestions by company ownership
+// rather than trusting templateId alone. STITCH/security fix (GH-ACT-008).
+const getTemplateCompanyId = async interviewTemplateId => {
+  const searchQuery = `select company_id from ${dbSchema}.job_interview_template
+    where job_interview_template_id = $1`
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [interviewTemplateId])
+    return rows && rows.length != 0 ? rows[0].company_id : null
+  } catch (error) {
+    throw error
+  }
+}
+
 const getAllInterviews = async companyId => {
   const searchQuery = `select i.*, j.job_title from ${dbSchema}.group_interviews i
     left join ${dbSchema}.jobs j 
@@ -376,5 +390,6 @@ export {
   getAllInterviewTemplates,
   getInterviewRecipients,
   getTemplateQuestions,
-  createGroupInterview
+  createGroupInterview,
+  getTemplateCompanyId
 }

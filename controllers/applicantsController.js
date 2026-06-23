@@ -23,6 +23,7 @@ import {
   totalJobs,
 } from "../services/application.service";
 import { insertLogs } from "../services/user.service";
+import { evaluateProfileCompleteness } from "../services/applicantProfileQualityService";
 
 const dbSchema = env.schema;
 
@@ -59,10 +60,11 @@ const createApplication = async (req, res) => {
 
 const deleteApplication = async (req, res) => {
   const { applicationId } = req.body;
+  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
   const deleteQuery = `DELETE FROM ${dbSchema}.application
-      WHERE application_id='${applicationId}'`;
+      WHERE application_id=$1`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, []);
+    const { rows } = await dbQuery.query(deleteQuery, [applicationId]);
     const applications = await getApplicationListCandidate(candidateId);
     successMessage.data = applications;
     return res.status(status.success).send(successMessage);
@@ -123,17 +125,20 @@ const getApplicationListCandidate = async (candidateId) => {
 };
 
 const getApplicationWithJobDetails = async (applicationId) => {
+  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
+  // Note: "c a.candidate_id" join condition looks malformed (pre-existing,
+  // not touched by this fix -- out of STITCH's narrow scope).
   const searchQuery = `
-      select * from ${dbSchema}.jobs j 
+      select * from ${dbSchema}.jobs j
       inner join ${dbSchema}.application a
       on j.job_id = a.job_id
       inner join ${dbSchema}.candidate c
       on a.candidate_id = c a.candidate_id
-      where a.application_id = '${applicationId}'
+      where a.application_id = $1
     `;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [applicationId]);
     const dbResponse = mapApplications(rows[0]);
     return dbResponse;
   } catch (error) {
@@ -182,12 +187,38 @@ const updateProfile = async (req, res) => {
     return res.status(status.error).send(errorMessage);
   }
 };
-const getApplicantProfileById = async (req, res) => {
-  const { id } = req.query;
+
+// PROFILE (re-run after Applicant Data Foundation v2) -- backend
+// completeness scoring, ported from the existing frontend-only
+// ProfileQualityService. Always the caller's own profile, same identity
+// derivation as getApplicantProfileById above.
+const getApplicantProfileCompleteness = async (req, res) => {
+  const { uid } = req.user;
 
   try {
-    const profile = await appplicantProfile(id);
-    const click = await insertLogs("Profile View", "", id);
+    const profile = await appplicantProfile(uid);
+    const result = evaluateProfileCompleteness(profile);
+    successMessage.data = result;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+const getApplicantProfileById = async (req, res) => {
+  // SECURE fix (BOLA), found during the PROFILE re-run: this previously
+  // trusted a frontend-supplied query `id` with no ownership check --
+  // any authenticated caller could read any other applicant's full
+  // profile by passing a different id. Every current frontend caller
+  // (ApplicantService.getApplicant) already only ever requests its own
+  // logged-in user's id, so deriving from the verified token instead
+  // breaks no existing legitimate use.
+  const { uid } = req.user;
+
+  try {
+    const profile = await appplicantProfile(uid);
+    const click = await insertLogs("Profile View", "", uid);
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -401,6 +432,7 @@ export {
   updateApplication,
   createProfile,
   getApplicantProfileById,
+  getApplicantProfileCompleteness,
   updateProfile,
   getUserProfile,
   getDashboard,

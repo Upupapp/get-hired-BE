@@ -5,6 +5,7 @@ import {
   deleteApplication,
   createProfile,
   getApplicantProfileById,
+  getApplicantProfileCompleteness,
   updateProfile,
   getUserProfile,
   saveWorkExp,
@@ -24,10 +25,13 @@ import verifyAuth from "../middleware/verifyAuth";
 const router = express.Router();
 
 // application
-router.post("/application/create", createApplication);
+// SECURE fix: these 3 routes had no auth middleware at all. Zero frontend
+// consumers found in this repo (the live apply flow uses
+// /application/apply below), so adding auth here breaks no existing caller.
+router.post("/application/create", verifyAuth, createApplication);
 
-router.put("/application/updateJobs", updateApplication);
-router.delete("/application/delete", deleteApplication);
+router.put("/application/updateJobs", verifyAuth, updateApplication);
+router.delete("/application/delete", verifyAuth, deleteApplication);
 router.post("/application/apply", verifyAuth, submitApplication)
 
 
@@ -41,6 +45,7 @@ router.get("/applicant/userprofile", verifyAuth, getUserProfile);
 router.get("/applicant/dashboard", verifyAuth, getDashboard);
 
 router.get("/applicant/profile", verifyAuth, getApplicantProfileById);
+router.get("/applicant/profile/completeness", verifyAuth, getApplicantProfileCompleteness);
 router.post("/applicant/workexp", verifyAuth, saveWorkExp);
 router.post("/applicant/educbg", verifyAuth, saveEducBg);
 router.post("/applicant/cert", verifyAuth, saveCert);

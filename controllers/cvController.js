@@ -120,10 +120,11 @@ const updateCV = async (req, res) => {
 
 const deleteCV = async (req, res) => {
   const { cvId } = req.body;
+  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
   const deleteQuery = `DELETE FROM ${dbSchema}.cv
-  WHERE cv_id='${cvId}'`;
+  WHERE cv_id=$1`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, []);
+    const { rows } = await dbQuery.query(deleteQuery, [cvId]);
 
     successMessage.data = "CV has been Deleted";
     return res.status(status.success).send(successMessage);

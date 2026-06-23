@@ -216,7 +216,12 @@ const mappedApplication = (raw) => {
     candidateId: raw.candidate_id,
     applicationStatusId: raw.application_status_id,
     isArchived: raw.is_archived,
-    applicantStatusName: raw.application_status_name,
+    // Bug fix: the underlying query selects `job_applicant_status_name`
+    // (no alias) -- this previously read `application_status_name`, a key
+    // that never existed on the row, so applicantStatusName was always
+    // undefined. Found while building the first real consumer of this
+    // function (the applicant's own "My Applications" list).
+    applicantStatusName: raw.job_applicant_status_name,
   };
 };
 

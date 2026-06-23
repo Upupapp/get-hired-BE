@@ -28,9 +28,13 @@ const router = express.Router();
 
 router.post("/company/createinitial", verifyAuth, createInitialCompany);
 router.post("/company/createcompany", verifyAuth, createCompanyFull);
-router.put("/company/update", updateCompany);
+// SECURE fix: both routes had no auth middleware at all -- updateCompany
+// also let any caller mutate any company via a body-supplied companyId,
+// removeCompanyUser let any caller remove any user from any company. Both
+// controllers now also verify the caller belongs to that company.
+router.put("/company/update", verifyAuth, updateCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
-router.delete("/company/removecompanyuser", removeCompanyUser);
+router.delete("/company/removecompanyuser", verifyAuth, removeCompanyUser);
 router.get("/company/industries", verifyAuth, getIndustryListCompany);
 // router.get("/company/setuplist", verifyAuth, getSetupListCompany);
 

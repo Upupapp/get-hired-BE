@@ -4,20 +4,33 @@ import {
   getAllInterviewTemplates,
   getInterviewRecipients,
   getTemplateQuestions,
+  getTemplateCompanyId,
   createGroupInterview,
   createInterviewTemplateQuestions,
   createQuestion,
   updateQuestionById,
   // getInterviewsOfUser
 } from '../services/interview.service'
+import { getUserCompany } from './companiesController'
 
 import env from '../env'
 
 const now = new Date()
 
+// Confirms the authenticated caller actually belongs to companyId, rather
+// than trusting the client-supplied query param directly.
+// STITCH/security fix (GH-ACT-008 -- object-level authorization).
+const callerBelongsToCompany = async (uid, companyId) => {
+  const userCompany = await getUserCompany(uid)
+  return userCompany && userCompany.companyId === companyId
+}
+
 const getAllInterviewsOfCompanies = async (req, res) => {
   const { companyId } = req.query
   try {
+    if (!(await callerBelongsToCompany(req.user.uid, companyId))) {
+      return res.status(403).send('Forbidden')
+    }
     const dbResponse = await getAllInterviews(companyId)
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
@@ -30,6 +43,9 @@ const getAllInterviewsOfCompanies = async (req, res) => {
 const getAllInterviewsTemplatesOfCompanies = async (req, res) => {
   const { companyId } = req.query
   try {
+    if (!(await callerBelongsToCompany(req.user.uid, companyId))) {
+      return res.status(403).send('Forbidden')
+    }
     const dbResponse = await getAllInterviewTemplates(companyId)
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
@@ -42,6 +58,9 @@ const getAllInterviewsTemplatesOfCompanies = async (req, res) => {
 const getAllInterviewRecipientsByCompanyId = async (req, res) => {
   const { companyId } = req.query
   try {
+    if (!(await callerBelongsToCompany(req.user.uid, companyId))) {
+      return res.status(403).send('Forbidden')
+    }
     const dbResponse = await getInterviewRecipients(companyId)
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
@@ -54,6 +73,10 @@ const getAllInterviewRecipientsByCompanyId = async (req, res) => {
 const getInterviewTemplateQuestions = async (req, res) => {
   const { templateId } = req.query
   try {
+    const templateCompanyId = await getTemplateCompanyId(templateId)
+    if (!templateCompanyId || !(await callerBelongsToCompany(req.user.uid, templateCompanyId))) {
+      return res.status(403).send('Forbidden')
+    }
     const dbResponse = await getTemplateQuestions(templateId)
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)

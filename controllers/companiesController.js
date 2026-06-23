@@ -7,7 +7,9 @@ import {
   checkUserIfExistInFirebase,
   registerNewUserInFirebase,
   createDynamicLink,
+  getForgetPwLinkInFirebase,
 } from "../helpers/firebaseFunctions";
+import crypto from "crypto";
 
 import {
   hashPassword,
@@ -125,6 +127,15 @@ const updateCompany = async (req, res) => {
   } = req.body;
 
   try {
+    // SECURE fix (BOLA): this route previously had no auth middleware AND
+    // trusted companyId straight from the request body, letting any caller
+    // update any company's profile. Confirm the authenticated caller
+    // actually belongs to the company being updated.
+    const userCompany = await getUserCompany(req.user.uid);
+    if (!userCompany || userCompany.companyId !== companyId) {
+      return res.status(403).send("Forbidden");
+    }
+
     if (companyLogoFile && companyLogoFile != "") {
       rawUrl = await uploadInStorage(
         "Company-Logo",
@@ -395,10 +406,19 @@ const mappedCompany = (raw) => {
 
 const removeCompanyUser = async (req, res) => {
   const { userId, companyId } = req.body;
+  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
   const deleteQuery = `DELETE FROM ${dbSchema}.company_employees
-  WHERE employee_uuid='${userId}' and company_id='${companyId}'`;
+  WHERE employee_uuid=$1 and company_id=$2`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, []);
+    // SECURE fix (BOLA): this route previously had no auth middleware at
+    // all -- anyone could remove any user from any company. Confirm the
+    // authenticated caller belongs to the company they're modifying.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (!callerCompany || callerCompany.companyId !== companyId) {
+      return res.status(403).send("Forbidden");
+    }
+
+    const { rows } = await dbQuery.query(deleteQuery, [userId, companyId]);
 
     successMessage.data = "Company user has been removed";
     return res.status(status.success).send(successMessage);
@@ -459,7 +479,11 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
       };
     }
 
-    const password = `p@ssw0rd1111`;
+    // Random per-invite password, never shown to the user -- they set their
+    // own via the Firebase password-reset link sent below.
+    // STITCH/security fix (GH-ACT-004): this used to be the same hardcoded
+    // literal (`p@ssw0rd1111`) for every invited user, emailed in cleartext.
+    const password = crypto.randomBytes(24).toString("base64");
 
     const user = {
       email,
@@ -506,12 +530,17 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
 
     const companyName = await getCompanyNameByCompanyId(companyId);
 
+    // Send a real Firebase password-reset link instead of a literal
+    // password -- the invited user sets their own password before they can
+    // log in. STITCH/security fix (GH-ACT-004).
+    const resetLink = await getForgetPwLinkInFirebase(email);
+
     send(email, "add_user", {
       login_url: `${env.app_url}/signin`,
+      reset_link: resetLink,
       name: userData.firstname,
       company: companyName,
       email,
-      password,
     });
 
     successMessage.data = {

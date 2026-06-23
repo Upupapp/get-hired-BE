@@ -9,6 +9,7 @@ import {
   updateQuestionById,
   changeQuestionSequence,
 } from "../services/interview.service";
+import { getJobApplicantsWithFitSignals } from "../services/match/employerApplicantSignalsService";
 import {
   getPublishedJobs,
   jobDetails,
@@ -16,12 +17,14 @@ import {
   mappedJob,
   jobBasicDetails,
   jobApplicants,
+  getJobCompanyId,
   applicationOfApplicant,
   interviewQuestionsUpdate,
   getJobInterviewQuestions,
 } from "../services/job.service";
 
 import { listOfJobAppliedByApplicant } from "../services/applicant.service";
+import { getUserCompany } from "./companiesController";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
@@ -67,6 +70,7 @@ const createJobs = async (req, res) => {
     skills,
     tags,
     interviewQuestions,
+    certificationRequirements,
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
@@ -118,6 +122,7 @@ const createJobs = async (req, res) => {
         educationalBackground,
         skills,
         tags,
+        certificationRequirements,
       });
 
       if (interviewQuestions && interviewQuestions.length != 0) {
@@ -189,10 +194,11 @@ const getExpiredJobListOfCompany = async (req, res) => {
 
 const deleteJob = async (req, res) => {
   const { jobId, companyId } = req.body;
+  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
   const deleteQuery = `DELETE FROM ${dbSchema}.jobs
-    WHERE job_id='${jobId}'`;
+    WHERE job_id=$1`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, []);
+    const { rows } = await dbQuery.query(deleteQuery, [jobId]);
     const jobs = await getJobList(companyId);
     successMessage.data = jobs;
     return res.status(status.success).send(successMessage);
@@ -243,6 +249,7 @@ const updateJob = async (req, res) => {
     tags,
     interviewQuestions,
     interviewTemplateId,
+    certificationRequirements,
   } = req.body;
 
   try {
@@ -285,6 +292,7 @@ const updateJob = async (req, res) => {
       educationalBackground,
       skills,
       tags,
+      certificationRequirements,
     });
 
     if (interviewQuestions) {
@@ -569,10 +577,41 @@ const getAllApplicantOfJob = async (req, res) => {
   const { id } = req.query;
 
   try {
+    // SECURE fix (BOLA): this route previously had no auth middleware at
+    // all and returned full applicant PII for any job to any caller.
+    // Confirm the authenticated caller's company owns this job.
+    const jobCompanyId = await getJobCompanyId(id);
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (!jobCompanyId || !callerCompany || callerCompany.companyId !== jobCompanyId) {
+      return res.status(403).send("Forbidden");
+    }
+
     const list = await jobApplicants(id);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+// MATCH v5 -- Employer Applicant Fit Signals (Applicant Data Foundation v2
+// re-run). Separate, additive endpoint -- does not change
+// getAllApplicantOfJob's existing response shape for any current
+// consumer. Reuses the same company-ownership check via the bridge
+// service, so authorization can't drift between this endpoint and the
+// existing one.
+const getJobApplicantFitSignals = async (req, res) => {
+  const { id } = req.query;
+
+  try {
+    const list = await getJobApplicantsWithFitSignals(req.user.uid, id);
+    successMessage.data = list;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    if (error.message === "FORBIDDEN") {
+      return res.status(403).send("Forbidden");
+    }
     errorMessage.error = "ERROR: " + error;
     return res.status(status.error).send(errorMessage);
   }
@@ -651,6 +690,7 @@ export {
   getJobDetails,
   getJobShareableLink,
   getAllApplicantOfJob,
+  getJobApplicantFitSignals,
   getJobApplicantDetails,
   deleteInterviewQuestion,
   getPublishedJobsWithinDateRange,

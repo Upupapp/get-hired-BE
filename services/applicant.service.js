@@ -1051,4 +1051,13 @@ export {
   updateProfileBasicInfo,
   updateProfileSaveVideoCV,
   listOfAllUniqueApplicantsByCompany,
+  // Applicant Data Foundation v2 -- newly exported, not new logic. These
+  // already existed and already worked; the MATCH readiness bridge
+  // composes them rather than re-querying applicant_skills/
+  // applicant_certificates/applicant_work_experience/
+  // applicant_educational_background directly.
+  appSkills,
+  getcert,
+  getWorkExperience,
+  getEducBgDetails,
 };

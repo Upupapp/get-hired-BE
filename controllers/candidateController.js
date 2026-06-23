@@ -57,14 +57,15 @@ const multipleCandidate = async (req, res) => {
 };
 const deleteCandidate = async (req, res) => {
   const { candidateId } = req.query;
+  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
   const deleteQuery = `DELETE FROM ${dbSchema}.candidates
-                        WHERE candidate_id='${candidateId}';`;
+                        WHERE candidate_id=$1;`;
   const checkInDb = await checkCandidateIfExist(candidateId);
   try {
     if (!candidateId || !checkInDb) {
       return res.status(status.error).send("Candidate does not Exist");
     }
-    const { rows } = await dbQuery.query(deleteQuery, []);
+    const { rows } = await dbQuery.query(deleteQuery, [candidateId]);
     const message = "Candidate Successfully Deleted";
     successMessage.data = message;
     return res.status(status.success).send(successMessage);
@@ -110,9 +111,15 @@ const list = async (req, res) => {
 };
 
 const getJobAppliedList = async (req, res) => {
-  const { candidateId } = req.query;
+  // Object-level-authorization fix: this previously trusted a
+  // client-supplied candidateId, letting any authenticated caller view any
+  // other applicant's application history. Zero frontend consumers found
+  // for this endpoint anywhere in the repo (applicant or recruiter side),
+  // so this is the first real caller -- scoped to "view your own
+  // applications only" since that's the only confirmed use case.
+  const { uid } = req.user;
   try {
-    const listOfJob = await listOfAppliedJobsById(candidateId);
+    const listOfJob = await listOfAppliedJobsById(uid);
     successMessage.data = listOfJob;
     return res.status(status.success).send(successMessage);
   } catch (error) {

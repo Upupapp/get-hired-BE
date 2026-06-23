@@ -151,6 +151,73 @@ const saveJobDetailsList = async (list, tableName, columnName, jobId) => {
   }
 };
 
+// GETHIRED JOB CERTIFICATION REQUIREMENTS v1 -- structured, multi-column
+// rows, so this can't reuse genericInsert/saveJobDetailsList (those are
+// single-column-value helpers). Same delete-then-reinsert convention as
+// every other job child-array field below, for consistency on update.
+// QA fix (GETHIRED_JOB_CERTIFICATION_REQUIREMENTS_V1_QA) -- a blank-name
+// item (the frontend pushes one with name=null the moment "+ Add
+// certification/license requirement" is clicked, before the employer
+// fills anything in) used to throw an unhandled NOT NULL violation here,
+// failing the ENTIRE job save with a generic error -- even though every
+// other array (skills, tags, etc.) had already saved successfully by
+// that point. Confirmed via direct reproduction against the local DB.
+// Silently dropping blank-name items mirrors how the existing chip-list
+// fields (requirements/goodToHave) already behave: addItem() never lets
+// an empty string into the FormArray in the first place, so this same
+// "incomplete entry never reaches the database" guarantee now holds for
+// certification requirements too, just enforced backend-side instead.
+const saveCertificationRequirements = async (jobId, items) => {
+  const insertQuery = `INSERT INTO ${dbSchema}.job_certification_requirement
+    (job_id, name, type, importance, issuing_authority, expiry_required, verification_required, canonical_key)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8) returning *;`;
+
+  const validItems = items.filter((item) => item && typeof item.name === "string" && item.name.trim() !== "");
+
+  try {
+    const inserted = [];
+    for (const item of validItems) {
+      const { rows } = await dbQuery.query(insertQuery, [
+        jobId,
+        item.name,
+        item.type || "certification",
+        item.importance || "required",
+        item.issuingAuthority || null,
+        !!item.expiryRequired,
+        !!item.verificationRequired,
+        item.canonicalKey || null,
+      ]);
+      inserted.push(rows[0]);
+    }
+    return inserted;
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getJobCertificationRequirements = async (jobId) => {
+  const searchQuery = `SELECT *
+      FROM ${dbSchema}.job_certification_requirement
+      WHERE job_id = $1
+      ORDER BY created_at ASC;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [jobId]);
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      type: row.type,
+      importance: row.importance,
+      issuingAuthority: row.issuing_authority,
+      expiryRequired: row.expiry_required,
+      verificationRequired: row.verification_required,
+      canonicalKey: row.canonical_key,
+    }));
+  } catch (error) {
+    throw error;
+  }
+};
+
 const saveJobArray = async (jobId, arrays) => {
   const {
     badges,
@@ -159,6 +226,7 @@ const saveJobArray = async (jobId, arrays) => {
     educationalBackground,
     skills,
     tags,
+    certificationRequirements,
   } = arrays;
 
   if (badges) {
@@ -255,6 +323,18 @@ const saveJobArray = async (jobId, arrays) => {
         "tags",
         jobId
       );
+    }
+  }
+
+  if (certificationRequirements) {
+    const deleteArrays = await deleteArrayJobEntry(
+      jobId,
+      "job_certification_requirement",
+      "job_id"
+    );
+
+    if (certificationRequirements.length != 0) {
+      await saveCertificationRequirements(jobId, certificationRequirements);
     }
   }
 };
@@ -362,6 +442,19 @@ const jobBasicDetails = async (jobId) => {
     } else {
       return null;
     }
+  } catch (error) {
+    throw error;
+  }
+};
+
+// Used to authorize getAllApplicantOfJob by company ownership rather than
+// trusting jobId alone. SECURE fix (BOLA).
+const getJobCompanyId = async (jobId) => {
+  const searchQuery = `select company_id from ${dbSchema}.jobs where job_id = $1`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [jobId]);
+    return rows && rows.length != 0 ? rows[0].company_id : null;
   } catch (error) {
     throw error;
   }
@@ -641,6 +734,7 @@ const mappedJob = async (raw) => {
     ),
     interviewQuestions: await getJobInterviewQuestions(raw.job_id, "default"),
     interviewTemplateId: await getInterviewTemplateId(raw.job_id),
+    certificationRequirements: await getJobCertificationRequirements(raw.job_id),
   };
 };
 
@@ -653,8 +747,10 @@ export {
   mappedJob,
   jobBasicDetails,
   jobApplicants,
+  getJobCompanyId,
   applicationOfApplicant,
   interviewQuestionsUpdate,
   getJobInterviewQuestions,
-  getAllVideoResponsesByJobIds
+  getAllVideoResponsesByJobIds,
+  getJobCertificationRequirements
 };

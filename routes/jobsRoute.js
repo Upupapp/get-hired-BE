@@ -14,6 +14,7 @@ import {
   getJobDetails,
   getJobShareableLink,
   getAllApplicantOfJob,
+  getJobApplicantFitSignals,
   getJobApplicantDetails,
   deleteInterviewQuestion,
   getSubscriptionRestrictions
@@ -35,7 +36,13 @@ router.get("/job/industries", verifyAuth, getIndustryList);
 router.get("/job/badges", verifyAuth, getBadgeList);
 router.get("/job/rolelist", verifyAuth, getJobRoleList);
 router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
-router.get("/job/applicants", getAllApplicantOfJob);
+// SECURE fix: had no auth middleware at all -- exposed full applicant PII
+// for any job to any caller. Controller now also verifies company ownership.
+router.get("/job/applicants", verifyAuth, getAllApplicantOfJob);
+// MATCH v5 -- Employer Applicant Fit Signals, additive and separate from
+// the route above; auth-protected from creation, ownership check enforced
+// inside the service layer (see employerApplicantSignalsService.js).
+router.get("/job/applicants/signals", verifyAuth, getJobApplicantFitSignals);
 router.get("/job/applicantdetails", verifyAuth, getJobApplicantDetails);
 router.delete("/job/deleteinterviewquestion", verifyAuth, deleteInterviewQuestion);
 router.get("/job/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestrictions);

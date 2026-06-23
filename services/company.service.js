@@ -7,11 +7,14 @@ const dbSchema = env.schema;
 const now = new Date();
 
 const companyList = async (isFeatured) => {
+  // LEFT JOIN, not RIGHT JOIN -- a RIGHT JOIN against industry drops any
+  // company with no industry_id set, which is a real bug (STITCH fix):
+  // such companies would silently never appear in this list at all.
   const searchQuery = `SELECT
         c.company_id, c.company_logo, c.company_name, c.industry_id, c.is_featured,
         i.industry_name as company_industry_name
     FROM ${dbSchema}.companies c
-    RIGHT JOIN ${dbSchema}.industry i
+    LEFT JOIN ${dbSchema}.industry i
     on c.industry_id = i.industry_id
     WHERE c.is_featured = $1 ORDER BY c.updated_at limit 6;`;
 
@@ -30,9 +33,13 @@ const companyList = async (isFeatured) => {
 };
 
 const companyDetailsById = async (companyId) => {
+  // LEFT JOIN, not RIGHT JOIN -- see companyList() above for why. A company
+  // with no industry_id set previously caused this to return zero rows
+  // (RIGHT JOIN against industry requires a matching industry row to exist),
+  // which crashed mappedCompany(rows[0]) on undefined. STITCH fix.
   const searchQuery = `SELECT c.*, i.industry_name as company_industry_name
     FROM ${dbSchema}.companies c
-    RIGHT JOIN ${dbSchema}.industry i
+    LEFT JOIN ${dbSchema}.industry i
     on c.industry_id = i.industry_id
     WHERE company_id=$1;`;
   try {

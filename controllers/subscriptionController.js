@@ -11,14 +11,14 @@ import {
 import { companyUsers } from "../services/company.service";
 import { getAllVideoResponsesByJobIds } from "../services/job.service";
 
-import { getUserCompanyByEmail } from "./companiesController";
+import { getUserCompany } from "./companiesController";
 import { createPaymongoLink } from "./paymentController";
 const dbSchema = env.schema;
 
 const now = new Date();
 
 const createPaymentIntent = async (req, res) => {
-  const { email, subscriptionId, price } = req.body;
+  const { subscriptionId, price } = req.body;
 
   const cartId = idGenerator(6, "SUBS");
 
@@ -27,7 +27,10 @@ const createPaymentIntent = async (req, res) => {
     VALUES($1, $2, $3, $4, $5) returning *`;
 
   try {
-    const companyId = await getUserCompanyByEmail(email);
+    // Derive the company from the authenticated caller, not a
+    // client-supplied email -- STITCH/security fix (GH-ACT-003/GH-ACT-009).
+    const userCompany = await getUserCompany(req.user.uid);
+    const companyId = userCompany && userCompany.companyId;
 
     if (!companyId) {
       throw "User not registered in any Company";
@@ -123,6 +126,12 @@ const getAllSubscription = async (req, res) => {
 const getCompanySubscriptions = async (req, res) => {
   const { companyId } = req.query;
   try {
+    // Confirm the caller actually belongs to companyId rather than
+    // trusting the query param directly. STITCH/security fix (GH-ACT-009).
+    const userCompany = await getUserCompany(req.user.uid);
+    if (!userCompany || userCompany.companyId !== companyId) {
+      return res.status(403).send("Forbidden");
+    }
     const subList = await companySubscriptions(companyId);
 
     successMessage.data = subList;

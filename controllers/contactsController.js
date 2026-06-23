@@ -65,8 +65,9 @@ const multipleContact = async (req, res) => {
 const deleteContact = async (req, res) => {
     const { contactId } = req.query;
 
+    // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
     const deleteQuery = `DELETE FROM ${dbSchema}.contact
-                        WHERE contact_id='${contactId}';`;
+                        WHERE contact_id=$1;`;
 
     const checkInDb = await checkContactIfExist(contactId);
     try {
@@ -74,7 +75,7 @@ const deleteContact = async (req, res) => {
             return res.status(status.error).send("Contact does not Exist");
         }
 
-        const { rows } = await dbQuery.query(deleteQuery, []);
+        const { rows } = await dbQuery.query(deleteQuery, [contactId]);
 
         const message = "Contact Successfully Deleted"
         successMessage.data = message;
@@ -263,8 +264,9 @@ const contactslist = async (req, res) => {
 const deleteGroup = async (req, res) => {
     const { groupId } = req.query;
 
+    // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
     const deleteQuery = `DELETE FROM ${dbSchema}."group"
-                        WHERE group_id='${groupId}';`;
+                        WHERE group_id=$1;`;
 
     const checkInDb = await checkGroupIfExist(groupId);
     try {
@@ -272,7 +274,7 @@ const deleteGroup = async (req, res) => {
             return res.status(status.error).send("Group does not Exist");
         }
 
-        const { rows } = await dbQuery.query(deleteQuery, []);
+        const { rows } = await dbQuery.query(deleteQuery, [groupId]);
 
         const message = "Contact Successfully Deleted"
         successMessage.data = message;

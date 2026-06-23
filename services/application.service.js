@@ -13,10 +13,21 @@ import {
 const dbSchema = env.schema;
 const now = new Date();
 
+// GH-FOUND-B01 -- "active" means not archived. Checked before every
+// insert so the same applicant can't create a second row for the same
+// job; also reused as the single source of truth for what "duplicate"
+// means here, rather than re-deriving the definition at each call site.
+const findActiveApplication = async (jobId, candidateId) => {
+  const searchQuery = `SELECT * FROM ${dbSchema}.job_applicants
+    WHERE job_id = $1 AND candidate_id = $2 AND (is_archived IS NULL OR is_archived = false)
+    LIMIT 1;`;
+  const { rows } = await dbQuery.query(searchQuery, [jobId, candidateId]);
+  return rows && rows.length > 0 ? rows[0] : null;
+};
+
 const jobApply = async (jobApplication, userId) => {
   const {
     jobId,
-    candidateId,
     applicantId,
     applicationStatusId,
     coverLetter,
@@ -24,6 +35,21 @@ const jobApply = async (jobApplication, userId) => {
     governmentFiles,
     interviewAnswers,
   } = jobApplication;
+
+  // SECURE fix (BOLA), found alongside GH-FOUND-B01: this previously read
+  // `candidateId` from the request body, trusting the frontend's claimed
+  // identity for who the application belongs to. An authenticated
+  // applicant could submit an application recorded under any other
+  // candidate_id. Identity must come from the verified auth token.
+  const candidateId = userId;
+
+  const existing = await findActiveApplication(jobId, candidateId);
+  if (existing) {
+    const duplicateError = new Error("You already applied to this job.");
+    duplicateError.code = "JOB_APPLICATION_ALREADY_EXISTS";
+    duplicateError.existingApplication = existing;
+    throw duplicateError;
+  }
 
   const jobApplicantionId = idGenerator(6, "APPL");
 
