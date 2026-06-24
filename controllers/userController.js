@@ -110,12 +110,20 @@ const registerUser = async (req, res) => {
     return res.status(status.bad).send(errorMessage);
   }
 
+  // Only job seekers (3) and employers (2) may self-register.
+  // Role 1 (admin) must never be grantable via the public signup endpoint.
+  const ALLOWED_ROLES = [2, 3];
+  if (!ALLOWED_ROLES.includes(Number(role))) {
+    errorMessage.error = "Invalid role.";
+    return res.status(status.bad).send(errorMessage);
+  }
+
   const user = {
     email,
     password,
     firstName,
     lastName,
-    role,
+    role: Number(role),
   };
 
   try {
