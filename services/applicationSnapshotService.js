@@ -68,7 +68,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRequired.push({
       field: "basic_profile",
       label: "Basic profile (job title)",
-      reason: "Helps employers understand your current professional focus",
+      reason: "Add a job title to your profile so employers can see your current professional focus at a glance.",
     });
   }
 
@@ -81,7 +81,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRequired.push({
       field: "work_experience",
       label: "Work experience",
-      reason: "Helps employers understand your work history",
+      reason: "Add your work history so employers can see what roles and responsibilities you've had.",
     });
   }
 
@@ -94,7 +94,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRequired.push({
       field: "skills",
       label: "Skills",
-      reason: "Lets employers see what you can do and how you align with the role",
+      reason: "List your skills so employers can see how well you match what the role needs.",
     });
   }
 
@@ -107,7 +107,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "education",
       label: "Education",
-      reason: "Gives employers a fuller picture of your background",
+      reason: "Add your education history to give employers a fuller picture of your background.",
     });
   }
 
@@ -123,7 +123,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "cv_submitted",
       label: "CV or document submitted",
-      reason: "A CV gives employers more detail to review alongside your application",
+      reason: "Upload a CV to give employers more detail to review alongside your application.",
     });
   }
 
@@ -136,7 +136,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "video_answers",
       label: "Video answers",
-      reason: "Video answers let you present yourself beyond a written application",
+      reason: "Record a video answer to present yourself in your own words, beyond what's on the page.",
     });
   }
 
@@ -149,7 +149,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "certifications",
       label: "Certifications",
-      reason: "Certifications can strengthen your profile for roles that require specific credentials",
+      reason: "Add any certifications you hold to strengthen your profile, especially for roles that ask for specific credentials.",
     });
   }
 
@@ -186,7 +186,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
       completedRequired,
       recommendedItems,
       completedRecommended,
-      disclaimerNote: "Application completeness measures submitted information, not candidate quality. It is not a hiring score.",
+      disclaimerNote: "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions.",
     },
     scoring_rubric_version: COMPLETENESS_RUBRIC_VERSION,
   };

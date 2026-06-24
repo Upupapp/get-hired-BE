@@ -1,78 +1,142 @@
 # GETHIRED ACTIONS — Recent Deployment Report
-## Application Snapshots System
+## Applicant Completeness View
 **Generated:** 2026-06-24
-**Scope:** BE `applicationSnapshotService.js` + controller + routes + FE service + employer card
+**Deployment:** FE 76c545e / BE faa2232
+**Scope:** Applicant "My Applications" page — completeness score + level badge + improvement tips per application row; forkJoin snapshot loading; skeleton per row; graceful null for pre-snapshot applications; BE safe error messages, Array.isArray guard, 403 enumeration oracle fix, reason strings rewritten; employer snapshot card BRAND skeleton + OPTIMIZE aria-labels + STITCH stale-state fix
 
 ---
 
 ## Executive Summary
 
-The Application Snapshots deployment adds a three-table persistence layer that captures an immutable record of each application at submission time: the applicant's profile state, submitted documents, completeness score, and a match-readiness snapshot. All three snapshot types use `ON CONFLICT DO NOTHING` for idempotency, fire-and-forget integration in `jobApply()`, and a well-designed privacy exclusion list.
+This deployment closes the single biggest gap from the previous cycle: **SNAP-P1-001 is now RESOLVED**. Applicants can see completeness scores and improvement tips on the "My Applications" page. The implementation is architecturally correct — `forkJoin` fires all snapshot calls in parallel rather than sequentially, per-row skeletons show while in-flight, and `catchError` correctly silences individual call failures without breaking the page.
 
-The deployment is architecturally sound with no regressions. The employer-side snapshot card in `job-applicants.component` is wired end-to-end and protected by company-ownership checks. The applicant-side endpoint exists and is auth-gated but has no UI consuming it yet. No backfill job exists for pre-deployment applications. The `snapshot_hash` field is reserved in the DDL but not populated by the service.
+The previous P0 blocker (SNAP-P0-001: DDL applied to production) remains unverified by code — it requires a direct DB query and cannot be confirmed here. SNAP-P1-004 (companyId NOT NULL risk) was **partially addressed**: `application.service.js` already passes `companyId: job.companyId || null`, but no guard prevents the null value from reaching the INSERT. The DDL column is still `NOT NULL`. The risk remains open.
 
-**Immediate action:** Confirm the DDL (`application_snapshots_ddl.sql`) has been applied to production before trusting any snapshot data.
-
----
-
-## Consolidated Findings
-
-### Strengths
-- Fire-and-forget pattern: snapshot failure never blocks application submission.
-- `ON CONFLICT DO NOTHING` + partial unique index on `(application_id) WHERE source='application_submit'` correctly implements idempotency for the original snapshot; retries and backfills are cleanly separated by the `source` column.
-- `EXCLUDED_FIELDS` is defined once and used consistently across both the service's privacy-screening logic and the `excluded_fields` column written to the DB — employers can verify what was omitted.
-- Completeness rubric is version-stamped (`application_completeness_v1`) and the matching-algorithm version is stamped (`employer_signals_v5`).
-- Company-ownership check in `getEmployerApplicantSnapshotSummary` is correct: verifies `jobs.company_id` against the caller's company before returning any data.
-- Applicant self-view endpoint (`GET /applicant/application/snapshot`) correctly verifies `candidate_id === uid` before returning data.
-
-### Gaps and Risks
-
-#### Critical / Blocking
-1. **DDL not confirmed applied to production.** The DDL file exists and the code assumes the tables exist. If the migration has not been applied, every `jobApply()` call will silently fail the snapshot phase (fire-and-forget suppresses the error) and no snapshots will be stored. No backfill will be possible for the silent-failure window.
-
-#### High Priority
-2. **No UI surface for applicant self-view.** `ApplicationService.getApplicationSnapshot()` (FE) is wired to the API endpoint but no Angular component calls it. Applicants cannot see their own completeness feedback or understand what was captured about them.
-3. **No backfill job for existing applications.** `application_snapshots_ddl.sql` includes no backfill script. All applications submitted before this deployment have no snapshot rows. The `persistApplicationSnapshot` service already handles `source='backfill_current_data'` in provenance text, indicating backfill was anticipated but not shipped.
-4. **`companyId` can be `null` at insert time** (`companyId: job.companyId || null` in `application.service.js` line 150), but the DDL declares `company_id varchar NOT NULL` on all three tables. If `job.companyId` is missing (e.g. job row lacks the FK-backed field), the snapshot insert will throw a DB NOT NULL violation — this is currently silently swallowed by the `catch` block, but it means snapshots will not be created for those applications.
-5. **No dashboard metric endpoint for completeness distribution.** Employers have no aggregate view of completeness scores across their job pipeline.
-
-#### Medium Priority
-6. **`snapshot_hash` column reserved but never populated.** The DDL includes `snapshot_hash varchar NULL` but `persistApplicationSnapshot` never computes or writes this value.
-7. **Match score formula in `persistMatchSnapshot` duplicates logic from `employerApplicantSignalsService`.** `persistMatchSnapshot` hand-rolls `(matchedRequired / total) * 60 + (hasCv ? 40 : 0)` using raw fields from `fitSignals` rather than calling back into the canonical scoring function. If `REQUIRED_SKILLS_WEIGHT` or `APPLICATION_COMPLETENESS_WEIGHT` change in `employerApplicantSignalsService`, `match_snapshots.match_score` will silently diverge.
-8. **No unit or integration tests for `applicationSnapshotService.js`.** `scoreApplicationCompleteness`, `buildApplicantProfileSnapshot`, and the idempotency guarantee (ON CONFLICT DO NOTHING) have no test coverage in the project test suite (only third-party node_modules specs were found).
-9. **No admin view for snapshot data.** `adminController.js` has no snapshot-related endpoints. Ops/support cannot inspect or audit snapshot rows for a specific application.
-
-#### Low Priority
-10. **Applicant self-view completeness tips not surfaced in dashboard.** The `missingRequired` and `missingRecommended` arrays are available in the API response but no dashboard UI shows improvement tips to the applicant.
-11. **No webhook/event on snapshot-ready.** Downstream consumers (notifications, analytics) have no hook to react when a snapshot is created.
-12. **`DISCLAIMER` re-export from `applicationSnapshotService.js` is a re-export from `employerApplicantSignalsService`.** The snapshot service exports `DISCLAIMER` which it imported from the match service. This creates an indirect coupling — if the match service's disclaimer text or export changes, snapshot service callers that imported it via snapshot service will silently break. `DISCLAIMER` should be defined in one canonical location.
-13. **`scoreApplicationCompleteness` uses `docsSnapshot.resume` (which is already a mapped snapshot object) but the call passes `answersSnapshot.answers` for both text-answers and video-answer detection.** Line 548 in `applicationSnapshotService.js` passes `answersSnapshot.answers.filter(a => a.hasAnswerFile)` as the `submittedVideoAnswers` argument; however `buildSubmittedVideoAnswersSnapshot` (which correctly derives this from `interviewAnswers` directly) is already called separately. The completeness rubric's video-answer check at line 132 receives a filtered version of the already-mapped snapshot rather than the original `interviewAnswers` array — these are consistent but fragile; a comment to that effect would aid maintenance.
-14. **`getUserCompany` is imported from `companiesController` inside `applicationController`.** Cross-importing controller helpers from other controllers creates tight coupling and circular-import risk as the codebase grows. `getUserCompany` should be extracted to a service layer.
+**Three structural UX gaps were introduced by this deployment that need follow-up actions** (see backlog). No regressions were found. The BE guards and error messages are correct. The employer card STITCH stale-state fix is verified in the controller (Array.isArray guard on `getUserCompany` return). The 403 enumeration oracle fix is in place (`getEmployerApplicantSnapshotSummary` returns 403 for both "not found" and "wrong company").
 
 ---
 
-## Prioritized Action List
+## Status of Previous Open Items
 
-| Priority | Action | Effort |
-|----------|--------|--------|
-| P0 | Confirm DDL applied to production | XS |
-| P1 | Build applicant self-view completeness UI | M |
-| P1 | Write backfill script for existing applications | S |
-| P1 | Add completeness distribution dashboard endpoint | M |
-| P1 | Fix null `companyId` NOT NULL constraint risk | XS |
-| P2 | Implement `snapshot_hash` integrity verification | S |
-| P2 | Delegate match score to canonical `employerApplicantSignalsService` | S |
-| P2 | Add unit/integration tests for `applicationSnapshotService.js` | M |
-| P2 | Add admin view for snapshot data per application | M |
-| P3 | Surface completeness improvement tips in applicant dashboard | S |
-| P3 | Add webhook/event when snapshot is ready | S |
-| P3 | Relocate `DISCLAIMER` to a single canonical location | XS |
+### SNAP-P0-001 — Confirm DDL applied to production
+**Status: STILL OPEN**
+No code change touches this. This requires manual ops verification:
+```sql
+SELECT to_regclass('gethired.application_snapshots');
+SELECT to_regclass('gethired.application_completeness_snapshots');
+SELECT to_regclass('gethired.match_snapshots');
+```
+Until confirmed, every new application may be silently dropping all three snapshots.
+
+### SNAP-P1-004 — company_id NOT NULL constraint risk
+**Status: STILL OPEN — not fixed in this deployment**
+`services/application.service.js` line 150:
+```js
+companyId: job.companyId || null,
+```
+The null is passed through into `createApplicationSnapshots`, which passes it into all three `persist*` functions. The DDL declares `company_id varchar NOT NULL` on all three tables. A null companyId still causes a Postgres NOT NULL violation, silently swallowed by the `.catch()`. No guard was added in this deployment.
+
+### SNAP-P1-002 — Backfill script for existing applications
+**Status: STILL OPEN**
+No backfill script was created in this deployment cycle. All applications submitted before the snapshot system was deployed still have no rows in `application_snapshots`, `application_completeness_snapshots`, or `match_snapshots`. The "My Applications" page gracefully shows the pre-snapshot message for these rows (`!snap.hasSnapshot` path), so the user-facing experience is handled — but the underlying data gap persists.
+
+### SNAP-P1-001 — Applicant self-view completeness UI
+**Status: RESOLVED**
+`ApplicantApplicationsComponent` now calls `ApplicationService.getApplicationSnapshot()` for every application via `forkJoin`, populates `snapshotsMap`, and the template renders completeness score, level badge, required improvement tips, and recommended tips per row. The disclaimer note is rendered. The graceful null path for pre-snapshot applications is in place (`!snap.hasSnapshot` → text message). `catchError` silences per-application failures without breaking the page.
+
+### SNAP-P2-002 — Match score formula divergence
+**Status: STILL OPEN**
+`persistMatchSnapshot` in `applicationSnapshotService.js` lines 404–411 still hand-rolls its own score: `(matchedRequired / (matchedRequired + missingRequired)) * 60 + (hasCv ? 40 : 0)`. `employerApplicantSignalsService` uses `jobRequiredSkills.length` as the denominator, which differs when the matched + missing subset is smaller than the full required list. The formula divergence is live in production.
 
 ---
 
-## Recommended Next Steps
+## New Findings — Applicant Completeness View
 
-1. **Immediate (today):** Verify the DDL has been applied to production. Run a count query: `SELECT COUNT(*) FROM gethired.application_snapshots;` — if the table does not exist, apply the DDL before any new applications are submitted.
-2. **This sprint:** Wire the applicant self-view in the FE; write and run the backfill script; fix the `companyId` nullable risk.
-3. **Next sprint:** Test coverage for the snapshot service; admin view; snapshot integrity hash.
-4. **Recommended command:** Run `/NOTIFY` to surface the applicant completeness improvement tips as an actionable in-app notification; run `/MATCHED` to QA the match snapshot score parity with `employerApplicantSignalsService`.
+### N API calls on page load (one per application)
+
+**Severity: P1**
+`loadSnapshots()` in `ApplicantApplicationsComponent` builds one HTTP call per application:
+```ts
+const calls = appsWithIds.map(app =>
+  this.applicationService.getApplicationSnapshot(app.jobApplicationId).pipe(...)
+);
+forkJoin(calls).subscribe(...);
+```
+`forkJoin` fires them in parallel, which is better than sequential — but for a user with 10 applications, this is still 10 HTTP requests to `GET /applicant/application/snapshot?applicationId=...` on every page load. There is no batch endpoint. As application counts grow, this becomes a noticeable waterfall in network dev tools and a load on the BE.
+
+**Opportunity:** A single `GET /applicant/application/snapshots?applicationIds=id1,id2,...` endpoint (or a POST with a body array) would collapse N calls to 1. The controller and service already have all the logic; only the loop and the ownership check need to be adapted.
+
+### `snapshotFor()` called multiple times per row in template
+
+**Severity: P2**
+The template calls `snapshotFor(app.jobApplicationId)` in multiple `*ngIf` expressions on the same row:
+
+```html
+<ng-container *ngIf="snapshotFor(app.jobApplicationId) as snap; else snapSilent">
+  ...
+  <p *ngIf="!snap.hasSnapshot">...</p>
+  <ng-container *ngIf="snap.hasSnapshot">
+    ...
+    <div *ngIf="snap.missingRequired?.length > 0">...</div>
+    <div *ngIf="snap.missingRecommended?.length > 0">...</div>
+```
+The outer `*ngIf="snapshotFor(app.jobApplicationId) as snap"` only calls `snapshotFor` once via Angular's `as` binding — this is correct for that block. However, if any other template location (future changes, debugging additions) calls `snapshotFor(app.jobApplicationId)` outside the `as` binding, it will re-call the Map lookup on every change detection cycle. Currently `snapshotFor` is a simple `Map.get()` which is O(1) and harmless, but the pattern is worth noting for maintainability.
+
+**Opportunity:** This is low-risk as-is. If the completeness view grows (more tip categories, more badge conditions), consider computing the snapshot once in the component class and exposing a pre-indexed array, or using Angular `trackBy` to minimize re-renders.
+
+### No CTA from completeness tips to profile edit page
+
+**Severity: P1**
+The improvement tips UI (`snap.missingRequired` and `snap.missingRecommended` lists) shows the applicant what is missing (e.g., "Add work experience", "Add skills") but provides no way to act on the tip. The "My Applications" page is a dead end — the user must manually navigate away to find the profile edit page.
+
+The profile edit route exists at `/user/profile/edit` (confirmed in `ApplicantProfileModule` routes: `{ path: 'edit', component: ApplicantProfileFormComponent }`). The `Router` is already injected in `ApplicantApplicationsComponent`. A "Fix this now" button per tip would close the loop immediately.
+
+### Missing tip deep-links to profile edit sections
+
+**Severity: P2**
+Even if a CTA to `/user/profile/edit` is added, the profile edit page (`ApplicantProfileFormComponent`) has no fragment-based section anchoring. A tip like "Add work experience" could navigate to `/user/profile/edit#work-experience`, but the route does not currently support fragment navigation to individual sections. The tip fields map cleanly to identifiable sections: `work_experience`, `skills`, `education`, `cv_submitted`, `certifications`. Adding `id` attributes to the section headings in the profile form and using `router.navigate(['/user/profile/edit'], { fragment: 'work-experience' })` would create a complete guided flow.
+
+### `snapshotsLoaded` flag is shared across all rows — single slow fetch blocks all skeletons
+
+**Severity: P2**
+`forkJoin` waits for ALL calls to complete before setting `snapshotsLoaded = true`. If one application's snapshot call is slow (e.g., a cold DB query for a large profile), all rows continue showing skeletons until that last call resolves. If one call errors and `catchError` returns `of({ id, data: null })`, the others are not affected — that part is correct. But there is no per-row loaded state. An applicant with 5 quick-responding applications and 1 slow one will see all 5 as skeletons while waiting for the 6th.
+
+**Opportunity:** Track per-row loaded state (`snapshotsLoaded` as a `Set<string>` of resolved IDs rather than a single boolean). This is a UX polish item; the current behavior is not broken.
+
+### `retry()` calls `ngOnInit()` directly
+
+**Severity: P3**
+`retry()` in `ApplicantApplicationsComponent` calls `this.ngOnInit()`. Angular's change-detection cycle does not expect `ngOnInit` to be called more than once on a live component instance — while this works today, it bypasses Angular's lifecycle contract. The correct pattern is to extract the data-loading logic into a private method and call that from both `ngOnInit` and `retry()`. This is a maintainability item.
+
+### Completeness score displayed at submission time — no re-score path
+
+**Severity: P3**
+The completeness score shown on the "My Applications" page reflects the profile state at the time of submission (via the snapshot). If an applicant fills in their missing work experience after applying, their score on the "My Applications" page will not update — the snapshot is intentionally immutable (that is correct behavior for the application record). However, there is no UI indication that this is the "at submission" score, nor any mechanism to request a re-score against current profile data. This creates a potential confusion: applicant adds work experience, checks "My Applications", still sees "incomplete" — thinks their profile is broken. The `disclaimerNote` field in the API response is rendered but does not explicitly say "as of your application date."
+
+---
+
+## Architecture Notes
+
+- `GET /applicant/application/snapshot` correctly enforces `candidate_id === uid` — no cross-applicant data exposure confirmed.
+- `Array.isArray(callerCompany)` guard in `getEmployerApplicantSnapshotSummary` is correct: `getUserCompany` returns `[]` when no company exists, which is truthy in a Boolean context without the guard.
+- 403 enumeration oracle fix is confirmed in place: both "application not found" and "wrong company" return 403 in the employer endpoint.
+- `forkJoin` with `catchError → of(null)` per call correctly prevents one failure from cancelling sibling calls — this is the right pattern for non-critical parallel data enrichment.
+
+---
+
+## Summary
+
+| Item | Status |
+|------|--------|
+| SNAP-P0-001 (DDL on prod) | STILL OPEN — manual ops required |
+| SNAP-P1-001 (applicant self-view UI) | RESOLVED |
+| SNAP-P1-002 (backfill script) | STILL OPEN |
+| SNAP-P1-004 (companyId null risk) | STILL OPEN |
+| SNAP-P2-002 (match score divergence) | STILL OPEN |
+| New: N API calls on load | NEW — P1 |
+| New: No CTA to profile edit from tips | NEW — P1 |
+| New: snapshotFor() template pattern | NEW — P2 |
+| New: Missing tip deep-links | NEW — P2 |
+| New: forkJoin shared skeleton flag | NEW — P2 |
+| New: retry() calls ngOnInit directly | NEW — P3 |
+| New: Score reflects submission time only | NEW — P3 |

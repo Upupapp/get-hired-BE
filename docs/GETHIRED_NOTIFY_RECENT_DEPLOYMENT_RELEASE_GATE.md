@@ -1,100 +1,93 @@
-# GETHIRED NOTIFY — Release Gate: Application Snapshots
+# GETHIRED NOTIFY — Release Gate: Applicant Completeness View
+**Scope:** FE 76c545e / BE faa2232
 **Date:** 2026-06-24
-**Deployment:** Application Snapshots System (BE controllers + service + FE employer snapshot card)
 
 ---
 
-## Gate A — Message Safety
-**Status: PASS**
+## Gate A — No Internal Jargon
+**Status: PASS (after fix)**
 
-No stack traces, raw error objects, SQL query strings, tokens, internal field names, or internal identifiers are exposed in any user-facing message after fixes.
+Verified: no DB column names, no internal enum values, no technical system terminology in any user-facing string after fixes.
 
-Verified paths:
-- `submitApplication` catch — was `"ERROR: " + error`, now safe generic message
-- `getApplicantApplicationSnapshot` catch — was `"ERROR: " + error`, now safe contextual message
-- `getEmployerApplicantSnapshotSummary` catch — was `"ERROR: " + error`, now safe contextual message
-- `privacyNote` — was raw database column names (`civil_status`, `political_views`...), now plain English examples
-
-Remaining `"Forbidden."` and `"Application not found."` responses are minimal, safe, and appropriate — they reveal no exploitable information. The employer controller's 404→403 collapse (done by the linter post-fix) is an additional enumeration oracle protection.
+- Null state: was "before completeness tracking was enabled" (internal system phrase) → fixed to "before this feature was introduced"
+- `privacyNote`: verified no raw column names such as `civil_status`, `political_views` in current copy
+- All `reason` strings: verified — no field names, no DB identifiers, no algorithm terminology
+- Error messages in controller: no stack traces, no query strings, no internal identifiers
 
 ---
 
-## Gate B — Employer Snapshot Copy
-**Status: PASS**
+## Gate B — Accurate Snapshot-at-Submit Framing
+**Status: PASS (after fix)**
 
-All states of the employer snapshot card are clear and non-ambiguous after fixes:
+The completeness view reflects the applicant's submitted state at the time of application, not their current live profile. This distinction must be clear to the applicant.
 
-| State | String | Verdict |
-|-------|--------|---------|
-| Loading | Skeleton with `aria-label="Loading application snapshot"` | Clear |
-| Null (no snapshot) | "No snapshot was captured for this application. Snapshots are recorded at submission time." | Clear — explains why, not just that |
-| Error (no card shown) | Card hidden when `snapshotSummary` is falsy — supplementary card, acceptable | Acceptable |
-| Completeness label | "excellent" / "strong" / "basic" / "incomplete" | Clear, factual |
-| Match badge | "Strong" / "Partial" / "Limited" / "Limited data" | Clear, neutral |
-| Section labels | "Completeness", "Signal strength at submission" | Clear |
-| Disclaimer paragraph | Full `DISCLAIMER` constant from BE | Clear, complete |
+Verified:
+- Required tips heading: "What was missing when you applied — add these now for stronger future applications:" — explicitly anchors to the past submission event
+- Tips include fields like "submitted a CV" and "video answers" which are not live profile fields; the new heading ("when you applied") covers all tip types correctly
+- Null state: "it was submitted before this feature was introduced" — past tense, anchored to submission
+- `disclaimerNote`: "how much information was included when you applied" — past tense, submission-anchored
+
+No string implies the view reflects the applicant's current profile state.
 
 ---
 
-## Gate C — Fair-Hiring Copy
-**Status: PASS**
+## Gate C — Non-Alarming Copy
+**Status: PASS (after fix)**
 
-1. **Disclaimer is present and rendered:** The `DISCLAIMER` constant from `employerApplicantSignalsService.js` is passed as `matchDisclaimer` in the employer snapshot summary and rendered in the FE snapshot card's disclaimer paragraph. The same text also appears in the applicant list's `role="note"` banner when any match signal is present.
-
-2. **No punitive framing for low scores:**
-   - Completeness level "incomplete" is displayed in a neutral grey badge, not red. No failure language used.
-   - Match signal "low" is now displayed as "Limited" — factual, not a judgment on the applicant.
-   - No message says an applicant "failed," "was rejected," or "does not qualify."
-
-3. **Score is contextualized:**
-   - `disclaimerNote` in the applicant-facing endpoint: "Application completeness measures submitted information, not candidate quality. It is not a hiring score."
-   - `evidence.disclaimerNote` in the scoring function: same aligned wording.
-
-4. **Protected attributes:** `EXCLUDED_FIELDS` covers gender, civil_status, date_of_birth, religion, nationality, political_views, union_membership, disability_status, health_conditions, family_status, race, ethnicity, raw biometric data, and personality analysis. None of these appear in completeness scoring or match evidence.
+Verified:
+- Badge "incomplete" → "Getting started": neutral, forward-looking, not a failure grade
+- `disclaimerNote` leads with positive definition ("reflects how much information was included") before clarification — does not lead with negation
+- "No effect on hiring decisions" is concrete and reassuring
+- Recommended tips heading "(not required)" makes voluntary nature explicit
+- No string uses language like "failed", "rejected", "missing", "incomplete" as a verdict
+- Score badge colors: green (excellent/strong), amber (basic), grey (getting started) — no red; grey is neutral, not alarming
 
 ---
 
-## Gate D — Accessibility
-**Status: PASS**
+## Gate D — Actionable Tips
+**Status: PASS (after fix)**
 
-1. **Loading state:** Skeleton loader uses `role="status"`, `aria-label="Loading application snapshot"`, wrapped in `aria-live="polite"` `aria-atomic="true"` container. Screen readers will announce when loading completes.
+All 6 tip reason strings verified to open with an imperative verb addressed to the applicant:
 
-2. **Completeness badge:** `[attr.aria-label]="'Completeness level: ' + snapshotSummary.completenessLevel"` — not color-only; accessible label provided.
+| Tip | Opener | Verdict |
+|---|---|---|
+| basic_profile | "Add a job title to your profile..." | PASS |
+| work_experience | "Add your work history..." | PASS |
+| skills | "List your skills..." | PASS |
+| education | "Add your education history..." | PASS |
+| cv_submitted | "Upload a CV..." | PASS |
+| video_answers | "Record a video answer..." | PASS |
+| certifications | "Add any certifications..." | PASS |
 
-3. **Match badge:** `[attr.aria-label]` updated to use the display-mapped label (e.g. "Match signal strength: Limited") rather than the raw enum value ("low").
-
-4. **Disclaimer banner:** `role="note"` applied to the applicant list match signals disclaimer. The snapshot card itself uses `role="region"` with `aria-label="Application snapshot summary"`.
-
-5. **No information conveyed by color alone:** Every badge has both a color class and visible text. All accessible text matches visible text (post fix 12).
-
----
-
-## Gate E — Applicant Copy
-**Status: PASS**
-
-The `/applicant/application/snapshot` endpoint returns these applicant-facing fields:
-
-| Field | Value | Verdict |
-|-------|-------|---------|
-| `disclaimerNote` | "Application completeness measures submitted information, not candidate quality. It is not a hiring score." | Clear, non-alarming, non-shaming |
-| `privacyNote` | "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring." | Plain English, no technical field names, reassuring |
-| `missingRequired[].reason` | e.g. "Helps employers understand your work history" | Second-person, actionable, non-punitive |
-| `missingRecommended[].reason` | e.g. "A CV gives employers more detail to review alongside your application" | Second-person, actionable, non-punitive |
-| `completedSections` | e.g. "Work experience", "Skills", "Education" | Clear, factual section names |
-
-No endpoint error message exposes internals. No endpoint leaks cross-applicant data (ownership check enforced before data is returned).
+No tip uses passive or employer-perspective framing. Each tip names the action before the benefit.
 
 ---
 
-## Summary
+## Gate E — Accessible aria-labels
+**Status: PASS (after fix)**
 
-| Gate | Status |
-|------|--------|
-| A — Message Safety | PASS |
-| B — Employer Snapshot Copy | PASS |
-| C — Fair-Hiring Copy | PASS |
-| D — Accessibility | PASS |
-| E — Applicant Copy | PASS |
+| Element | aria-label / role | Verdict |
+|---|---|---|
+| Outer snapshot `div` | `role="region" aria-label="Application completeness snapshot"` | PASS — landmark with meaningful name |
+| Skeleton loader | `role="status" aria-label="Loading application snapshot"` | PASS |
+| Inner score div | `role="region" aria-label="Completeness score"` | PASS |
+| Level badge | `aria-label="Completeness level: <level>"` | PASS — name includes level value |
+| Score percentage | `<strong>` — visible number; no screen-reader-only label needed as label is adjacent | PASS |
+
+Note: the linter also added `aria-live="polite" aria-atomic="true"` to the outer snapshot div, ensuring screen readers announce when the async snapshot data loads. This is a meaningful a11y improvement.
+
+---
+
+## Gate Summary
+
+| Gate | Pre-fix | Post-fix |
+|---|---|---|
+| A — No internal jargon | FAIL | PASS |
+| B — Accurate framing | FAIL | PASS |
+| C — Non-alarming | FAIL | PASS |
+| D — Actionable tips | FAIL | PASS |
+| E — Accessible | FAIL | PASS |
 
 **Overall release gate: PASS**
-All 5 gates pass after 12 copy fixes across 3 files. No logic, business rules, or schema were modified.
+
+10 copy fixes applied across 3 files. No logic, business rules, or schema were changed. No emails sent.

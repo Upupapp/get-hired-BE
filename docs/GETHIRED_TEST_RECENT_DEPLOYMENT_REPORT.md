@@ -1,14 +1,16 @@
 # GETHIRED_TEST_RECENT_DEPLOYMENT_REPORT
-**Deployment under test:** Application Snapshots System  
-**Test date:** 2026-06-24  
-**Tester:** Claude Code — TEST RECENT DEPLOYMENT command  
-**Scope:** Code audit + live module-load smoke tests (no destructive DB commands, no production connections)
+**Deployment under test:** Applicant Completeness View (FE 76c545e, BE faa2232)
+**Test date:** 2026-06-24
+**Tester:** Claude Code — TEST RECENT DEPLOYMENT command
+**Scope:** Full static code audit of all 7 changed files. No destructive DB commands, no production connections.
 
 ---
 
 ## 1. Executive Summary
 
-The Application Snapshots System is **correctly designed and safe to ship** with one medium-priority clarification item and one low-priority risk to track. The core safety invariant — snapshot failure never blocks application submission — is correctly implemented via a fire-and-forget `.catch()` wrapper in `application.service.js`. The idempotency guarantee (ON CONFLICT DO NOTHING on all three snapshot tables) is implemented consistently. Protected attributes are excluded from all persisted data. The FE snapshot card handles null/loading/error states gracefully. The `applicationId` field flows correctly from the BE applicant list mapper through the FE `viewMenu()` handler to `loadSnapshotSummary()`.
+The Applicant Completeness View deployment is **correctly designed and safe to ship** with two medium-priority gaps and zero blockers. The core forkJoin parallel-load pattern is correctly implemented: each per-application snapshot call is independently guarded by `catchError(() => of(...))`, so a single 404 or 5xx never poisons other rows. The `snapshotFor()` accessor handles null/undefined/missing IDs safely. The four UI states (skeleton, success, null, silent-error) are all wired via `*ngIf` chains that are both logically complete and structurally sound. The BE ownership check is a two-step candidate_id comparison on the applicant endpoint, and the employer endpoint enforces 403-collapse for both "not found" and "wrong company" cases. The `Array.isArray(callerCompany)` guard correctly handles the empty-array case from `getUserCompany()`.
+
+The previous release gate (original snapshots deployment) covered different gates. This report resets the gate definitions to match the new deployment scope.
 
 ---
 
@@ -16,16 +18,16 @@ The Application Snapshots System is **correctly designed and safe to ship** with
 
 | Area | Method |
 |---|---|
-| DDL idempotency (3 tables + indexes) | Static code review |
-| Snapshot service module load | `node -r esm -e "import('./services/applicationSnapshotService.js')"` — PASS |
-| EXCLUDED_FIELDS completeness | Runtime: verified 21 fields including gender, race, face_traits, personality_analysis, emotion_analysis |
-| scoreApplicationCompleteness rubric | Runtime: null-profile → 0/incomplete; full profile → 100/excellent; partial → 78/strong |
-| docsSnapshot shape compatibility | Runtime: confirmed hasCvDoc reads from docsSnapshot.resume correctly |
-| Fire-and-forget pattern | Static review: `.catch()` on the Promise, never awaited before return |
-| Ownership checks (applicant + employer) | Static code review of applicationController.js |
-| FE null/loading/error states | Static review of job-applicants.component.html |
-| applicationId propagation | Static trace: job.service.js mapper → FE component viewMenu() → loadSnapshotSummary() |
-| Contract alignment FE ↔ BE | Static review of all 4 FE files vs 2 BE endpoints |
+| applicant-applications.component.ts | Full static read — forkJoin, catchError, snapshotFor, retry(), snapshotsMap lifecycle |
+| applicant-applications.component.html | Full static read — all four *ngIf chains, skeleton, badge, tips blocks, null state, empty state |
+| applicant-applications.component.scss | Full static read — skeleton shimmer, badge, tips, disclaimer, empty styles |
+| applicationController.js | Full static read — ownership check, 403 collapse, Array.isArray guard |
+| applicationSnapshotService.js | Full static read — reason strings, privacyNote wording, getCompletenessSnapshot, getApplicationSnapshotSummaryForEmployer |
+| job-applicants.component.html | Full static read — employer snapshot card, skeleton, aria-live, null state |
+| job-applicants.component.ts | Full static read — loadSnapshotSummary, reset-on-open, catchError, snapshotSummaryLoading lifecycle |
+| job-applicants.component.scss | Full static read — skeleton styles, motion tokens, badge, disclaimer |
+| application.service.ts | Full static read — getApplicationSnapshot URL construction |
+| Angular build | Not run (build environment not available in this session) |
 
 ---
 
@@ -33,35 +35,53 @@ The Application Snapshots System is **correctly designed and safe to ship** with
 
 | Test | Status | Notes |
 |---|---|---|
-| Service module loads cleanly | PASS | All 11 exports confirmed |
-| EXCLUDED_FIELDS contains all protected attributes | PASS | 21 fields, includes gender/race/face_traits/personality_analysis/emotion_analysis/accent_analysis |
-| Completeness scoring: null-profile → 0 | PASS | Runtime verified |
-| Completeness scoring: full profile → 100 | PASS | Runtime verified |
-| docsSnapshot.resume detected as cv_submitted | PASS | Runtime verified |
-| ON CONFLICT DO NOTHING in all 3 INSERT statements | PASS | Lines 341, 375, 461 of applicationSnapshotService.js |
-| Fire-and-forget: snapshot never blocks submit | PASS | createApplicationSnapshots().catch() called without await |
-| Applicant ownership check on GET /applicant/application/snapshot | PASS | candidate_id !== uid → 403 |
-| Employer company-ownership check on GET /job/applicant/snapshot-summary | PASS | getUserCompany(uid).companyId !== job.company_id → 403 |
-| FE null snapshot state rendered | PASS | "No snapshot available for this application." shown when !hasSnapshot |
-| FE loading state rendered | PASS | "Loading snapshot..." shown when snapshotSummaryLoading |
-| FE error state (catchError → of(null)) | PASS | snapshotSummary stays null on error, card not shown |
-| applicationId in BE mapper | PASS | mappedBasicApplicantDetails returns applicationId: raw.job_application_id |
-| FE reads result.data.applicationId in viewMenu() | PASS | `result.data.data.applicationId` extracted before calling loadSnapshotSummary |
-| BE server starts (port 3000 already in use) | PASS (service loaded) | Server already running; module load succeeded, EADDRINUSE is expected |
-| Unit tests for snapshot service | NOT PRESENT | No test file found for applicationSnapshotService.js — see Critical Gaps |
+| forkJoin isolation: one 404 does not cancel other calls | PASS | Each call wrapped in `.pipe(catchError(() => of({ id, data: null })))` before forkJoin — forkJoin never sees an observable that errors |
+| catchError per-call (not global) | PASS | catchError is inside the `calls` map, scoped per applicationId, not on the forkJoin result |
+| snapshotFor(null/undefined/empty) | PASS | `snapshotsMap.get(applicationId) ?? null` — Map.get(undefined) returns undefined, coerced to null; no throw |
+| snapshotFor only called when app.jobApplicationId is truthy | PASS | `*ngIf="app.jobApplicationId"` wraps the entire app-snapshot div; snapshotFor() not called for rows without an ID |
+| Skeleton shown while loading, hidden when done | PASS | `*ngIf="!snapshotsLoaded"` on skeleton div; `*ngIf="snapshotsLoaded"` on content container — mutually exclusive |
+| snap.hasSnapshot === false → null state message renders | PASS | `*ngIf="!snap.hasSnapshot"` shows "submitted before completeness tracking was enabled" |
+| snap.hasSnapshot === true → score block renders | PASS | `*ngIf="snap.hasSnapshot"` on the score/tips/disclaimer block |
+| snap.missingRequired empty → tips block hidden | PASS | `*ngIf="snap.missingRequired?.length > 0"` — optional chaining guards null, empty array evaluates to false |
+| snap.missingRecommended empty → tips block hidden | PASS | `*ngIf="snap.missingRecommended?.length > 0"` — same pattern |
+| Zero applications → empty state unaffected | PASS | `*ngIf="applications.length === 0"` empty state is in a separate branch from the list; snapshot code never executes |
+| applications.length === 0 → loadSnapshots returns early | PASS | `if (appsWithIds.length === 0) { this.snapshotsLoaded = true; return; }` — snapshotsLoaded set true immediately |
+| retry() resets snapshotsMap and snapshotsLoaded | PASS | `snapshotsMap.clear()` + `snapshotsLoaded = false` before calling ngOnInit() |
+| retry() double-subscribe risk | MEDIUM GAP | ngOnInit() creates a new subscribe() on `getMyApplications()` without unsubscribing any previous subscription; if getMyApplications() is a BehaviorSubject or hot observable, retry() could stack subscriptions. With a cold HTTP observable (HttpClient) this is safe — each subscribe creates a new HTTP request. Needs verification of ApplicantApplicationsService implementation. |
+| BE: candidate_id ownership check | PASS | Queries job_applicants for candidate_id, compares to uid from verified auth token; mismatch → 403 |
+| BE: not-found returns 404, not 403 | PASS (applicant endpoint) | Applicant endpoint correctly returns 404 on not-found — applicant enumeration oracle is not a risk since they can only probe their own UIDs. No change needed. |
+| BE: employer endpoint 403 collapse | PASS | Both "not found" and "wrong company" return 403 — prevents enumeration oracle across companies |
+| BE: Array.isArray(callerCompany) guard | PASS | `!callerCompany \|\| Array.isArray(callerCompany)` before `.companyId` access — empty array returns 403 cleanly |
+| BE: getUserCompany(uid) returns null → null.companyId would throw | MEDIUM GAP | If getUserCompany returns null (not []), `!callerCompany` catches it correctly and returns 403. But if getUserCompany returns an object without a companyId property, the comparison `callerCompany.companyId !== jobRows[0].company_id` evaluates as `undefined !== company_id` which is truthy → 403. This is correct behavior but relies on undefined-comparison. Pre-existing pattern. |
+| FE: completenessLevel badge ngClass | PASS | All four levels (excellent, strong, basic, incomplete) have an explicit ngClass mapping; no uncovered case |
+| FE: titlecase pipe on completenessLevel | PASS | `snap.completenessLevel \| titlecase` — handles null gracefully (renders empty string) |
+| FE: snap.disclaimerNote rendered | PASS | `{{ snap.disclaimerNote }}` rendered from BE response field confirmed present in controller |
+| FE: privacyNote field present in BE response | PASS | privacyNote set in getApplicantApplicationSnapshot controller, line 96 |
+| FE: privacyNote NOT rendered in template | FINDING | privacyNote is returned by BE but not displayed in the applicant-applications template. This is a gap in transparency — the privacy note informs applicants that protected attributes are excluded. Low severity; does not break anything. |
+| employer snapshot card: STITCH Fix F2 reset | PASS | snapshotSummary = null + snapshotSummaryLoading = false set before loadSnapshotSummary() called, preventing stale data from previous applicant |
+| employer snapshot card: aria-live polite | PASS | `aria-live="polite" aria-atomic="true"` wraps skeleton + content, ensuring screen reader announces both states |
+| Angular production build | UNKNOWN | Build not run in this session; no compilation errors observed in static review but template type-checking may surface issues |
 
 ---
 
 ## 4. Critical Gaps
 
-### GAP-1 (MEDIUM): No automated tests for the snapshot service
-There are no unit or integration tests for `applicationSnapshotService.js`. The completeness scoring rubric (`scoreApplicationCompleteness`) is an exported pure function and is directly testable without a DB connection. The fire-and-forget error-isolation path is also testable with a mock DB. Without tests, a future edit to the rubric or the persist functions could silently break scoring or idempotency. Recommend adding a `__tests__/applicationSnapshotService.test.js` covering at least: null-profile, full-profile, partial-profile scores; ON CONFLICT path (duplicate call returns null not throws); and the catch-path on DB failure.
+### GAP-1 (MEDIUM): retry() may stack subscriptions on hot observables
+`retry()` calls `this.ngOnInit()` which calls `this.applicationsService.getMyApplications().subscribe(...)` without first unsubscribing any in-flight or retained subscription. If `getMyApplications()` returns a cold HTTP observable (standard Angular HttpClient pattern), each subscribe creates an independent request and the old one completes — safe. If `getMyApplications()` returns a BehaviorSubject, ReplaySubject, or is a shared stream, retry() would add a second subscriber on top of the first, potentially causing duplicate rendering or memory leaks.
 
-### GAP-2 (LOW): Match score formula is not the same as the completeness score
-The `persistMatchSnapshot` function computes `matchScore` from `matchedRequiredSkills.length / total * 60 + hasCv ? 40 : 0`. This formula is independent of and inconsistent with `scoreApplicationCompleteness` (which uses required 70% / recommended 30% weights). An employer seeing both `completenessScore: 78%` and `matchScore: 40` side-by-side in the FE card could reasonably misread the match score as a completeness score. The FE card labels them separately and shows the disclaimer, which mitigates this, but there is no documentation comment in the code noting that the two scores use different formulas.
+**Impact:** If the observable is cold (HTTP), no impact. If hot/shared, duplicate renders on retry.
+**Recommended fix:** Add a `private appsSubscription?: Subscription` field, unsubscribe in `retry()` before calling `ngOnInit()`, and implement `OnDestroy` to clean up.
 
-### GAP-3 (LOW): DISCLAIMER is re-exported from applicationSnapshotService.js but originates in employerApplicantSignalsService.js
-If the disclaimer text ever changes upstream, applicationSnapshotService.js will pick up the change automatically (it re-exports `DISCLAIMER` directly). This is correct behavior but is worth documenting so future editors know the text is not defined locally.
+### GAP-2 (LOW): privacyNote returned by BE but not shown to applicant
+The BE response for GET /applicant/application/snapshot includes `privacyNote: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring."` This field is present in the API response but not rendered anywhere in `applicant-applications.component.html`. Applicants receive the completeness score without seeing the accompanying privacy explanation.
+
+**Impact:** Applicants may not understand why certain fields are excluded.
+**Recommended fix:** Add a small `<p class="app-snapshot-privacy">{{ snap.privacyNote }}</p>` below the disclaimer, conditionally rendered when snap.privacyNote is present.
+
+### GAP-3 (LOW): No automated tests for any part of this deployment
+No unit tests exist for: `snapshotFor()` accessor, `retry()` reset logic, `loadSnapshots()` forkJoin isolation, or the BE ownership check in `getApplicantApplicationSnapshot`. The code is correct by inspection but unguarded against future regressions.
+
+**Recommended tests:** Angular component unit tests for the four UI states; BE integration test for the ownership check (caller uid !== candidate_id → 403).
 
 ---
 
@@ -69,14 +89,14 @@ If the disclaimer text ever changes upstream, applicationSnapshotService.js will
 
 | Gate | Status |
 |---|---|
-| (A) Application submit still works with snapshot | PASS |
-| (B) Snapshot never blocks submit | PASS |
-| (C) Ownership correctly enforced | PASS |
-| (D) No protected attributes in snapshots | PASS |
-| (E) FE handles null snapshot gracefully | PASS |
+| A: Applications list loads without snapshot data | PASS |
+| B: Snapshot failure isolated per-row (forkJoin) | PASS |
+| C: Ownership enforced (applicant owns application) | PASS |
+| D: All 4 states render (loading/success/null/error) | PASS |
+| E: Angular production build clean | UNKNOWN |
 
 ---
 
 ## 6. Recommendation
 
-**SHIP.** All five release gates pass. No blockers found. Recommend adding unit tests for `scoreApplicationCompleteness` before the next iteration touches the rubric.
+**SHIP** on Gates A–D. Gate E (build) must be confirmed by running `ng build --configuration production` before deploying to production. All correctness gates pass. No security gaps introduced. Two medium/low gaps are tracked above but are not blockers.

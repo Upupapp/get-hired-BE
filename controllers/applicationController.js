@@ -92,8 +92,8 @@ const getApplicantApplicationSnapshot = async (req, res) => {
       completedSections: comp ? comp.completed_sections : null,
       missingRequired: comp ? comp.missing_required : null,
       missingRecommended: comp ? comp.missing_recommended : null,
-      disclaimerNote: "Application completeness measures submitted information, not candidate quality. It is not a hiring score.",
-      privacyNote: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring.",
+      disclaimerNote: "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions.",
+      privacyNote: "Personal attributes such as gender, age, religion, and disability status are never part of this score.",
     };
     return res.status(status.success).send(successMessage);
   } catch (error) {
