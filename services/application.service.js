@@ -10,6 +10,8 @@ import {
   jobDetails
 } from './job.service';
 
+import { createApplicationSnapshots } from './applicationSnapshotService';
+
 const dbSchema = env.schema;
 const now = new Date();
 
@@ -138,6 +140,22 @@ const jobApply = async (jobApplication, userId) => {
       app_url: `${env.app_url}/user/dashboard`,
     };
     send(user.email, "application", data);
+
+    // Best-effort: build application/completeness/match snapshots.
+    // Never throws — snapshot failure must never block submission.
+    createApplicationSnapshots({
+      applicationId: jobApplicantionId,
+      applicantId: candidateId,
+      jobId,
+      companyId: job.companyId || null,
+      coverLetter: coverLetter || [],
+      resume: resume || [],
+      governmentFiles: governmentFiles || [],
+      interviewAnswers: interviewAnswers || [],
+      source: "application_submit",
+    }).catch((err) => {
+      console.error("[applicationSnapshot] snapshot creation failed:", err);
+    });
 
     return {
       jobApplicantionId: dbResponse.job_application_id,

@@ -17,7 +17,9 @@ import {
   updateBasicProfileInfo
 } from "../controllers/applicantsController";
 import {
-  submitApplication
+  submitApplication,
+  getApplicantApplicationSnapshot,
+  getEmployerApplicantSnapshotSummary,
 } from "../controllers/applicationController";
 import { getDashboard } from "../controllers/applicantsController";
 import verifyAuth from "../middleware/verifyAuth";
@@ -33,6 +35,10 @@ router.post("/application/create", verifyAuth, createApplication);
 router.put("/application/updateJobs", verifyAuth, updateApplication);
 router.delete("/application/delete", verifyAuth, deleteApplication);
 router.post("/application/apply", verifyAuth, submitApplication)
+// Applicant: get their own application snapshot + completeness
+router.get("/applicant/application/snapshot", verifyAuth, getApplicantApplicationSnapshot)
+// Employer: get applicant snapshot summary for a specific application
+router.get("/job/applicant/snapshot-summary", verifyAuth, getEmployerApplicantSnapshotSummary)
 
 
 // applicant

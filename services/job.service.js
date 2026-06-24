@@ -614,6 +614,7 @@ const getInterviewTemplateId = async (jobId) => {
 
 const mappedBasicApplicantDetails = (raw) => {
   return {
+    applicationId: raw.job_application_id,
     applicantProfileId: raw.applicant_profile_id,
     userId: raw.user_id,
     firstName: raw.firstName ? raw.firstName : raw.firstname,
