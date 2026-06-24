@@ -1,5 +1,6 @@
 import firebase from "firebase/compat";
 import { firebaseConfig } from "../middleware/firebaseApp";
+import { matchesDeclaredType } from "./fileSignature";
 
 const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
   new Promise((resolve, reject) => {
@@ -13,6 +14,16 @@ const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
       console.log("Uploading image ...");
 
       img = uploadedFile.slice(uploadedFile.indexOf(",") + 1);
+
+      // SECURE finding: verify the actual file bytes match the declared
+      // MIME type before ever uploading to Storage -- only for the
+      // statically-checkable document/image types we have signatures for
+      // (video's withCodecs path below is a different data-URL shape and
+      // isn't covered, see helpers/fileSignature.js header comment).
+      if (!matchesDeclaredType(img, imgType)) {
+        reject(new Error("FILE_CONTENT_MISMATCH"));
+        return;
+      }
     } else {
       console.log("Uploading video ...");
       let result = uploadedFile.substring(uploadedFile.indexOf(";") + 1);
