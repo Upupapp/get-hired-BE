@@ -246,12 +246,16 @@ const editContact = async (contact) => {
     groupName,
     groupId,
     contactId,
+    companyId,  // OPT-02 (QA7): now required — ownership enforced in UPDATE WHERE
   } = contact;
 
   try {
+    // OPT-02 (QA7): company_id=$7 folds the ownership check into the UPDATE
+    // WHERE, eliminating the controller's separate SELECT pre-check.
+    // Zero rows = contact not found OR company_id mismatch — both throw.
     const updateQuery = `UPDATE ${dbSchema}.contact
                             SET  first_name=$1, last_name=$2, email=$3, mobile_number=$4, address=$5
-                            WHERE contact_id=$6 returning *;`;
+                            WHERE contact_id=$6 AND company_id=$7 returning *;`;
 
     const { rows } = await dbQuery.query(updateQuery, [
       firstName,
@@ -260,11 +264,12 @@ const editContact = async (contact) => {
       mobileNumber,
       address,
       contactId,
+      companyId,
     ]);
 
     const dbResponse = rows[0];
     if (!dbResponse) {
-      throw Error("Failed to Update Contact");
+      throw Error("FORBIDDEN");
     }
     if (groupName == "" && groupId == "") {
       message = "Successfully update contact";
@@ -394,16 +399,21 @@ const addGroup = async (groupName, companyId) => {
   }
 };
 
-const editGroup = async (groupId, groupName) => {
+const editGroup = async (groupId, groupName, companyId) => {
   try {
-    const updateQuery = `UPDATE ${dbSchema}.group
-                            SET  group_name=$1
-                            WHERE group_id=$2 returning *;`;
+    // OPT-02 (QA7): company_id=$3 folds the ownership check into the UPDATE
+    // WHERE when companyId is provided — eliminates the controller's separate
+    // SELECT pre-check. Zero rows = group not found OR company mismatch.
+    const useOwnershipGuard = !!companyId;
+    const updateQuery = useOwnershipGuard
+      ? `UPDATE ${dbSchema}."group" SET group_name=$1 WHERE group_id=$2 AND company_id=$3 returning *;`
+      : `UPDATE ${dbSchema}."group" SET group_name=$1 WHERE group_id=$2 returning *;`;
+    const params = useOwnershipGuard ? [groupName, groupId, companyId] : [groupName, groupId];
 
-    const { rows } = await dbQuery.query(updateQuery, [groupName, groupId]);
+    const { rows } = await dbQuery.query(updateQuery, params);
 
     if (!rows[0]) {
-      throw Error("Failed to Update Group List");
+      throw Error(useOwnershipGuard ? "FORBIDDEN" : "Failed to Update Group List");
     }
 
     const dbResponse = rows[0];

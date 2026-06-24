@@ -51,7 +51,8 @@ const paymongoPaymentLink = async (req, res) => {
     successMessage.data = link;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[paymentController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -176,7 +177,8 @@ const paymongoWebhook = async (req, res) => {
 
     
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[paymentController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

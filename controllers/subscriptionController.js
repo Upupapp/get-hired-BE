@@ -76,7 +76,8 @@ const createPaymentIntent = async (req, res) => {
     successMessage.data = link.attributes.checkout_url;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[subscriptionController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -118,7 +119,8 @@ const getAllSubscription = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[subscriptionController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -137,7 +139,8 @@ const getCompanySubscriptions = async (req, res) => {
     successMessage.data = subList;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[subscriptionController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

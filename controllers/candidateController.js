@@ -22,7 +22,8 @@ const createCandidate = async (req, res) => {
     successMessage.data = add;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Operation was not successful" + error;
+    console.error('[candidateController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -51,7 +52,8 @@ const multipleCandidate = async (req, res) => {
       });
     }
   } catch (error) {
-    errorMessage.error = "Operation was not successful, " + error;
+    console.error('[candidateController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -70,7 +72,8 @@ const deleteCandidate = async (req, res) => {
     successMessage.data = message;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Operation was not successful " + error;
+    console.error('[candidateController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -87,7 +90,8 @@ const updateCandidate = async (req, res) => {
     successMessage.data = candidateUpdate;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Operation was not successful" + error;
+    console.error('[candidateController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -105,7 +109,8 @@ const list = async (req, res) => {
     successMessage.data = candidate;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Operation was not successful" + error;
+    console.error('[candidateController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -123,7 +128,8 @@ const getJobAppliedList = async (req, res) => {
     successMessage.data = listOfJob;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[candidateController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

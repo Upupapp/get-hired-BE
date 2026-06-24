@@ -19,7 +19,8 @@ const getLevelList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[optionsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -38,7 +39,8 @@ const getTypeList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[optionsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -57,7 +59,8 @@ const getSetupList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[optionsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

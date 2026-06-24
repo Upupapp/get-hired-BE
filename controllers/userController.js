@@ -92,7 +92,8 @@ const loginUser = async (req, res) => {
     };
     return res.status(status.success).send(successMessage);
   } catch (err) {
-    errorMessage.error = "Operation Not Successful. " + err;
+    console.error('[loginUser] error:', err);
+    errorMessage.error = "Login failed. Please check your credentials and try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -165,8 +166,9 @@ const registerUser = async (req, res) => {
     successMessage.data = dbRegister;
     return res.status(status.created).send(successMessage);
   } catch (err) {
-    console.log(err);
-    return res.status(status.error).send(err);
+    console.error('[registerUser] error:', err);
+    errorMessage.error = "Registration failed. Please try again.";
+    return res.status(status.error).send(errorMessage);
   }
 };
 
@@ -179,7 +181,8 @@ const logout = async (req, res) => {
     successMessage.data = "User has been logout";
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Error: " + error;
+    console.error('[logout] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -200,7 +203,8 @@ const resendVerification = async (req, res) => {
     successMessage.data = isVerified;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Operation Not Successful. " + error;
+    console.error('[resendVerification] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -221,7 +225,8 @@ const getVerificationLink = async (req, res) => {
     successMessage.data = verify;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "Operation Not Successful. " + error;
+    console.error('[getVerificationLink] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -245,7 +250,8 @@ const verifyEmail = async (req, res) => {
     successMessage.data = "Email Successfully verified. You may login.";
     return res.status(status.success).send(successMessage);
   } catch (err) {
-    errorMessage.data = "Operation was not successful. " + err;
+    console.error('[verifyEmail] error:', err);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -256,7 +262,8 @@ const getRefreshToken = async (req, res) => {
     successMessage.data = auth;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "" + error;
+    console.error('[getRefreshToken] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -277,7 +284,8 @@ const passwordResetLink = async (req, res) => {
     successMessage.data = "Link Send to your provided Email";
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[passwordResetLink] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -289,7 +297,8 @@ const getUserProfile = async (req, res) => {
     successMessage.data = user;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[getUserProfile] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -303,7 +312,8 @@ const updateUserProfile = async(req, res) => {
   successMessage.data = user;
   return res.status(status.success).send(successMessage);
   } catch(error) {
-  errorMessage.error = 'ERROR: ' + error;
+  console.error('[updateUserProfile] error:', error);
+  errorMessage.error = "Operation not successful. Please try again.";
   return res.status(status.error).send(errorMessage);
   }
 };
@@ -324,7 +334,8 @@ const changePw = async (req, res) => {
     successMessage.data = "Password Successfuly Change";
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[changePw] error:', error);
+    errorMessage.error = "Your password reset link may have expired. Please request a new one.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -355,7 +366,8 @@ const getUserCredentials = async (req, res) => {
     successMessage.data = credentials;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[getUserCredentials] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -531,12 +543,17 @@ const getVerification = async (email) => {
 const deleteAccountById = async (req, res) => {
   const { userId } = req.query;
 
+  if (userId !== req.user.uid) {
+    return res.status(403).json({ message: "You don't have permission to do that." });
+  }
+
   try {
     const account = await deleteUserAccount(userId);
     successMessage.data = account;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[deleteAccountById] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

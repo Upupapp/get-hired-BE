@@ -154,4 +154,73 @@ const sendMessage = async (threadId, callerUid, body) => {
   return rows[0];
 };
 
-export { findOrCreateThread, listMessages, sendMessage, loadAuthorizedThread };
+/**
+ * B01 — Global recruiter inbox.
+ * Returns all threads scoped to the caller's company, enriched with:
+ *   - applicant uid (for context links)
+ *   - job title (joined from jobs)
+ *   - last message snippet + last sender role + last activity time
+ *   - needsReply: true when the most recent message was sent by an applicant
+ *     (i.e. the recruiter has not replied since then)
+ *
+ * Company scoping is derived server-side from the caller's own uid via
+ * resolveCallerCompany() — the exact same guard used everywhere else in this
+ * service. A caller without a company gets FORBIDDEN rather than an empty list
+ * so they cannot probe whether threads exist.
+ *
+ * No is_read column exists in the schema (confirmed: messages_ddl.sql has no
+ * read-state column). "Unread" is therefore NOT surfaced here. needsReply is
+ * the only actionability signal that can be derived safely from real data.
+ */
+const listRecruiterThreads = async (callerUid) => {
+  const callerCompany = await resolveCallerCompany(callerUid);
+  if (!callerCompany) {
+    const err = new Error("FORBIDDEN");
+    err.code = "FORBIDDEN";
+    throw err;
+  }
+
+  // Join threads -> jobs (title), messages (last message snippet).
+  // The LEFT JOIN on messages lets us return threads that were just created
+  // (openThread called) but have no messages yet — the recruiter still sees
+  // the thread so they know the conversation was initiated.
+  const { rows } = await dbQuery.query(
+    `SELECT
+       mt.id            AS "threadId",
+       mt.applicant_uid AS "applicantUid",
+       mt.job_id        AS "jobId",
+       mt.updated_at    AS "lastMessageAt",
+       j.job_title      AS "jobTitle",
+       last_msg.body    AS "lastMessageSnippet",
+       last_msg.sender_role AS "lastSenderRole"
+     FROM ${dbSchema}.message_threads mt
+     LEFT JOIN ${dbSchema}.jobs j
+       ON j.job_id = mt.job_id
+     LEFT JOIN LATERAL (
+       SELECT body, sender_role
+       FROM   ${dbSchema}.messages
+       WHERE  thread_id = mt.id
+       ORDER  BY created_at DESC
+       LIMIT  1
+     ) last_msg ON true
+     WHERE mt.company_id = $1
+     ORDER BY mt.updated_at DESC;`,
+    [callerCompany.companyId]
+  );
+
+  return rows.map((row) => ({
+    threadId: row.threadId,
+    applicantUid: row.applicantUid,
+    jobId: row.jobId,
+    jobTitle: row.jobTitle || null,
+    lastMessageSnippet: row.lastMessageSnippet
+      ? row.lastMessageSnippet.slice(0, 120)
+      : null,
+    lastSenderRole: row.lastSenderRole || null,
+    lastMessageAt: row.lastMessageAt,
+    // needsReply: true when last message was from the applicant (not the employer)
+    needsReply: row.lastSenderRole === "applicant",
+  }));
+};
+
+export { findOrCreateThread, listMessages, sendMessage, loadAuthorizedThread, listRecruiterThreads };

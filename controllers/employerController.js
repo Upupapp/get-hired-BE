@@ -21,7 +21,8 @@ const getEmployerCompany = async (req, res) => {
     successMessage.data = userCompany;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. " + error;
+    console.error('[getEmployerCompany] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -42,7 +43,8 @@ const getEmployerProfile = async (req, res) => {
 
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[employerController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

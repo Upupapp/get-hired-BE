@@ -68,7 +68,8 @@ const createInitialCompany = async (req, res) => {
     successMessage.data = company;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -93,7 +94,8 @@ const createCompanyFull = async (req, res) => {
     successMessage.data = company;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -132,9 +134,12 @@ const updateCompany = async (req, res) => {
     // trusted companyId straight from the request body, letting any caller
     // update any company's profile. Confirm the authenticated caller
     // actually belongs to the company being updated.
+    // QA8 FIX-8: added Array.isArray guard — getUserCompany returns [] (not null)
+    // when no company row exists, so the prior !userCompany check alone would
+    // have passed for a caller with no company ([] is truthy).
     const userCompany = await getUserCompany(req.user.uid);
-    if (!userCompany || userCompany.companyId !== companyId) {
-      return res.status(403).send("Forbidden");
+    if (Array.isArray(userCompany) || !userCompany || userCompany.companyId !== companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
     }
 
     if (companyLogoFile && companyLogoFile != "") {
@@ -175,7 +180,8 @@ const updateCompany = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -224,7 +230,8 @@ const getSpecificCompany = async (req, res) => {
     successMessage.data = company;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -351,7 +358,8 @@ const getDashboard = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -378,7 +386,8 @@ const getDashboardPipelineOverview = async (req, res) => {
     successMessage.data = overview;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -389,7 +398,8 @@ const getIndustryListCompany = async (req, res) => {
     successMessage.data = industries;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -400,7 +410,8 @@ const getIndustryListCompany = async (req, res) => {
 //     successMessage.data = setup;
 //     return res.status(status.success).send(successMessage);
 //   } catch (error) {
-//     errorMessage.error = "ERROR: " + error;
+//     console.error('[companiesController] error:', error);
+//     errorMessage.error = "Operation not successful. Please try again.";
 //     return res.status(status.error).send(errorMessage);
 //   }
 // };
@@ -451,7 +462,8 @@ const removeCompanyUser = async (req, res) => {
     successMessage.data = "Company user has been removed";
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -464,7 +476,8 @@ const getAllCompanyUser = async (req, res) => {
     successMessage.data = users;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -491,7 +504,8 @@ const addCompanyUser = async (req, res) => {
     };
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -597,7 +611,8 @@ const getFeaturedCompanies = async (req, res) => {
     successMessage.data = featured.length != 0 ? featured : latest;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -617,7 +632,8 @@ const getCompanyShareableLink = async (req, res) => {
     successMessage.data = link;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -634,7 +650,8 @@ const getSubscriptionRestrictions = async (req, res) => {
     successMessage.data = dbResponse[0];
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -652,7 +669,8 @@ const getAllCompanies = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[companiesController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

@@ -45,7 +45,6 @@ const createJobs = async (req, res) => {
   const {
     jobTitle,
     bannerFile,
-    companyId,
     industryId,
     jobRoleId,
     jobTypeId,
@@ -78,6 +77,15 @@ const createJobs = async (req, res) => {
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18, $19, $20) returning *;`;
 
   try {
+    // QA8 FIX-2 BOLA: derive companyId from the authenticated caller's JWT,
+    // never from req.body.companyId — any employer could otherwise post a job
+    // attributed to a different company by supplying a spoofed companyId.
+    const callerCompany = await getUserCompany(uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
     if (bannerFile && bannerFile.length != 0) {
       rawUrl = await uploadInStorage(
         "Job-Banner",
@@ -147,7 +155,8 @@ const createJobs = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[createJobs] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -161,7 +170,8 @@ const getJobApplicantDetails = async (req, res) => {
     successMessage.data = applicants;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -174,7 +184,8 @@ const getJobBasicListOfCompany = async (req, res) => {
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -187,23 +198,38 @@ const getExpiredJobListOfCompany = async (req, res) => {
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const deleteJob = async (req, res) => {
   const { jobId, companyId } = req.body;
-  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
-  const deleteQuery = `DELETE FROM ${dbSchema}.jobs
-    WHERE job_id=$1`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, [jobId]);
+    // F-07 BOLA fix: verify the authenticated caller's company owns this job
+    // before deleting. getUserCompany() is token-derived, not caller-supplied.
+    // OPT-01: company_id check folded into DELETE WHERE clause — eliminates
+    // a separate ownership SELECT round-trip (was 3 DB calls, now 2).
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to delete this job." });
+    }
+
+    // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
+    // company_id=$2 constraint enforces ownership without a separate SELECT.
+    const deleteQuery = `DELETE FROM ${dbSchema}.jobs
+      WHERE job_id=$1 AND company_id=$2`;
+    const { rows, rowCount } = await dbQuery.query(deleteQuery, [jobId, callerCompany.companyId]);
+    if (rowCount === 0) {
+      return res.status(403).json({ message: "You don't have permission to delete this job." });
+    }
     const jobs = await getJobList(companyId);
     successMessage.data = jobs;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[deleteJob] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -211,14 +237,18 @@ const deleteJob = async (req, res) => {
 const updateJob = async (req, res) => {
   let rawUrl = "";
 
+  // OPT-01: company_id=$20 constraint folds the ownership check into the
+  // UPDATE itself — eliminates a separate ownership SELECT round-trip.
+  // Zero rows returned means either the job doesn't exist or it belongs to
+  // a different company; both cases return 403 (no information leak).
   const updateQuery = `UPDATE ${dbSchema}.jobs
-    SET job_banner=$1, job_title=$2, industry_id=$3, 
+    SET job_banner=$1, job_title=$2, industry_id=$3,
       job_role_id=$4, job_type_id=$5, job_level_id=$6,
       job_description=$7, job_duties=$8, work_setup_id=$9,
-      salary_minimum=$10, salary_maximum=$11, rate=$12, 
+      salary_minimum=$10, salary_maximum=$11, rate=$12,
       job_address=$13, job_city=$14, job_category_id=$15,
       job_country= $16, job_status_id = $17, salary_currency=$18
-      WHERE job_id =$19 returning *;`;
+      WHERE job_id=$19 AND company_id=$20 returning *;`;
 
   const {
     jobBanner,
@@ -253,6 +283,16 @@ const updateJob = async (req, res) => {
   } = req.body;
 
   try {
+    // F-08 BOLA fix: verify the authenticated caller's company owns this job
+    // before allowing any update. getUserCompany() derives company from the
+    // verified Firebase token, never from caller-supplied data.
+    // OPT-01: separate ownership SELECT removed — company_id=$20 in the
+    // UPDATE WHERE clause enforces ownership in a single query.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to update this job." });
+    }
+
     if (bannerFile && bannerFile != "") {
       rawUrl = await uploadInStorage(
         "Job-Banner",
@@ -283,7 +323,13 @@ const updateJob = async (req, res) => {
       jobStatusId,
       salaryCurrency,
       jobId,
+      callerCompany.companyId,  // $20 — ownership enforced in WHERE
     ]);
+
+    // Zero rows: either job not found or company_id mismatch — 403 either way
+    if (!rows || rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to update this job." });
+    }
 
     const jobArrays = await saveJobArray(jobId, {
       badges,
@@ -303,17 +349,13 @@ const updateJob = async (req, res) => {
       );
     }
 
-    if (!rows || rows.length == 0) {
-      errorMessage.error = "Failed to Update Job";
-      return res.status(status.error).send(errorMessage);
-    }
-
-    const dbResponse = mappedJob(rows[0]);
+    const dbResponse = await mappedJob(rows[0]);
 
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[updateJob] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -323,26 +365,44 @@ const updateStatusOfJob = async (req, res) => {
   const statusId = req.body.status;
 
   try {
-    const updateJob = await updateJobStatus(statusId, jobId);
+    // QA7 FIX-1 BOLA: verify the authenticated caller's company owns this job
+    // before changing its status. getUserCompany() is token-derived, not
+    // caller-supplied — mirrors the pattern in updateJob and deleteJob.
+    // OPT-01 (QA7): separate ownership SELECT eliminated — company_id=$3
+    // constraint folds the ownership check into the UPDATE itself (same
+    // pattern already applied to updateJob and deleteJob). 2 DB calls, not 3.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
+    const updateJob = await updateJobStatus(statusId, jobId, callerCompany.companyId);
 
     successMessage.data = updateJob;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    if (error === "FORBIDDEN") {
+      return res.status(403).json({ message: "You don't have permission to update this job." });
+    }
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
-const updateJobStatus = async (statusId, jobId) => {
-  const updateQuery = `UPDATE ${dbSchema}.jobs SET job_status_id=$1 WHERE job_id=$2 returning *`;
+const updateJobStatus = async (statusId, jobId, companyId) => {
+  // OPT-01 (QA7): company_id=$3 folds ownership check into UPDATE WHERE —
+  // eliminates the prior separate SELECT ownership round-trip.
+  // Zero rows = job not found OR company mismatch — both treated as FORBIDDEN.
+  const updateQuery = `UPDATE ${dbSchema}.jobs SET job_status_id=$1 WHERE job_id=$2 AND company_id=$3 returning *`;
   try {
-    const { rows } = await dbQuery.query(updateQuery, [statusId, jobId]);
+    const { rows } = await dbQuery.query(updateQuery, [statusId, jobId, companyId]);
 
     if (!rows || rows.length == 0) {
-      throw "Failed to Update Job Status";
+      throw "FORBIDDEN";
     }
 
-    const dbResponse = mappedJob(rows[0]);
+    const dbResponse = await mappedJob(rows[0]);
     return dbResponse;
   } catch (error) {
     throw error;
@@ -374,7 +434,8 @@ const getIndustryList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -395,7 +456,8 @@ const getBadgeList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -414,7 +476,8 @@ const getJobRoleList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -433,7 +496,8 @@ const getCategoryList = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -524,7 +588,8 @@ const getAllPublishedJobs = async (req, res) => {
     successMessage.data = published;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -548,7 +613,8 @@ const getJobDetails = async (req, res) => {
     };
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -568,7 +634,8 @@ const getJobShareableLink = async (req, res) => {
     successMessage.data = link;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -582,15 +649,18 @@ const getAllApplicantOfJob = async (req, res) => {
     // Confirm the authenticated caller's company owns this job.
     const jobCompanyId = await getJobCompanyId(id);
     const callerCompany = await getUserCompany(req.user.uid);
-    if (!jobCompanyId || !callerCompany || callerCompany.companyId !== jobCompanyId) {
-      return res.status(403).send("Forbidden");
+    // QA8 FIX-9: return JSON 403 instead of bare string "Forbidden" for
+    // consistent error response shape across all employer endpoints.
+    if (!jobCompanyId || !callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobCompanyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
     }
 
     const list = await jobApplicants(id);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -612,7 +682,8 @@ const getJobApplicantFitSignals = async (req, res) => {
     if (error.message === "FORBIDDEN") {
       return res.status(403).send("Forbidden");
     }
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -630,7 +701,8 @@ const deleteInterviewQuestion = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -647,7 +719,8 @@ const getSubscriptionRestrictions = async (req, res) => {
     successMessage.data = dbResponse[0];
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[jobsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

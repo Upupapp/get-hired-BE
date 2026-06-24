@@ -53,7 +53,8 @@ const createApplication = async (req, res) => {
     successMessage.data = applicationList;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -69,7 +70,8 @@ const deleteApplication = async (req, res) => {
     successMessage.data = applications;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -99,7 +101,8 @@ const updateApplication = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.data = "Operation was not successful. Error: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.data = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -157,33 +160,44 @@ const mapApplications = (application) => {
 
 const createProfile = async (req, res) => {
   try {
-    const profile = await createApplicationProfile(req.body);
+    // QA8 FIX-6 BOLA: replace body-supplied userId with JWT-derived uid so a caller
+    // cannot create a profile attributed to another user by supplying a different userId.
+    const profile = await createApplicationProfile({ ...req.body, userId: req.user.uid });
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const updateBasicProfileInfo = async (req, res) => {
   try {
-    const profile = await updateProfileBasicInfo(req.body);
+    // QA7 FIX-4 BOLA: lock userId to the JWT-derived identity so callers
+    // cannot overwrite another applicant's profile by supplying a different
+    // userId in the request body. The service uses userId in its WHERE clause.
+    const profile = await updateProfileBasicInfo({ ...req.body, userId: req.user.uid });
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[updateBasicProfileInfo] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const updateProfile = async (req, res) => {
   try {
-    const profile = await updateApplicationProfile(req.body);
+    // QA7 FIX-4 BOLA: lock userId to the JWT-derived identity so callers
+    // cannot overwrite another applicant's profile by supplying a different
+    // userId in the request body. The service uses userId in its WHERE clause.
+    const profile = await updateApplicationProfile({ ...req.body, userId: req.user.uid });
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[updateProfile] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -201,7 +215,8 @@ const getApplicantProfileCompleteness = async (req, res) => {
     successMessage.data = result;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -222,7 +237,8 @@ const getApplicantProfileById = async (req, res) => {
     successMessage.data = profile;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -236,7 +252,8 @@ const getUserProfile = async (req, res) => {
     successMessage.data = creds;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -268,14 +285,26 @@ const getDashboard = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const saveWorkExp = async (req, res) => {
   const { workExperience, applicantProfileId } = req.body;
+  // QA8 FIX-5 BOLA: verify the caller's JWT-derived uid owns this applicant profile
+  // before mutating any sub-arrays. Never trust caller-supplied applicantProfileId alone.
+  const { uid } = req.user;
   try {
+    const ownerCheck = await dbQuery.query(
+      `SELECT 1 FROM ${dbSchema}.applicants_profile WHERE applicant_profile_id=$1 AND user_id=$2`,
+      [applicantProfileId, uid]
+    );
+    if (!ownerCheck.rows || ownerCheck.rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     if (workExperience) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -294,14 +323,25 @@ const saveWorkExp = async (req, res) => {
     successMessage.data = workExperience;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const saveEducBg = async (req, res) => {
   const { educationalBackground, applicantProfileId } = req.body;
+  // QA8 FIX-5 BOLA: verify caller owns this applicant profile via JWT uid.
+  const { uid } = req.user;
   try {
+    const ownerCheck = await dbQuery.query(
+      `SELECT 1 FROM ${dbSchema}.applicants_profile WHERE applicant_profile_id=$1 AND user_id=$2`,
+      [applicantProfileId, uid]
+    );
+    if (!ownerCheck.rows || ownerCheck.rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     if (educationalBackground) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -320,14 +360,25 @@ const saveEducBg = async (req, res) => {
     successMessage.data = educationalBackground;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const saveCert = async (req, res) => {
   const { certifications, applicantProfileId } = req.body;
+  // QA8 FIX-5 BOLA: verify caller owns this applicant profile via JWT uid.
+  const { uid } = req.user;
   try {
+    const ownerCheck = await dbQuery.query(
+      `SELECT 1 FROM ${dbSchema}.applicants_profile WHERE applicant_profile_id=$1 AND user_id=$2`,
+      [applicantProfileId, uid]
+    );
+    if (!ownerCheck.rows || ownerCheck.rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     if (certifications) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -345,14 +396,25 @@ const saveCert = async (req, res) => {
     successMessage.data = certifications;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const saveSkillsArray = async (req, res) => {
   const { skills, applicantProfileId } = req.body;
+  // QA8 FIX-5 BOLA: verify caller owns this applicant profile via JWT uid.
+  const { uid } = req.user;
   try {
+    const ownerCheck = await dbQuery.query(
+      `SELECT 1 FROM ${dbSchema}.applicants_profile WHERE applicant_profile_id=$1 AND user_id=$2`,
+      [applicantProfileId, uid]
+    );
+    if (!ownerCheck.rows || ownerCheck.rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     if (skills) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -372,14 +434,25 @@ const saveSkillsArray = async (req, res) => {
     successMessage.data = skills;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
 const saveDocuments = async (req, res) => {
   const { documents, applicantProfileId } = req.body;
+  // QA8 FIX-5 BOLA: verify caller owns this applicant profile via JWT uid.
+  const { uid } = req.user;
   try {
+    const ownerCheck = await dbQuery.query(
+      `SELECT 1 FROM ${dbSchema}.applicants_profile WHERE applicant_profile_id=$1 AND user_id=$2`,
+      [applicantProfileId, uid]
+    );
+    if (!ownerCheck.rows || ownerCheck.rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     if (documents) {
       await deleteArrayApplicantEntry(
         applicantProfileId,
@@ -404,7 +477,8 @@ const saveDocuments = async (req, res) => {
     successMessage.data = documents;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -421,7 +495,8 @@ const saveVideoCV = async (req, res) => {
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error('[applicantsController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };

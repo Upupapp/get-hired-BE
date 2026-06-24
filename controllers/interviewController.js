@@ -35,7 +35,8 @@ const getAllInterviewsOfCompanies = async (req, res) => {
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -50,7 +51,8 @@ const getAllInterviewsTemplatesOfCompanies = async (req, res) => {
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -65,7 +67,8 @@ const getAllInterviewRecipientsByCompanyId = async (req, res) => {
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -81,7 +84,8 @@ const getInterviewTemplateQuestions = async (req, res) => {
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -94,7 +98,8 @@ const saveGroupInterview = async (req, res) => {
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -134,7 +139,8 @@ const saveQuestionTemplate = async (req, res) => {
     successMessage.data = questionTemplate
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -145,7 +151,8 @@ const updateJobInterviewQuestion = async (req, res) => {
     successMessage.data = question
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }
@@ -157,7 +164,8 @@ const getListByUser = async (req, res) => {
     successMessage.data = null
     return res.status(status.success).send(successMessage)
   } catch (error) {
-    errorMessage.error = 'ERROR: ' + error
+    console.error('[interviewController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again."
     return res.status(status.error).send(errorMessage)
   }
 }

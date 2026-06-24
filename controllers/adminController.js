@@ -22,7 +22,8 @@ const getUserProfile = async (req, res) => {
       successMessage.data = creds;
       return res.status(status.success).send(successMessage);
     } catch (error) {
-      errorMessage.error = "ERROR: " + error;
+      console.error('[adminController] error:', error);
+      errorMessage.error = "Operation not successful. Please try again.";
       return res.status(status.error).send(errorMessage);
     }
   };

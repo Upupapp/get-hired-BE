@@ -1,4 +1,4 @@
-import { findOrCreateThread, listMessages, sendMessage } from "../services/message.service";
+import { findOrCreateThread, listMessages, sendMessage, listRecruiterThreads } from "../services/message.service";
 import { successMessage, errorMessage, status } from "../helpers/status";
 
 const ERROR_STATUS_BY_CODE = {
@@ -41,7 +41,8 @@ const openThread = async (req, res) => {
     return res.status(status.success).send(successMessage);
   } catch (error) {
     if (handleKnownError(error, res)) return;
-    errorMessage.error = "ERROR: " + error;
+    console.error('[messageController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -56,7 +57,8 @@ const getThreadMessages = async (req, res) => {
     return res.status(status.success).send(successMessage);
   } catch (error) {
     if (handleKnownError(error, res)) return;
-    errorMessage.error = "ERROR: " + error;
+    console.error('[messageController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -71,9 +73,28 @@ const postMessage = async (req, res) => {
     return res.status(status.success).send(successMessage);
   } catch (error) {
     if (handleKnownError(error, res)) return;
-    errorMessage.error = "ERROR: " + error;
+    console.error('[messageController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
     return res.status(status.error).send(errorMessage);
   }
 };
 
-export { openThread, getThreadMessages, postMessage };
+// B01 — Global recruiter inbox. Returns all threads for the caller's company.
+// Company scoping is enforced server-side via listRecruiterThreads; a caller
+// without a recognised company gets 403, not an empty list.
+const getRecruiterThreads = async (req, res) => {
+  const { uid } = req.user;
+
+  try {
+    const threads = await listRecruiterThreads(uid);
+    successMessage.data = threads;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    if (handleKnownError(error, res)) return;
+    console.error('[messageController] error:', error);
+    errorMessage.error = "Operation not successful. Please try again.";
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+export { openThread, getThreadMessages, postMessage, getRecruiterThreads };
