@@ -93,7 +93,7 @@ const getApplicantApplicationSnapshot = async (req, res) => {
       missingRequired: comp ? comp.missing_required : null,
       missingRecommended: comp ? comp.missing_recommended : null,
       disclaimerNote: "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions.",
-      privacyNote: "Personal attributes such as gender, age, religion, and disability status are never part of this score.",
+      privacyNote: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring.",
     };
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -171,7 +171,12 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
     return res.status(status.bad).send(errorMessage);
   }
 
-  const applicationIds = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+  // Explicit type guard: Express parses repeated params (?x=a&x=b) as Array and
+  // nested params (?x[k]=v) as plain object. Array.join(',') is intentional (not
+  // accidental String(Array) coercion). A plain object is rejected to '' so the
+  // length === 0 check below returns 400 rather than passing "[object Object]" to the DB.
+  const rawStr = Array.isArray(raw) ? raw.join(',') : (typeof raw === 'string' ? raw : '');
+  const applicationIds = rawStr.split(",").map(s => s.trim()).filter(Boolean);
   if (applicationIds.length === 0 || applicationIds.length > 50) {
     errorMessage.error = "applicationIds must be a non-empty comma-separated list of up to 50 IDs.";
     return res.status(status.bad).send(errorMessage);
@@ -182,7 +187,7 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
     // IDs that don't exist are silently excluded from results (not a 403 —
     // the caller owns the list, they may have IDs from before snapshots existed).
     const { rows: appRows } = await dbQuery.query(
-      `SELECT job_application_id, candidate_id FROM ${dbSchema}.job_applicants WHERE job_application_id = ANY($1)`,
+      `SELECT job_application_id, candidate_id FROM ${dbSchema}.job_applicants WHERE job_application_id = ANY($1::text[])`,
       [applicationIds]
     );
 
@@ -196,13 +201,23 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
     }
 
     // Two batch queries — N*3 individual queries reduced to 3 regardless of list size.
+    // Both queries include 'backfill_current_data' so applicants see completeness tips
+    // for applications submitted before real-time snapshot capture was enabled.
+    // DISTINCT ON (application_id) prioritises the real submission row when both exist
+    // (in case the backfill ran before the submit snapshot was captured, then the
+    // submission snapshot was captured later, producing two rows per application).
     const [snapshotRows, completenessRows] = await Promise.all([
       dbQuery.query(
-        `SELECT application_id FROM ${dbSchema}.application_snapshots WHERE application_id = ANY($1) AND source = 'application_submit'`,
+        `SELECT DISTINCT ON (application_id) application_id FROM ${dbSchema}.application_snapshots
+         WHERE application_id = ANY($1::text[]) AND source IN ('application_submit', 'backfill_current_data')
+         ORDER BY application_id, CASE WHEN source = 'application_submit' THEN 1 ELSE 2 END`,
         [verifiedIds]
       ),
       dbQuery.query(
-        `SELECT application_id, completeness_score, completeness_level, missing_required, missing_recommended FROM ${dbSchema}.application_completeness_snapshots WHERE application_id = ANY($1) AND source = 'application_submit'`,
+        `SELECT DISTINCT ON (application_id) application_id, completeness_score, completeness_level, missing_required, missing_recommended
+         FROM ${dbSchema}.application_completeness_snapshots
+         WHERE application_id = ANY($1::text[]) AND source IN ('application_submit', 'backfill_current_data')
+         ORDER BY application_id, CASE WHEN source = 'application_submit' THEN 1 ELSE 2 END`,
         [verifiedIds]
       ),
     ]);

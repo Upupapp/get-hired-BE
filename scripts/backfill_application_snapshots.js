@@ -30,6 +30,7 @@ const env = require("../env").default;
 
 const dbSchema = env.schema;
 const DRY_RUN = process.argv.includes("--dry-run");
+const CONFIRM = process.argv.includes("--confirm");
 const LIMIT_ARG = process.argv.find(a => a.startsWith("--limit="));
 const LIMIT = LIMIT_ARG ? parseInt(LIMIT_ARG.split("=")[1], 10) : null;
 const BATCH_SIZE = 10;
@@ -49,7 +50,6 @@ async function getUnsnapshotedApplications() {
     LEFT JOIN ${dbSchema}.jobs j ON j.job_id = ja.job_id
     LEFT JOIN ${dbSchema}.application_snapshots aps
       ON aps.application_id = ja.job_application_id
-      AND aps.source = 'backfill_current_data'
     WHERE aps.id IS NULL
       AND j.company_id IS NOT NULL
     ORDER BY ja.date_applied ASC
@@ -107,7 +107,20 @@ async function processBatch(batch, batchNum, total) {
 }
 
 async function run() {
+  // Safety: print the connected DB target so the operator can verify dev-vs-prod
+  // before any data is read or written.
   console.log(`\n=== Application Snapshot Backfill ${DRY_RUN ? "(DRY RUN)" : "(LIVE)"} ===`);
+  console.log(`  DB host:     ${env.host || "(not set)"}`);
+  console.log(`  DB database: ${env.database || "(not set)"}`);
+  console.log(`  DB schema:   ${dbSchema || "(not set)"}`);
+
+  if (!DRY_RUN && !CONFIRM) {
+    console.error("\n[ABORT] Live run requires --confirm flag to prevent accidental production writes.");
+    console.error("  Add --confirm to proceed, or --dry-run to preview without writing.");
+    console.error("  Example: node scripts/backfill_application_snapshots.js --confirm\n");
+    process.exit(1);
+  }
+
   if (LIMIT) console.log(`  Limit: ${LIMIT} applications`);
 
   let applications;
