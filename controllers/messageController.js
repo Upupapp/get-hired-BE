@@ -5,12 +5,14 @@ const ERROR_STATUS_BY_CODE = {
   FORBIDDEN: 403,
   THREAD_NOT_FOUND: 404,
   MESSAGE_BODY_REQUIRED: 400,
+  MESSAGE_BODY_TOO_LONG: 400,
 };
 
 const ERROR_MESSAGE_BY_CODE = {
   FORBIDDEN: "You don't have access to this conversation.",
   THREAD_NOT_FOUND: "Conversation not found.",
   MESSAGE_BODY_REQUIRED: "Message cannot be empty.",
+  MESSAGE_BODY_TOO_LONG: "Message is too long. Please keep it under 4000 characters.",
 };
 
 const handleKnownError = (error, res) => {

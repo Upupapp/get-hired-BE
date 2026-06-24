@@ -113,10 +113,27 @@ const listMessages = async (threadId, callerUid) => {
   return rows;
 };
 
+// SECURE finding (post-deploy SWEEP, after "Reply to employers"/"Message
+// applicants" went live on the public marketing pages): the messages table
+// column is `varchar NOT NULL` with no length cap, and this function had
+// none either -- an unbounded body could bloat storage or break UI
+// rendering. No rate-limiting middleware exists anywhere in this codebase
+// (confirmed repo-wide, not specific to messaging) -- adding one would mean
+// a new dependency, a separate decision, not bundled into this fix. This
+// length cap is a real, dependency-free, immediately-actionable guard.
+const MAX_MESSAGE_BODY_LENGTH = 4000;
+
 const sendMessage = async (threadId, callerUid, body) => {
   if (!body || !body.trim()) {
     const err = new Error("MESSAGE_BODY_REQUIRED");
     err.code = "MESSAGE_BODY_REQUIRED";
+    throw err;
+  }
+
+  const trimmedBody = body.trim();
+  if (trimmedBody.length > MAX_MESSAGE_BODY_LENGTH) {
+    const err = new Error("MESSAGE_BODY_TOO_LONG");
+    err.code = "MESSAGE_BODY_TOO_LONG";
     throw err;
   }
 
@@ -126,7 +143,7 @@ const sendMessage = async (threadId, callerUid, body) => {
   const { rows } = await dbQuery.query(
     `INSERT INTO ${dbSchema}.messages (id, thread_id, sender_uid, sender_role, body)
      VALUES ($1, $2, $3, $4, $5) RETURNING *;`,
-    [messageId, threadId, callerUid, callerIsEmployer ? "employer" : "applicant", body.trim()]
+    [messageId, threadId, callerUid, callerIsEmployer ? "employer" : "applicant", trimmedBody]
   );
 
   await dbQuery.query(
