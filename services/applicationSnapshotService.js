@@ -68,7 +68,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRequired.push({
       field: "basic_profile",
       label: "Basic profile (job title)",
-      reason: "Required for employer to understand applicant's professional intent",
+      reason: "Helps employers understand your current professional focus",
     });
   }
 
@@ -81,7 +81,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRequired.push({
       field: "work_experience",
       label: "Work experience",
-      reason: "At least one work experience entry expected for employer review",
+      reason: "Helps employers understand your work history",
     });
   }
 
@@ -94,7 +94,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRequired.push({
       field: "skills",
       label: "Skills",
-      reason: "Skills are used for job matching and employer review",
+      reason: "Lets employers see what you can do and how you align with the role",
     });
   }
 
@@ -107,7 +107,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "education",
       label: "Education",
-      reason: "Helps employers understand academic background",
+      reason: "Gives employers a fuller picture of your background",
     });
   }
 
@@ -123,7 +123,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "cv_submitted",
       label: "CV or document submitted",
-      reason: "Employers commonly review CVs alongside application",
+      reason: "A CV gives employers more detail to review alongside your application",
     });
   }
 
@@ -136,7 +136,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "video_answers",
       label: "Video answers",
-      reason: "Video answers demonstrate communication and personality",
+      reason: "Video answers let you present yourself beyond a written application",
     });
   }
 
@@ -149,7 +149,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
     missingRecommended.push({
       field: "certifications",
       label: "Certifications",
-      reason: "Certifications can differentiate applicants for relevant roles",
+      reason: "Certifications can strengthen your profile for roles that require specific credentials",
     });
   }
 
@@ -186,7 +186,7 @@ const scoreApplicationCompleteness = (profile, submittedDocs, submittedAnswers, 
       completedRequired,
       recommendedItems,
       completedRecommended,
-      disclaimerNote: "Application completeness measures submitted information, not candidate quality. This is not a hiring decision.",
+      disclaimerNote: "Application completeness measures submitted information, not candidate quality. It is not a hiring score.",
     },
     scoring_rubric_version: COMPLETENESS_RUBRIC_VERSION,
   };

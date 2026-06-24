@@ -46,7 +46,7 @@ const submitApplication = async (req, res) => {
         code: error.code,
       });
     }
-    errorMessage.error = "ERROR: " + error;
+    errorMessage.error = "Something went wrong. Please try again later.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -93,11 +93,12 @@ const getApplicantApplicationSnapshot = async (req, res) => {
       missingRequired: comp ? comp.missing_required : null,
       missingRecommended: comp ? comp.missing_recommended : null,
       disclaimerNote: "Application completeness measures submitted information, not candidate quality. It is not a hiring score.",
-      privacyNote: `Protected attributes are never scored. Excluded fields: ${EXCLUDED_FIELDS.slice(0, 6).join(", ")}...`,
+      privacyNote: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring.",
     };
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error("[getApplicantApplicationSnapshot]", error);
+    errorMessage.error = "Unable to retrieve your application snapshot. Please try again later.";
     return res.status(status.error).send(errorMessage);
   }
 };
@@ -122,8 +123,11 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
       `SELECT job_id, candidate_id FROM ${dbSchema}.job_applicants WHERE job_application_id = $1 LIMIT 1`,
       [applicationId]
     );
+    // SECURE fix (enumeration oracle): use 403 for both "not found" and
+    // "wrong company" so a recruiter from Company B cannot probe valid
+    // applicationIds by comparing 404 vs 403 response codes.
     if (!appRows || appRows.length === 0) {
-      return res.status(status.notfound).send({ status: "error", error: "Application not found." });
+      return res.status(403).send({ status: "error", error: "Forbidden." });
     }
 
     // Confirm the caller's company owns the job
@@ -136,7 +140,9 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
     }
 
     const callerCompany = await getUserCompany(uid);
-    if (!callerCompany || callerCompany.companyId !== jobRows[0].company_id) {
+    // Array.isArray guard: getUserCompany returns [] when no company exists
+    // (not null/undefined), so !callerCompany alone won't catch that case.
+    if (!callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobRows[0].company_id) {
       return res.status(403).send({ status: "error", error: "Forbidden." });
     }
 
@@ -144,7 +150,8 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
     successMessage.data = summary;
     return res.status(status.success).send(successMessage);
   } catch (error) {
-    errorMessage.error = "ERROR: " + error;
+    console.error("[getEmployerApplicantSnapshotSummary]", error);
+    errorMessage.error = "Unable to retrieve application summary. Please try again later.";
     return res.status(status.error).send(errorMessage);
   }
 };
