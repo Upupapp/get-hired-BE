@@ -512,6 +512,13 @@ const createApplicationSnapshots = async ({
     errors: [],
   };
 
+  // company_id NOT NULL in all 3 snapshot tables — skip entirely rather than
+  // letting the INSERT fail silently inside the fire-and-forget .catch().
+  if (!companyId) {
+    console.warn("[applicationSnapshot] skipped: companyId is missing for applicationId", applicationId);
+    return result;
+  }
+
   let profile = null;
   let job = null;
 

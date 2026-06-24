@@ -156,4 +156,85 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
   }
 };
 
-export { submitApplication, getApplicantApplicationSnapshot, getEmployerApplicantSnapshotSummary };
+/**
+ * GET /applicant/application/snapshots?applicationIds=id1,id2,...
+ * Batch completeness snapshot lookup for the applicant's own applications.
+ * Replaces N individual calls with 3 DB queries regardless of list size.
+ * Max 50 IDs per request.
+ */
+const getApplicantApplicationSnapshotsBatch = async (req, res) => {
+  const { uid } = req.user;
+  const { applicationIds: raw } = req.query;
+
+  if (!raw) {
+    errorMessage.error = "applicationIds is required.";
+    return res.status(status.bad).send(errorMessage);
+  }
+
+  const applicationIds = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+  if (applicationIds.length === 0 || applicationIds.length > 50) {
+    errorMessage.error = "applicationIds must be a non-empty comma-separated list of up to 50 IDs.";
+    return res.status(status.bad).send(errorMessage);
+  }
+
+  try {
+    // Single ownership check — verify caller owns all supplied IDs.
+    // IDs that don't exist are silently excluded from results (not a 403 —
+    // the caller owns the list, they may have IDs from before snapshots existed).
+    const { rows: appRows } = await dbQuery.query(
+      `SELECT job_application_id, candidate_id FROM ${dbSchema}.job_applicants WHERE job_application_id = ANY($1)`,
+      [applicationIds]
+    );
+
+    const verifiedIds = appRows
+      .filter(row => row.candidate_id === uid)
+      .map(row => row.job_application_id);
+
+    if (verifiedIds.length === 0) {
+      successMessage.data = { snapshots: {} };
+      return res.status(status.success).send(successMessage);
+    }
+
+    // Two batch queries — N*3 individual queries reduced to 3 regardless of list size.
+    const [snapshotRows, completenessRows] = await Promise.all([
+      dbQuery.query(
+        `SELECT application_id FROM ${dbSchema}.application_snapshots WHERE application_id = ANY($1) AND source = 'application_submit'`,
+        [verifiedIds]
+      ),
+      dbQuery.query(
+        `SELECT application_id, completeness_score, completeness_level, missing_required, missing_recommended FROM ${dbSchema}.application_completeness_snapshots WHERE application_id = ANY($1) AND source = 'application_submit'`,
+        [verifiedIds]
+      ),
+    ]);
+
+    const snapshotSet = new Set(snapshotRows.rows.map(r => r.application_id));
+    const completenessMap = {};
+    completenessRows.rows.forEach(r => { completenessMap[r.application_id] = r; });
+
+    const disclaimerNote = "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions.";
+    const privacyNote = "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring.";
+
+    const snapshots = {};
+    verifiedIds.forEach(id => {
+      const comp = completenessMap[id] || null;
+      snapshots[id] = {
+        hasSnapshot: snapshotSet.has(id),
+        completenessScore: comp ? comp.completeness_score : null,
+        completenessLevel: comp ? comp.completeness_level : null,
+        missingRequired: comp ? comp.missing_required : null,
+        missingRecommended: comp ? comp.missing_recommended : null,
+        disclaimerNote,
+        privacyNote,
+      };
+    });
+
+    successMessage.data = { snapshots };
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    console.error("[getApplicantApplicationSnapshotsBatch]", error);
+    errorMessage.error = "Unable to retrieve your application snapshots. Please try again later.";
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+export { submitApplication, getApplicantApplicationSnapshot, getEmployerApplicantSnapshotSummary, getApplicantApplicationSnapshotsBatch };

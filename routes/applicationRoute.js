@@ -20,6 +20,7 @@ import {
   submitApplication,
   getApplicantApplicationSnapshot,
   getEmployerApplicantSnapshotSummary,
+  getApplicantApplicationSnapshotsBatch,
 } from "../controllers/applicationController";
 import { getDashboard } from "../controllers/applicantsController";
 import verifyAuth from "../middleware/verifyAuth";
@@ -35,8 +36,10 @@ router.post("/application/create", verifyAuth, createApplication);
 router.put("/application/updateJobs", verifyAuth, updateApplication);
 router.delete("/application/delete", verifyAuth, deleteApplication);
 router.post("/application/apply", verifyAuth, submitApplication)
-// Applicant: get their own application snapshot + completeness
+// Applicant: get their own application snapshot + completeness (single)
 router.get("/applicant/application/snapshot", verifyAuth, getApplicantApplicationSnapshot)
+// Applicant: batch completeness snapshots for a list of applicationIds (replaces N individual calls)
+router.get("/applicant/application/snapshots", verifyAuth, getApplicantApplicationSnapshotsBatch)
 // Employer: get applicant snapshot summary for a specific application
 router.get("/job/applicant/snapshot-summary", verifyAuth, getEmployerApplicantSnapshotSummary)
 
