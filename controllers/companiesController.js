@@ -33,6 +33,7 @@ import {
   totalContacts,
   graph,
   cities,
+  pipelineOverview,
 } from "../services/company.service";
 
 import { contactList } from "../services/contact.service";
@@ -348,6 +349,33 @@ const getDashboard = async (req, res) => {
     };
 
     successMessage.data = dbResponse;
+    return res.status(status.success).send(successMessage);
+  } catch (error) {
+    errorMessage.error = "ERROR: " + error;
+    return res.status(status.error).send(errorMessage);
+  }
+};
+
+// GETHIRED_EMPLOYER_DASHBOARD_WORLD_CLASS_TECHY_REDESIGN_V2 -- new,
+// narrowly-scoped endpoint for the dashboard's hiring-pipeline and
+// applicants-needing-review widgets. Same getUserCompany() pattern as
+// getDashboard() above; defensively checks for the [] no-company shape
+// (getUserCompany returns an array, not null, when no row exists) rather
+// than letting a stray undefined companyId silently reach the query.
+const getDashboardPipelineOverview = async (req, res) => {
+  const { uid } = req.user;
+
+  try {
+    const userCompany = await getUserCompany(uid);
+    if (!userCompany || Array.isArray(userCompany)) {
+      return res.status(status.unauthorized).send({
+        status: "error",
+        error: "No company found for this account.",
+      });
+    }
+
+    const overview = await pipelineOverview(userCompany.companyId);
+    successMessage.data = overview;
     return res.status(status.success).send(successMessage);
   } catch (error) {
     errorMessage.error = "ERROR: " + error;
@@ -683,6 +711,7 @@ export {
   getSpecificCompany,
   updateCompany,
   getDashboard,
+  getDashboardPipelineOverview,
   removeCompanyUser,
   getAllCompanyUser,
   addCompanyUser,

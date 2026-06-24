@@ -318,6 +318,61 @@ const cities = async (companyId) => {
   };
 };
 
+// GETHIRED_EMPLOYER_DASHBOARD_WORLD_CLASS_TECHY_REDESIGN_V2 -- one new,
+// narrowly-scoped, read-only aggregate for the dashboard's hiring-pipeline
+// and applicants-needing-review widgets. No new table, no new tracking --
+// composed from job_applicants/jobs/job_applicant_status/users exactly
+// like charts()/statistic() above, same company-scoping convention.
+// "Needs review" = application_status_id 1 (Pending Review) or 3 (Under
+// Review), the two real seed statuses that represent unreviewed work --
+// confirmed against the live job_applicant_status table, not assumed.
+// Only firstname/lastname are selected from users -- no protected
+// attributes (gender/civil_status/date_of_birth exist on that table and
+// are deliberately not selected here).
+const pipelineOverview = async (companyId) => {
+  const stageQuery = `SELECT a.application_status_id, s.job_applicant_status_name, count(*) as count
+    FROM ${dbSchema}.job_applicants a
+    JOIN ${dbSchema}.jobs j ON j.job_id = a.job_id
+    LEFT JOIN ${dbSchema}.job_applicant_status s ON s.job_applicant_status_id = a.application_status_id
+    WHERE j.company_id = $1 AND (a.is_archived IS NULL OR a.is_archived = false)
+    GROUP BY a.application_status_id, s.job_applicant_status_name
+    ORDER BY a.application_status_id;`;
+
+  const needsReviewQuery = `SELECT a.job_application_id, a.application_status_id, a.date_applied,
+      j.job_id, j.job_title, u.firstname, u.lastname
+    FROM ${dbSchema}.job_applicants a
+    JOIN ${dbSchema}.jobs j ON j.job_id = a.job_id
+    LEFT JOIN ${dbSchema}.users u ON u.uid = a.candidate_id
+    WHERE j.company_id = $1
+      AND a.application_status_id IN (1, 3)
+      AND (a.is_archived IS NULL OR a.is_archived = false)
+    ORDER BY a.date_applied DESC
+    LIMIT 10;`;
+
+  try {
+    const stages = await dbQuery.query(stageQuery, [companyId]);
+    const needsReview = await dbQuery.query(needsReviewQuery, [companyId]);
+
+    return {
+      byStage: stages.rows.map((r) => ({
+        statusId: r.application_status_id,
+        label: r.job_applicant_status_name || "Unknown",
+        count: parseInt(r.count, 10),
+      })),
+      needsReview: needsReview.rows.map((r) => ({
+        applicationId: r.job_application_id,
+        jobId: r.job_id,
+        candidateName: [r.firstname, r.lastname].filter(Boolean).join(" ") || "Candidate",
+        jobTitle: r.job_title,
+        statusId: r.application_status_id,
+        submittedDate: r.date_applied,
+      })),
+    };
+  } catch (error) {
+    throw Error("Operation Failed" + error);
+  }
+};
+
 export {
   companyList,
   companyDetailsById,
@@ -329,5 +384,6 @@ export {
   statistic,
   totalContacts,
   graph,
-  cities
+  cities,
+  pipelineOverview
 };

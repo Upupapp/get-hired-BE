@@ -11,6 +11,7 @@ import {
   //   assignCompany,
   //   getAllCompanies,
   getDashboard,
+  getDashboardPipelineOverview,
   getAllCompanyUser,
   removeCompanyUser,
   addCompanyUser,
@@ -34,6 +35,7 @@ router.post("/company/createcompany", verifyAuth, createCompanyFull);
 // controllers now also verify the caller belongs to that company.
 router.put("/company/update", verifyAuth, updateCompany);
 router.get("/company/dashboard", verifyAuth, getDashboard);
+router.get("/company/dashboard/pipeline-overview", verifyAuth, getDashboardPipelineOverview);
 router.delete("/company/removecompanyuser", verifyAuth, removeCompanyUser);
 router.get("/company/industries", verifyAuth, getIndustryListCompany);
 // router.get("/company/setuplist", verifyAuth, getSetupListCompany);
