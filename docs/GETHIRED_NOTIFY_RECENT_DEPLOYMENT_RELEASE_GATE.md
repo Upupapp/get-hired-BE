@@ -1,93 +1,79 @@
-# GETHIRED NOTIFY — Release Gate: Applicant Completeness View
-**Scope:** FE 76c545e / BE faa2232
+# GETHIRED NOTIFY — Release Gate: Recent Deployment Delta
+**Scope:** FE 20a44c5 / BE 422d340
 **Date:** 2026-06-24
 
 ---
 
-## Gate A — No Internal Jargon
+## Gate A — CTA accessible: "→" has aria-hidden or text alternative; link text makes sense out of context
 **Status: PASS (after fix)**
 
-Verified: no DB column names, no internal enum values, no technical system terminology in any user-facing string after fixes.
-
-- Null state: was "before completeness tracking was enabled" (internal system phrase) → fixed to "before this feature was introduced"
-- `privacyNote`: verified no raw column names such as `civil_status`, `political_views` in current copy
-- All `reason` strings: verified — no field names, no DB identifiers, no algorithm terminology
-- Error messages in controller: no stack traces, no query strings, no internal identifiers
+- `→` wrapped in `<span aria-hidden="true">` — screen readers skip the arrow character
+- Link text "Update your profile" is self-describing out of context; no context-dependent phrasing like "click here" or "here"
+- Verified: `routerLink="/user/profile/edit"` routes to the correct profile edit destination
 
 ---
 
-## Gate B — Accurate Snapshot-at-Submit Framing
-**Status: PASS (after fix)**
+## Gate B — privacyNote placement: renders below disclaimer without awkward juxtaposition
+**Status: PASS**
 
-The completeness view reflects the applicant's submitted state at the time of application, not their current live profile. This distinction must be clear to the applicant.
-
-Verified:
-- Required tips heading: "What was missing when you applied — add these now for stronger future applications:" — explicitly anchors to the past submission event
-- Tips include fields like "submitted a CV" and "video answers" which are not live profile fields; the new heading ("when you applied") covers all tip types correctly
-- Null state: "it was submitted before this feature was introduced" — past tense, anchored to submission
-- `disclaimerNote`: "how much information was included when you applied" — past tense, submission-anchored
-
-No string implies the view reflects the applicant's current profile state.
+- `disclaimerNote` renders first: "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions."
+- `privacyNote` renders second: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring."
+- Both rendered as `<p class="app-snapshot-disclaimer">` siblings inside `*ngIf="snap.hasSnapshot"` — sequenced logically (what the score is → what is never included)
+- `privacyNote` guarded by `*ngIf="snap.privacyNote"` — only renders if the API supplies a value; no blank `<p>` if omitted
+- Linter additionally added `app-snapshot-disclaimer--privacy` class for styling differentiation — no copy impact
 
 ---
 
-## Gate C — Non-Alarming Copy
-**Status: PASS (after fix)**
+## Gate C — Error messages safe: no stack traces, no internal terms exposed to API callers
+**Status: PASS**
 
-Verified:
-- Badge "incomplete" → "Getting started": neutral, forward-looking, not a failure grade
-- `disclaimerNote` leads with positive definition ("reflects how much information was included") before clarification — does not lead with negation
-- "No effect on hiring decisions" is concrete and reassuring
-- Recommended tips heading "(not required)" makes voluntary nature explicit
-- No string uses language like "failed", "rejected", "missing", "incomplete" as a verdict
-- Score badge colors: green (excellent/strong), amber (basic), grey (getting started) — no red; grey is neutral, not alarming
+All three batch endpoint error messages verified:
 
----
-
-## Gate D — Actionable Tips
-**Status: PASS (after fix)**
-
-All 6 tip reason strings verified to open with an imperative verb addressed to the applicant:
-
-| Tip | Opener | Verdict |
+| Error | Exposure check | Verdict |
 |---|---|---|
-| basic_profile | "Add a job title to your profile..." | PASS |
-| work_experience | "Add your work history..." | PASS |
-| skills | "List your skills..." | PASS |
-| education | "Add your education history..." | PASS |
-| cv_submitted | "Upload a CV..." | PASS |
-| video_answers | "Record a video answer..." | PASS |
-| certifications | "Add any certifications..." | PASS |
+| `"applicationIds is required."` | No DB names, no stack trace, no internal identifiers | PASS |
+| `"applicationIds must be a non-empty comma-separated list of up to 50 IDs."` | Technical language appropriate for API caller; no system internals | PASS |
+| `"Unable to retrieve your application snapshots. Please try again later."` | Generic safe message; raw error caught and logged server-side only (`console.error`) | PASS |
 
-No tip uses passive or employer-perspective framing. Each tip names the action before the benefit.
+Single-app endpoint existing errors also verified intact and safe (no regression).
 
 ---
 
-## Gate E — Accessible aria-labels
-**Status: PASS (after fix)**
+## Gate D — All previous strings intact: existing copy not accidentally overwritten
+**Status: PASS**
 
-| Element | aria-label / role | Verdict |
+| String | Expected location | Verified present |
 |---|---|---|
-| Outer snapshot `div` | `role="region" aria-label="Application completeness snapshot"` | PASS — landmark with meaningful name |
-| Skeleton loader | `role="status" aria-label="Loading application snapshot"` | PASS |
-| Inner score div | `role="region" aria-label="Completeness score"` | PASS |
-| Level badge | `aria-label="Completeness level: <level>"` | PASS — name includes level value |
-| Score percentage | `<strong>` — visible number; no screen-reader-only label needed as label is adjacent | PASS |
+| `"What was missing when you applied — add these now for stronger future applications:"` | HTML line 56 | Yes |
+| `"Getting started"` (badge, incomplete level) | HTML line 50 | Yes |
+| `"Completeness details aren't available for this application — it was submitted before this feature was introduced."` | HTML line 35 | Yes |
+| `"Snapshot unavailable right now."` | HTML line 77 (`#snapSilent`) | Yes |
 
-Note: the linter also added `aria-live="polite" aria-atomic="true"` to the outer snapshot div, ensuring screen readers announce when the async snapshot data loads. This is a meaningful a11y improvement.
+No existing strings were overwritten or regressed by template changes.
+
+---
+
+## Gate E — Batch 400 error: FE catchError swallows silently; no alarming message shown
+**Status: PASS**
+
+- `catchError(() => of({}))` at `applicant-applications.component.ts` line 57 catches all errors from the batch endpoint (including 400 for 51+ IDs)
+- Resolves with empty map `{}`; `snapshotsLoaded` becomes `true`
+- All `snapshotFor()` calls return `null` → `#snapSilent` template fires per row: "Snapshot unavailable right now."
+- Result: soft, non-alarming degradation. Applicants see a neutral message rather than a technical error or blank space.
+- FE currently sends at most N applicationIds where N = `applications.length`. The 50-ID limit would only be hit by applicants with 51+ applications. Even then the FE degrades gracefully.
 
 ---
 
 ## Gate Summary
 
-| Gate | Pre-fix | Post-fix |
+| Gate | Status | Notes |
 |---|---|---|
-| A — No internal jargon | FAIL | PASS |
-| B — Accurate framing | FAIL | PASS |
-| C — Non-alarming | FAIL | PASS |
-| D — Actionable tips | FAIL | PASS |
-| E — Accessible | FAIL | PASS |
+| A — CTA accessible | PASS | `→` aria-hidden; link text self-describing |
+| B — privacyNote placement | PASS | Logical sequence after disclaimerNote; guarded by `*ngIf` |
+| C — Error messages safe | PASS | No internals exposed; all errors are generic or parameter-naming only |
+| D — Previous strings intact | PASS | All 4 carry-over strings present at expected locations |
+| E — Batch 400 silent | PASS | `catchError(() => of({}))` degrades gracefully to soft unavailable message |
 
-**Overall release gate: PASS**
+**Overall release gate for this deployment delta: PASS**
 
-10 copy fixes applied across 3 files. No logic, business rules, or schema were changed. No emails sent.
+2 copy fixes applied (arrow aria-hidden + privacyNote alignment). No logic, business rules, or schema changed.

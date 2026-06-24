@@ -1,144 +1,200 @@
 # GETHIRED STITCH — Recent Deployment Integration Report
-## Deployment: Applicant Completeness View (FE 76c545e / BE faa2232)
-**Date:** 2026-06-24
-**Scope:** FE→BE contract for the applicant completeness snapshot feature in `applicant-applications.component`
+## Deployment: Batch Snapshot Endpoint (FE 20a44c5 / BE 422d340)
+**Date:** 2026-06-24  
+**Scope:** FE→BE contract for `GET /applicant/application/snapshots?applicationIds=<csv>`  
 **STITCH version:** v2 (integration-safety focus, small/safe/additive fixes only)
 
 ---
 
-## Summary
+## 1. Deployment Summary
 
-6 seams verified. 0 issues found. 0 fixes applied. All 5 gates PASS.
+Two controllers and two FE files shipped in this deployment:
 
----
+**BE:**
+- `controllers/applicationController.js` — added `getApplicantApplicationSnapshotsBatch`
+- `routes/applicationRoute.js` — registered `GET /applicant/application/snapshots`
 
-## Seam Verification
-
-### Seam 1 — `jobApplicationId` key name (Gate C)
-
-**Question:** Does `getMyApplications()` return `jobApplicationId` so the FE filter `app.jobApplicationId` works?
-
-**Trace:**
-- `ApplicantApplicationsService.getMyApplications()` → `GET /api/candidates/appliedjobslist`
-- `candidateController.js → getJobAppliedList()` → `listOfAppliedJobsById(uid)`
-- `candidate.service.js → listOfAppliedJobsById()` → maps each row through `mappedApplication(row)`
-- `mappedApplication()` line 212: `jobApplicationId: raw.job_application_id`
-
-**Result:** PASS. `jobApplicationId` is explicitly set on every returned application object. FE `filter(app => !!app.jobApplicationId)` correctly includes all valid applications.
+**FE:**
+- `src/app/application/application.service.ts` — added `getApplicationSnapshots(applicationIds)`
+- `src/app/applicant-panel/applicant-applications/applicant-applications.component.ts` — calls `loadSnapshots()` after applications load; maps results into `snapshotsMap`
 
 ---
 
-### Seam 2 — URL contract (Gate A)
+## 2. Contract Seams Verified
 
-**Question:** Does `${environment.api_url}/applicant/application/snapshot` match the registered BE route?
+### Seam 1 — Route Path (Gate A)
 
-**Trace:**
-- FE: `environment.api_url` = `https://.../api` (dev, staging, and prod all end in `/api`)
-- FE URL: `${environment.api_url}/applicant/application/snapshot?applicationId=...` → resolves to `/api/applicant/application/snapshot?applicationId=...`
-- BE: `server.js` line 47: `app.use("/api", applicationRoutes)`
-- `applicationRoute.js` line 39: `router.get("/applicant/application/snapshot", verifyAuth, getApplicantApplicationSnapshot)`
-- Full resolved BE path: `/api/applicant/application/snapshot` — exact match
+**File:** `get-hired-BE/routes/applicationRoute.js` line 42
 
-**Result:** PASS. URL contract is exact across all three environments.
+```js
+router.get("/applicant/application/snapshots", verifyAuth, getApplicantApplicationSnapshotsBatch)
+```
 
----
+Path is `GET /applicant/application/snapshots` — singular "applicant", plural "snapshots".
 
-### Seam 3 — `missingRequired[].reason` field shape (Gate B)
-
-**Question:** Does `getCompletenessSnapshot()` return `missing_required` from DB, does the controller alias it as `missingRequired`, and are the items objects with a `reason` field that the FE can read?
-
-**Trace (write path — at application submit time):**
-- `scoreApplicationCompleteness()` builds `missingRequired` as an array of objects with shape `{ field, label, reason }` (e.g. `reason: "Helps employers understand your current professional focus"`)
-- `persistCompletenessSnapshot()` stores as `JSON.stringify(completenessResult.missing_required)` into DB column `missing_required jsonb NOT NULL DEFAULT '[]'` (confirmed in `application_snapshots_ddl.sql` line 68)
-
-**Trace (read path — at applicant view time):**
-- `getCompletenessSnapshot()` → `SELECT * FROM application_completeness_snapshots WHERE application_id = $1`
-- `dbQuery` uses `node-postgres` (`pg`). The `pg` library **automatically deserializes `jsonb` columns** into native JS objects/arrays (Postgres type OID 3802 is mapped to JSON.parse by the pg type parser). No manual `JSON.parse()` is needed.
-- `comp.missing_required` is therefore already a parsed JS array: `[{ field, label, reason }, ...]`
-- Controller line 93: `missingRequired: comp ? comp.missing_required : null`
-- FE template: `*ngFor="let tip of snap.missingRequired"` then `{{ tip.reason }}` — correct
-
-**Result:** PASS. The `jsonb` type round-trips correctly through `pg`. The `reason` field is present on every item in the array.
-
----
-
-### Seam 4 — `disclaimerNote` field name (Gate B)
-
-**Question:** Is the field name exactly `disclaimerNote` in the BE response, matching `snap.disclaimerNote` in the FE template?
-
-**Trace:**
-- `applicationController.js` `getApplicantApplicationSnapshot()` lines 86-97 build `successMessage.data` with:
-  ```js
-  disclaimerNote: "Application completeness measures submitted information, not candidate quality. It is not a hiring score.",
-  ```
-- FE template line 64: `{{ snap.disclaimerNote }}`
-- The value is hardcoded in the controller — no DB round-trip risk for this field.
-
-Note: `scoreApplicationCompleteness()` also writes a `disclaimerNote` key inside the `evidence` JSONB blob stored in DB, but that nested field is never returned to the client directly. The controller's top-level `disclaimerNote` is the only FE-facing source.
-
-**Result:** PASS. Exact field name match, hardcoded string, no aliasing risk.
-
----
-
-### Seam 5 — `forkJoin` empty array guard (Gate E)
-
-**Question:** If `appsWithIds.length === 0`, is `forkJoin([])` avoided?
-
-**Trace (`applicant-applications.component.ts` lines 43-47):**
+FE call (`application.service.ts` line 30):
 ```ts
-const appsWithIds = this.applications.filter(app => !!app.jobApplicationId);
-if (appsWithIds.length === 0) {
-  this.snapshotsLoaded = true;
-  return;
+return this.baseService.get<any>(`${environment.api_url}/applicant/application/snapshots?applicationIds=${ids}`);
+```
+
+Path segment matches exactly. Auth middleware `verifyAuth` is present. Route is registered before any wildcard/catch-all routes.
+
+**Gate A: PASS**
+
+---
+
+### Seam 2 — Response Shape / BaseService Unwrapping (Gate B)
+
+**Three files form this seam: `status.js`, `base.service.ts`, component.**
+
+**`helpers/status.js`:**
+```js
+const successMessage = { status: "success" };
+```
+`successMessage` is a module-level singleton. Controller mutates it in place:
+```js
+successMessage.data = { snapshots };
+return res.status(status.success).send(successMessage);
+```
+Wire payload is:
+```json
+{ "status": "success", "data": { "snapshots": { "<id>": { "hasSnapshot": true, "completenessScore": 80, ... } } } }
+```
+
+**`base.service.ts`:**
+```ts
+public get<T>(url: string): Observable<T> {
+  return this.http.get<T>(url);
 }
 ```
-`forkJoin(calls)` is only reached when `appsWithIds.length > 0`. The guard sets `snapshotsLoaded = true` and returns early, so the template's skeleton state exits cleanly.
+`BaseService.get<T>()` is a pass-through to Angular `HttpClient.get<T>()`. No interceptor, no `.data` unwrapping, no custom transform exists in BaseService. The Observable emits the raw parsed JSON body.
 
-**Result:** PASS. Guard is correct and exits cleanly with `snapshotsLoaded = true`.
-
----
-
-### Seam 6 — Null safety: failed snapshot fetch → silent render (Gate D)
-
-**Question:** If a snapshot fetch errors, does the application row stay intact and no error state display?
-
-**Trace:**
+**Component (`applicant-applications.component.ts` line 56):**
 ```ts
-catchError(() => of({ id: app.jobApplicationId, data: null }))
+map((res: any) => res?.data?.snapshots ?? {}),
 ```
-- On any HTTP error, the stream is replaced with `{ id, data: null }`.
-- `results.forEach(({ id, data }) => this.snapshotsMap.set(id, data))` — the map entry is set to `null`.
-- `snapshotFor(id)` returns `this.snapshotsMap.get(id) ?? null` → `null`.
-- Template: `*ngIf="snapshotFor(app.jobApplicationId) as snap; else snapSilent"` — `null` is falsy, `snap` is not bound, Angular renders `#snapSilent`.
-- `#snapSilent` is an empty `<ng-template>` — renders nothing, no error message shown.
-- The application row's `app.jobTitle`, `app.companyName`, status badge, and message button are outside `.app-snapshot` and are completely unaffected.
+`res` is the raw JSON body `{ status, data: { snapshots } }`. Therefore:
+- `res.data` = `{ snapshots: {...} }`
+- `res.data.snapshots` = the ID-keyed map
 
-**Result:** PASS. Failed snapshots are genuinely silent. The overall `forkJoin` succeeds even when individual calls fail (each is independently guarded by `catchError`), so `snapshotsLoaded` always becomes `true`.
+The nesting level is correct. If the response were already unwrapped to `{ snapshots }`, the FE would read `undefined` and fall back to `{}` (silent failure). Confirmed it is NOT unwrapped — reading at the correct level.
 
----
+**Gate B: PASS**
 
-## Identified Issues
-
-None.
+**Tech debt noted:** `successMessage` is a module-level singleton mutated on every request (pattern repeated 124 times across 15 controllers). Node.js is single-threaded so there is no actual race condition in current code — `successMessage.data = x` and `res.send(successMessage)` execute in the same event loop tick with no `await` between them. The risk is future: any refactor introducing an `await` between mutation and send could silently corrupt concurrent responses. Recommend inline response objects: `res.status(200).send({ status: "success", data: { snapshots } })`. Tracked as tech debt.
 
 ---
 
-## Fixes Applied
+### Seam 3 — Missing IDs / snapshotFor() (Gate C)
 
-None. All seams were correct as deployed.
+**Flow for an applicationId that does not exist in `job_applicants`:**
+
+1. BE: `SELECT ... FROM job_applicants WHERE job_application_id = ANY($1)` returns no row for the unknown ID.
+2. `verifiedIds` excludes it — it never enters the `snapshots` map.
+3. Wire: `snapshots` has no key for the unknown ID.
+4. FE: `snapshotsMap.get(unknownId)` returns `undefined`.
+5. `snapshotFor(unknownId)` returns `undefined ?? null` = `null`.
+6. Template: `*ngIf="snapshotFor(app.jobApplicationId)"` is falsy → `#snapSilent` renders.
+
+This is the intended design per the controller comment: *"IDs that don't exist are silently excluded from results (not a 403 — the caller owns the list, they may have IDs from before snapshots existed)."*
+
+**Gate C: PASS**
 
 ---
 
-## Cross-cutting Observations (non-blocking, informational)
+### Seam 4 — 51+ IDs / Max-50 Guard (Gate D)
 
-**OBS-1: `privacyNote` sent but not rendered.**
-The controller returns `privacyNote` in the response payload but no template element reads it. This is benign (extra field in response is harmless). If displaying the privacy note is desired, `{{ snap.privacyNote }}` would be the minimal addition.
+**BE guard (`applicationController.js` line 175):**
+```js
+if (applicationIds.length === 0 || applicationIds.length > 50) {
+  errorMessage.error = "applicationIds must be a non-empty comma-separated list of up to 50 IDs.";
+  return res.status(status.bad).send(errorMessage);  // HTTP 400
+}
+```
 
-**OBS-2: `missingRecommended` null guard.**
-The template checks `snap.missingRecommended?.length > 0` with optional chaining. The controller sets `missingRecommended: comp ? comp.missing_recommended : null`, so when `comp` is null (no completeness row yet), the value is `null`. The `?.` guard handles this correctly.
+**FE — no pre-send guard.** `loadSnapshots()` sends all IDs from `this.applications` without checking count.
 
-**OBS-3: NOTIFY pass already improved `reason` copy.**
-Per `GETHIRED_NOTIFY_RECENT_DEPLOYMENT_REPORT.md`, the `reason` strings in `scoreApplicationCompleteness()` were previously written from the system's perspective and were updated to second-person applicant-facing copy. The current strings reflect those improvements.
+**FE error handling:**
+```ts
+catchError(() => of({})),
+```
+Angular treats HTTP 400 as an error. `catchError` intercepts it, returns `of({})`. The `map` operator before `catchError` is bypassed (error path skips `map`). The subscriber receives `{}`. `Object.entries({})` iterates nothing. `snapshotsLoaded = true`. All rows render `#snapSilent`.
 
-**OBS-4: `retry()` calls `ngOnInit()` directly.**
-`retry()` in the component calls `this.ngOnInit()` manually (line 79). This is unusual for an Angular lifecycle hook but is functional since the component is not destroyed/re-created. No integration seam impact.
+**Failure mode documentation:**
+- An applicant with 51+ applications loses all completeness badge data silently.
+- The page renders without error. No user-facing message appears.
+- Developer console shows an `HttpErrorResponse` (if DevTools open), but production users see nothing.
+
+**Known gap, not fixed this pass** (fix would require FE batching logic — outside small/safe scope). Tracked in Fix Log as DEFERRED.
+
+**Gate D: PARTIAL PASS** — graceful degradation confirmed; silent failure for 51+ applications documented.
+
+---
+
+### Seam 5 — encodeURIComponent / Double-Encoding (Gate E)
+
+**FE (`application.service.ts` line 29):**
+```ts
+const ids = applicationIds.map(id => encodeURIComponent(id)).join(',');
+```
+
+UUIDs contain only hex digits (`0-9`, `a-f`) and hyphens (`-`). These are RFC 3986 unreserved characters — `encodeURIComponent` does not percent-encode them. The call is a functional no-op on valid UUIDs.
+
+**BE (`applicationController.js` line 174):**
+```js
+const applicationIds = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+```
+Express automatically URL-decodes `req.query` values before the handler runs. No manual decode in the controller. The split delimiter is literal `,` — not `%2C`. If a comma were ever percent-encoded, Express would decode it first and the split would handle it correctly.
+
+**Upstream encoding check:** `applicationIds` originates from `this.applications.map(app => app.jobApplicationId)` — raw UUID strings from the API response JSON. No prior encoding in the data path was found.
+
+**Gate E: PASS**
+
+---
+
+## 3. Cross-Cutting Observations
+
+### Auth coverage
+All three snapshot routes are protected:
+- `GET /applicant/application/snapshot` — `verifyAuth` ✓
+- `GET /applicant/application/snapshots` — `verifyAuth` ✓
+- `GET /job/applicant/snapshot-summary` — `verifyAuth` ✓
+
+### Ownership enforcement
+The batch endpoint enforces ownership before returning data:
+```js
+const verifiedIds = appRows
+  .filter(row => row.candidate_id === uid)
+  .map(row => row.job_application_id);
+```
+IDs from other applicants are silently excluded rather than 403'd. This is correct — 403ing would allow enumeration: a caller could detect whether an ID is valid by comparing 403 vs absence.
+
+### N+1 elimination confirmed
+Previous single-snapshot endpoint (`/snapshot`) made 2 DB calls per ID. The new batch endpoint makes 3 DB calls total regardless of input list size (`job_applicants` ownership check + `application_snapshots` + `application_completeness_snapshots`). For 50 applications: 100 queries → 3 queries.
+
+---
+
+## 4. Gates Summary
+
+| Gate | Description | Result |
+|------|-------------|--------|
+| A | `GET /applicant/application/snapshots` registered with `verifyAuth` | PASS |
+| B | FE reads `res?.data?.snapshots` — correct nesting for raw `HttpClient` response | PASS |
+| C | Non-existent IDs absent from map → `snapshotFor()` returns `null` → `#snapSilent` | PASS |
+| D | 51+ IDs → HTTP 400 caught by `catchError(() => of({}))` → graceful degradation | PARTIAL |
+| E | `encodeURIComponent` is no-op on UUIDs; no double-encoding; Express auto-decodes | PASS |
+
+**Overall: 4 PASS / 1 PARTIAL — safe to ship, Gate D documented as known gap**
+
+---
+
+## 5. Files Inspected
+
+| File | Purpose |
+|------|---------|
+| `get-hired-BE/controllers/applicationController.js` | Controller logic, ownership check, batch query, response shape |
+| `get-hired-BE/routes/applicationRoute.js` | Route registration, auth middleware |
+| `get-hired-BE/helpers/status.js` | `successMessage` singleton structure |
+| `get-hired-FE/src/app/application/application.service.ts` | FE API call construction |
+| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.ts` | `loadSnapshots()`, `snapshotFor()`, error handling |
+| `get-hired-FE/src/app/core/services/base.service.ts` | BaseService — confirms no response unwrapping |

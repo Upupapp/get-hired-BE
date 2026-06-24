@@ -1,328 +1,318 @@
-# GETHIRED SWEEP — RECENT DEPLOYMENT: Applicant Completeness View
-**Generated:** 2026-06-24
-**BE HEAD:** faa2232 | **FE HEAD:** 76c545e
-**Scope:** Applicant-facing completeness view + SECURE/STITCH/NOTIFY fixes in applicationController.js and applicationSnapshotService.js
+# GETHIRED SWEEP — RECENT DEPLOYMENT
+**Date:** 2026-06-24
+**BE commit:** 422d340 | **FE commit:** 20a44c5
+**Scope:** applicationSnapshotService.js (companyId guard), applicationController.js (batch endpoint), applicationRoute.js (new route), backfill_application_snapshots.js (new script), application.service.ts, applicant-applications.component.ts/.html/.scss
 
 ---
 
 ## Executive Summary
 
-**What was deployed:** The applicant-facing completeness view — the second surface of the snapshot system. After applications load, a parallel `forkJoin` fires one `GET /applicant/application/snapshot` call per application, results are stored in a `Map<string,any>`, and each row renders a skeleton shimmer → score+badge → tips → disclaimer card. Simultaneously, three security/correctness fixes landed on the BE: an enumeration oracle collapse on the employer snapshot endpoint (404→403), an `Array.isArray` guard on `getUserCompany`'s empty-array return shape, and NOTIFY-pass rewrites of error messages and reason strings. The employer-side applicant panel also received BRAND skeleton shimmer, aria-live scope correction, and a STITCH reset fix for `snapshotSummary`.
+**What shipped:**
+- A companyId null guard in `createApplicationSnapshots` that prevents silent INSERT failures when companyId is missing.
+- A new batch endpoint `GET /applicant/application/snapshots` that returns completeness + hasSnapshot data for up to 50 application IDs in 3 DB queries (down from N×3).
+- A one-shot backfill script that processes pre-deployment applications in batches of 10 with dry-run mode.
+- FE applicant-applications view now calls the batch endpoint instead of forkJoin-ing N individual requests, adds a loading skeleton, a fade-in reveal, missing-item tips, and an "Update your profile →" CTA.
 
-**Architecture quality:** Good. The FE parallel load pattern is idiomatic RxJS, error isolation is correct, and the skeleton/state machine is clean. The BE ownership check on the applicant endpoint is direct and correct. The three BE fixes are all targeted and clearly motivated. Main concerns: N calls per page load with no caching or batching; a latent template bug where `null` snapshots are silently hidden rather than explaining the gap to the user; and the `forkJoin` completing only when ALL calls complete, meaning a slow single call delays the entire batch reveal.
-
-**Top 5 risks:**
-1. [HIGH] `forkJoin` waits for ALL N snapshot calls before setting `snapshotsLoaded = true`. If one call is slow (e.g. a network hiccup), every other row's snapshot is also delayed. Per-call loading state was not implemented.
-2. [HIGH] N+1 API calls: one `GET /applicant/application/snapshot` per application, issued in parallel but with no cap. An applicant with 30 applications fires 30 concurrent calls. No caching, no batching endpoint exists.
-3. [MEDIUM] The null/failed snapshot state (`snapSilent`) renders nothing — no message, no icon. A user who applied before completeness tracking was enabled sees an empty gap beneath their application with no explanation. The "no snapshot" message only appears when `snap` is truthy but `snap.hasSnapshot` is false.
-4. [MEDIUM] `retry()` calls `ngOnInit()` directly. While functional, this resets `applications` to `[]` and clears `snapshotsMap` before `ngOnInit` itself reassigns them, creating a flicker; the bigger concern is that `loading$` in `job-applicants.component.ts` subscribes in a field initializer without `takeUntil`, which is a different component but shows the same pattern leak risk.
-5. [LOW] The `getApplicationSnapshot` and `getCompletenessSnapshot` retrieval functions use `SELECT *`, meaning any future column added to these tables auto-exposes to callers without a review gate.
-
-**Top 5 strengths:**
-1. Per-call `catchError(() => of({ id, data: null }))` ensures a single failed snapshot call cannot affect the others or break the applications list.
-2. The applicant ownership check is direct and correct: `appRows[0].candidate_id !== uid` returns 403 before touching the snapshot tables, preventing IDOR.
-3. The `Array.isArray` guard on `getUserCompany` correctly handles the `[]` empty return shape that `!callerCompany` alone would miss (truthy empty array).
-4. The enumeration oracle fix is well-reasoned: collapsing both "not found" and "wrong company" to 403 on the employer endpoint prevents Company B from probing valid applicationIds by comparing response codes.
-5. The NOTIFY reason strings are second-person, action-oriented, and factually grounded — they explain the *value* of completing each section, not just what is missing.
+**Overall quality:** Good — the core logic is correct, the design invariants (ON CONFLICT DO NOTHING, best-effort, ownership check before data access) are upheld. There are no critical security holes in the new code. Three medium/high issues exist around subscription leak, the "already backfilled" check gap, and the max-50 enforcement not being applied on the FE side.
 
 ---
 
-## §1 System Map
+### Top 5 Risks
 
-### Applicant Completeness View — Data Flow
+| # | Risk | Severity |
+|---|------|----------|
+| 1 | `loadSnapshots()` subscribes to a second Observable that is never stored and never unsubscribed — subscription leak on every ngOnDestroy and every `retry()` | HIGH |
+| 2 | Backfill "already backfilled" check (`aps.source = 'backfill_current_data'`) filters on source alone — an application with a real `application_submit` snapshot has no backfill row, so it will still be queued for backfill and a second completeness row with `source='backfill_current_data'` may be written | MEDIUM |
+| 3 | FE `loadSnapshots()` sends all application IDs without slicing to 50 — BE rejects with 400 if the user has more than 50 applications | MEDIUM |
+| 4 | Batch endpoint `hasSnapshot` query filters `source = 'application_submit'` only — backfilled applications will always show `hasSnapshot: false` even after the backfill runs successfully | MEDIUM |
+| 5 | `retry()` calls `this.ngOnInit()` directly — Angular lifecycle hooks are framework-managed; calling them manually is a code smell and risks double-subscription | LOW |
 
-```
-Applicant opens "My Applications"
-  └─ ApplicantApplicationsService.getMyApplications()
-       └─ GET /applicant/userprofile or equivalent list endpoint
-            └─ ngOnInit: applications[] populated, loading=false
-                 └─ loadSnapshots() fires
-                      └─ Filter: apps with jobApplicationId
-                           └─ Map: one Observable per app
-                                └─ ApplicationService.getApplicationSnapshot(jobApplicationId)
-                                     └─ GET /applicant/application/snapshot?applicationId=<id>
-                                          └─ verifyAuth middleware
-                                               └─ getApplicantApplicationSnapshot()
-                                                    ├─ SELECT candidate_id FROM job_applicants (ownership check)
-                                                    ├─ 403 if not owner
-                                                    └─ Promise.all([getApplicationSnapshot, getCompletenessSnapshot])
-                                                         └─ 200: { applicationId, hasSnapshot, completenessScore,
-                                                                    completenessLevel, missingRequired,
-                                                                    missingRecommended, disclaimerNote, privacyNote }
-                      └─ forkJoin(calls) — waits for ALL
-                           └─ results.forEach → snapshotsMap.set(id, data)
-                                └─ snapshotsLoaded = true
-                                     └─ Template renders per-row:
-                                          ├─ !snapshotsLoaded → skeleton shimmer
-                                          ├─ snap truthy + hasSnapshot=true → score+badge+tips+disclaimer
-                                          ├─ snap truthy + hasSnapshot=false → "Snapshot not available" message
-                                          └─ snap null (catchError) → empty (snapSilent)
-```
+### Top 5 Strengths
 
-### Employer Applicant Detail — Snapshot Summary
-
-```
-Employer clicks applicant in job-applicants panel
-  └─ viewMenu() → dialog result with applicationId
-       └─ snapshotSummary = null; snapshotSummaryLoading = true  ← STITCH fix
-            └─ loadSnapshotSummary(appId)
-                 └─ JobService.getApplicantSnapshotSummary(applicationId)
-                      └─ GET /job/applicant/snapshot-summary?applicationId=<id>
-                           └─ verifyAuth → getEmployerApplicantSnapshotSummary()
-                                ├─ SELECT job_id FROM job_applicants (403 if missing)
-                                ├─ SELECT company_id FROM jobs
-                                ├─ getUserCompany(uid) → Array.isArray guard  ← STITCH fix
-                                └─ callerCompany.companyId === job.company_id → 403 if mismatch
-                                     └─ getApplicationSnapshotSummaryForEmployer(applicationId)
-                                          └─ { completenessScore, completenessLevel, matchScore,
-                                               matchLevel, hasSnapshot, matchDisclaimer }
-                 └─ Template: snapshotSummaryLoading → shimmer skeleton
-                              snapshotSummary.hasSnapshot=false → calm empty message
-                              snapshotSummary.hasSnapshot=true → scores + badges + disclaimer
-```
+| # | Strength |
+|---|---------|
+| 1 | companyId guard placed at the right entry point (before any DB work) and returns the structured `result` object so callers never see a thrown exception |
+| 2 | Batch endpoint reduces N×3 queries to exactly 3 queries regardless of list size — correct O(1) DB scaling |
+| 3 | Single ownership check query covers all supplied IDs at once; silently excludes non-owned IDs rather than erroring, which is correct for the "stale ID" case |
+| 4 | Backfill script has dry-run mode, batches of 10 with 500ms delay, ON CONFLICT DO NOTHING, and source tagging — minimal risk of production damage |
+| 5 | FE skeleton loading state matches the shape of the revealed content (3 elements: line, badge row, short line) — prevents layout shift on load |
 
 ---
 
-## §2 API Contract
+## §1 Batch Endpoint Design
 
-### Applicant Endpoint
+**URL:** `GET /applicant/application/snapshots?applicationIds=id1,id2,...`
 
-| Attribute | FE Call | BE Route | Match |
-|---|---|---|---|
-| URL | `/applicant/application/snapshot?applicationId=<id>` | `router.get("/applicant/application/snapshot", verifyAuth, getApplicantApplicationSnapshot)` | Yes |
-| Auth | Firebase token via `baseService.get` | `verifyAuth` middleware | Yes |
-| Query param | `applicationId` (string, URL-encoded) | `req.query.applicationId` | Yes |
-| Response shape | `res?.data ?? null` | `successMessage.data = { applicationId, hasSnapshot, completenessScore, completenessLevel, missingRequired, missingRecommended, disclaimerNote, privacyNote }` | Yes |
+**Auth:** Correct. Route is registered with `verifyAuth` middleware. The controller extracts `uid` from `req.user` (set by Firebase token verification). No path to reach the handler unauthenticated.
 
-**Edge cases verified:**
-- Missing `applicationId`: BE returns 400 with safe error. FE would receive an error response → `catchError` → `data: null` → silent null state (handled).
-- Application not owned by caller: BE returns 403. FE `catchError` catches → null. (Correct — should never happen in normal flow since FE only calls for the logged-in user's own applications.)
-- No snapshot row in DB (pre-deployment application): BE returns `hasSnapshot: false`. Template shows the "submitted before completeness tracking was enabled" message. (Correct.)
-- No completeness row in DB: `comp` is null, BE returns `completenessScore: null`, `completenessLevel: null`. Template renders the score section only when `snap.hasSnapshot` is true — if hasSnapshot is false this path is skipped cleanly. **GAP:** if `hasSnapshot` is true but `comp` is null (snapshot exists, completeness row missing), the score row renders `null%` and `null` level badge. This edge case is unlikely but possible if completeness insert failed silently.
+**Request parsing:**
+```js
+const applicationIds = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+```
+`String(raw)` defends against array injection (e.g., `?applicationIds[]=a&applicationIds[]=b` would produce `["a","b"]` in Express without the coerce, which `.split(",")` on an array would concatenate — `String()` normalises it to `"a,b"`). `.filter(Boolean)` removes empty strings. This is correct.
 
-### Employer Endpoint
+Edge case — all-empty input: `?applicationIds=,,` produces an empty array after filter, correctly rejected with 400.
 
-| Attribute | FE Call | BE Route | Match |
-|---|---|---|---|
-| URL | `/job/applicant/snapshot-summary?applicationId=<id>` | `router.get("/job/applicant/snapshot-summary", verifyAuth, getEmployerApplicantSnapshotSummary)` | Yes |
-| Auth | Firebase token via `baseService.get` | `verifyAuth` middleware | Yes |
-| Response shape | `res?.data` | `successMessage.data = summary` | Yes |
+**Ownership check correctness:**
+```js
+const verifiedIds = appRows.filter(row => row.candidate_id === uid).map(row => row.job_application_id);
+```
+Correct. IDs not belonging to the caller are silently dropped. An attacker supplying someone else's IDs gets `{}` for those entries — no data leakage, no enumeration oracle.
 
-**Edge cases verified:**
-- `applicationId` absent: 400 with safe message. FE `catchError` → `of(null)` → `snapshotSummary = null` → card hidden (correct).
-- Application not found: 403 (enumeration oracle fix). FE `catchError` → null (correct).
-- Company mismatch: 403. FE `catchError` → null (correct).
+If `verifiedIds.length === 0`, returns HTTP 200 `{ snapshots: {} }` — intentional, documented in comment.
+
+**Batch query efficiency:** Two queries regardless of list size — `application_snapshots` (just `application_id`), `application_completeness_snapshots` (score, levels, tips). Match snapshot deliberately excluded (not needed for the applicant tips view). Correct.
+
+**Response shape:**
+```json
+{
+  "success": true,
+  "data": {
+    "snapshots": {
+      "<applicationId>": {
+        "hasSnapshot": true,
+        "completenessScore": 73,
+        "completenessLevel": "strong",
+        "missingRequired": [...],
+        "missingRecommended": [...],
+        "disclaimerNote": "...",
+        "privacyNote": "..."
+      }
+    }
+  }
+}
+```
+Shape is correct and consistent with the existing `successMessage` envelope pattern.
+
+**Max-50 guard:**
+```js
+if (applicationIds.length === 0 || applicationIds.length > 50) {
+```
+Correct: 1–50 inclusive accepted, 0 or 51+ rejected with 400. Error message matches.
+
+**FINDING 1.1 (LOW):** When `verifiedIds.length === 0` the response is `{ snapshots: {} }` with no indication of how many supplied IDs were rejected. Consider adding `verifiedCount` and `requestedCount` to the response to aid debugging when callers get unexpectedly empty results.
 
 ---
 
-## §3 Error Isolation
+## §2 companyId Guard
 
-### forkJoin + catchError Pattern
+**Location:** `createApplicationSnapshots()` in `applicationSnapshotService.js`, lines 517–520:
+```js
+if (!companyId) {
+  console.warn("[applicationSnapshot] skipped: companyId is missing for applicationId", applicationId);
+  return result;
+}
+```
 
-The pattern used is:
+**Placement correctness:** Fires before `appplicantProfile()` and `jobDetails()` are fetched, and before all three persist calls. This is the right place — earlier than needed is better than later.
 
-```typescript
-const calls = appsWithIds.map(app =>
-  this.applicationService.getApplicationSnapshot(app.jobApplicationId).pipe(
-    map((res: any) => ({ id: app.jobApplicationId, data: res?.data ?? null })),
-    catchError(() => of({ id: app.jobApplicationId, data: null }))
-  )
-);
-forkJoin(calls).subscribe(results => {
-  results.forEach(({ id, data }) => this.snapshotsMap.set(id, data));
+**Coverage of all 3 snapshot types:** Yes. The guard returns `result` (the structured summary object) before the three try/catch persist blocks. All three snapshot types are skipped when companyId is missing.
+
+**Log message quality:** Good. Uses `console.warn` (not `console.error` — correct, since this is a data-quality skip, not a code fault). Includes the service file tag and logs `applicationId` for tracing. Could optionally also log `applicantId` and `jobId` for richer cross-referencing.
+
+**FINDING 2.1 (LOW):** The condition `!companyId` catches `null`, `undefined`, `""`, and `0`. In practice companyId is a UUID string so `0` will never appear, but the guard could be made explicit (`companyId == null || companyId === ''`) for self-documentation.
+
+---
+
+## §3 Backfill Script
+
+### Safety mechanisms
+
+| Mechanism | Implementation | Assessment |
+|-----------|---------------|------------|
+| Dry-run mode | `--dry-run` flag, returns early with `{status: "dry-run"}`, no writes | Correct |
+| ON CONFLICT DO NOTHING | Delegated to `createApplicationSnapshots` which uses it on all 3 INSERT statements | Correct |
+| Batch + delay | `BATCH_SIZE = 10`, `BATCH_DELAY_MS = 500ms`, `await sleep()` between batches | Correct |
+| Source scoping | `source: "backfill_current_data"` passed throughout | Correct |
+| Fire-and-forget per item | `Promise.allSettled()` — one failure does not stop the batch | Correct |
+| Limit flag | `--limit=N` processed before query | Correct |
+| Table existence check | Documented in header comment only, not enforced in code | See R-06 |
+
+**FINDING 3.1 (MEDIUM — "Already backfilled" check gap):**
+
+The `getUnsnapshotedApplications()` query:
+```sql
+LEFT JOIN application_snapshots aps
+  ON aps.application_id = ja.job_application_id
+  AND aps.source = 'backfill_current_data'
+WHERE aps.id IS NULL
+```
+This identifies applications with no backfill row. However, an application that already has a real-time `source='application_submit'` snapshot will satisfy `aps.id IS NULL` (no backfill row exists yet) and will be included in the backfill batch.
+
+At INSERT time, the `application_snapshots` ON CONFLICT will silently skip the duplicate. But `application_completeness_snapshots` and `match_snapshots` may not have a unique index covering both `application_id` AND `source`. If they don't, a second row with `source='backfill_current_data'` will be written alongside the real submission-time row. The retrieval helpers use `ORDER BY created_at DESC LIMIT 1` — a backfill row written later would shadow the real submission-time record.
+
+**Recommended fix:** Change the JOIN condition to exclude any application that already has ANY snapshot row regardless of source:
+```sql
+LEFT JOIN application_snapshots aps ON aps.application_id = ja.job_application_id
+WHERE aps.id IS NULL
+```
+
+**FINDING 3.2 (LOW):** No runtime preflight check that tables exist. If `application_snapshots` is missing, the query at `getUnsnapshotedApplications()` will throw and `process.exit(1)` will fire cleanly. However, if the table exists but `application_completeness_snapshots` does not, the main query succeeds, the batch begins, and each individual application fails silently (logged as partial). Consider adding a preflight `SELECT to_regclass(...)` check for all three tables at startup.
+
+**Note on current-vs-submission profile:** Documented clearly in the script header. The `source='backfill_current_data'` tag propagates into `provenance_json`. The batch endpoint intentionally filters `source = 'application_submit'` for `hasSnapshot`, so backfilled applications correctly show `hasSnapshot: false`. The completeness tips still work because `application_completeness_snapshots` is fetched separately. This two-tier treatment is the right design.
+
+---
+
+## §4 FE Integration
+
+### Response shape alignment
+
+BE sends (wrapped in `successMessage`):
+```json
+{ "success": true, "data": { "snapshots": { "<id>": { "hasSnapshot": ..., ... } } } }
+```
+
+FE extracts:
+```ts
+map((res: any) => res?.data?.snapshots ?? {})
+```
+Correctly unwraps `res.data.snapshots`. Optional chaining means a null/undefined response degrades to `{}` rather than throwing.
+
+**snapshotsMap population:**
+```ts
+Object.entries(snapshots).forEach(([id, data]) => this.snapshotsMap.set(id, data));
+```
+`Object.entries({})` returns `[]` — empty response is a no-op. Entries are keyed by application ID string, matching how `snapshotFor()` looks them up.
+
+**`snapshotFor()` correctness:**
+```ts
+snapshotFor(applicationId: string): any {
+  return this.snapshotsMap.get(applicationId) ?? null;
+}
+```
+Returns `null` when ID not in map. Template uses `*ngIf="snapshotFor(app.jobApplicationId) as snap; else snapSilent"` — null is falsy, so Angular falls through to `#snapSilent`. Correct.
+
+**FINDING 4.1 (MEDIUM):** `loadSnapshots()` sends all IDs without capping at 50:
+```ts
+const ids = this.applications.map(app => app.jobApplicationId).filter(Boolean) as string[];
+```
+If `applications.length > 50`, the BE returns 400 and the `catchError(() => of({}))` swallows it, leaving every card in the "Snapshot unavailable right now." state. Fix: add `.slice(0, 50)`.
+
+**FINDING 4.2 (LOW):** `snapshotFor()` is called from `*ngFor` template bindings, meaning it is called on every change-detection cycle for every row. `Map.get()` is O(1) so this is acceptable for typical list sizes, but if the applications list grows or the component becomes more interactive, pre-computing a map keyed by applicationId outside the template is the safer pattern.
+
+---
+
+## §5 Subscription Management
+
+**Primary subscription (`appsSub`) — correctly managed:**
+```ts
+private appsSub: Subscription | null = null;
+// assigned in ngOnInit, unsubscribed in both ngOnDestroy and retry()
+```
+
+**FINDING 5.1 (HIGH — Subscription leak):**
+`loadSnapshots()` creates a second subscription that is never tracked:
+```ts
+this.applicationService.getApplicationSnapshots(ids).pipe(
+  map(...),
+  catchError(...),
+).subscribe((snapshots) => {
+  Object.entries(snapshots).forEach(([id, data]) => this.snapshotsMap.set(id, data));
   this.snapshotsLoaded = true;
 });
 ```
+This subscription is not stored. If the user navigates away while the HTTP request is in-flight:
+1. `ngOnDestroy` fires and unsubscribes only `appsSub`.
+2. The HTTP request completes and the callback fires on a destroyed component instance.
+3. `this.snapshotsMap.set(...)` and `this.snapshotsLoaded = true` mutate a dead object.
+4. If Angular's CD is still partially alive (e.g., in a route transition), this can produce `ExpressionChangedAfterItHasBeenCheckedError`.
 
-**Assessment:**
-- A single failed call: `catchError` converts it to `of({ id, data: null })`. This stream completes normally, so `forkJoin` is not interrupted. Other calls are unaffected. **Correct.**
-- The applications list: snapshots are loaded *after* `this.loading = false` in the `next` handler. A snapshot failure cannot affect the applications list render. **Correct.**
-- `forkJoin` itself: only fails if one of the inner observables errors *before* `catchError` fires. Since `catchError` is applied per-call, `forkJoin` will always complete. **Correct.**
+Additionally, `retry()` calls `ngOnInit()` which calls `loadSnapshots()` again. If the previous snapshot request is still in-flight, two untracked subscriptions are now racing to populate `snapshotsMap`, and `snapshotsLoaded` can be set `true` from the stale first response before the retry's response arrives.
 
-**One latent concern:** `forkJoin` waits for ALL calls to complete before emitting. If one call takes 8 seconds due to a slow DB query (e.g. large `application_completeness_snapshots` table without an index on `application_id`), all rows show the skeleton for 8 seconds even if the other 9 calls completed in 200ms. A `combineLatest` + individual loading flags per row would eliminate this, but at significant template complexity cost.
+**Fix:**
+```ts
+private appsSub: Subscription | null = null;
+private snapSub: Subscription | null = null;
 
-**Does a slow/failed snapshot break the applications list?** No. The applications list renders immediately on `loading = false`. Snapshot state (`snapshotsLoaded`) is decoupled.
-
----
-
-## §4 Security Review
-
-### Applicant Endpoint Ownership Check
-
-```javascript
-const { rows: appRows } = await dbQuery.query(
-  `SELECT candidate_id, job_id FROM ${dbSchema}.job_applicants WHERE job_application_id = $1 LIMIT 1`,
-  [applicationId]
-);
-if (!appRows || appRows.length === 0) {
-  return res.status(status.notfound).send({ status: "error", error: "Application not found." });
+private loadSnapshots(): void {
+  // ...
+  this.snapSub = this.applicationService.getApplicationSnapshots(ids).pipe(
+    map((res: any) => res?.data?.snapshots ?? {}),
+    catchError(() => of({})),
+  ).subscribe((snapshots: Record<string, any>) => {
+    Object.entries(snapshots).forEach(([id, data]) => this.snapshotsMap.set(id, data));
+    this.snapshotsLoaded = true;
+  });
 }
-if (appRows[0].candidate_id !== uid) {
-  return res.status(403).send({ status: "error", error: "Forbidden." });
+
+retry(): void {
+  this.appsSub?.unsubscribe();
+  this.snapSub?.unsubscribe();
+  this.loading = true;
+  this.error = false;
+  this.snapshotsMap.clear();
+  this.snapshotsLoaded = false;
+  this.ngOnInit();
 }
-```
 
-**Assessment: Correct.** The check is pre-snapshot-fetch. No snapshot data is loaded until ownership is confirmed. `uid` comes from `req.user` (Firebase-verified JWT), not from the request body or query string. The 404/403 split here is intentional and appropriate: applicants should know whether their own application exists (404 = "you didn't apply here" vs 403 = "you tried to read someone else's"). The employer endpoint is the one where enumeration is a risk — and that is correctly collapsed to 403.
-
-**Note:** The applicant 404 could still reveal that a specific `applicationId` exists (to a probing applicant). However, since `applicationId` values are UUIDs and the applicant would have had to submit the application to know the ID, this is a minimal practical risk.
-
-### Array.isArray Guard on getUserCompany
-
-```javascript
-const callerCompany = await getUserCompany(uid);
-if (!callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobRows[0].company_id) {
-  return res.status(403).send({ status: "error", error: "Forbidden." });
+ngOnDestroy(): void {
+  this.appsSub?.unsubscribe();
+  this.snapSub?.unsubscribe();
 }
 ```
 
-**Assessment: Correct and necessary.** `getUserCompany` returns `[]` (an empty array, not `null`) when no company row is found. An empty array is truthy in JavaScript, so `!callerCompany` would pass. `Array.isArray([])` is `true`, catching this case. The guard order is also correct: `!callerCompany` (null/undefined) first, then `Array.isArray` (empty array), then `companyId` check (wrong company). All three cases map to 403, giving no information to the caller about which branch fired.
-
-**Cross-reference:** The same pattern was already applied in `getDashboardPipelineOverview` in `companiesController.js`. The STITCH fix brought `applicationController.js` into alignment with that established pattern. **Consistent.**
-
-### Enumeration Oracle Fix
-
-```javascript
-// Before: 404 for not-found, 403 for wrong company
-// After:  403 for both
-if (!appRows || appRows.length === 0) {
-  return res.status(403).send({ status: "error", error: "Forbidden." });
-}
-```
-
-**Assessment: Correct.** A recruiter from Company B cannot determine whether an `applicationId` is valid by comparing response codes. 403 for both states is the standard approach. The FE handles both identically via `catchError(() => of(null))`.
+**FINDING 5.2 (LOW):** `retry()` calls `this.ngOnInit()` directly. Angular lifecycle hooks are framework-managed; calling them manually is a code smell. Better pattern: extract the load logic into a private `loadApplications()` method, call it from both `ngOnInit()` and `retry()`.
 
 ---
 
-## §5 Performance Review
+## §6 "Update your profile" CTA
 
-### N Calls Per Page Load
+**Markup:**
+```html
+<a class="app-snapshot-cta" routerLink="/user/profile/edit">Update your profile →</a>
+```
 
-**Pattern:** One `GET /applicant/application/snapshot` call per application, fired in parallel via `forkJoin`.
+**routerLink correctness:** The path `/user/profile/edit` needs to match an actual route in the Angular router config. If the profile edit route is at a different path (e.g., `/applicant/profile/edit`), this navigates silently to the default/404 route. Requires verification against `app-routing.module.ts` before release.
 
-**Current state:**
-- Calls are parallel (not sequential), so wall-clock time is bounded by the slowest single call, not the sum.
-- Each call executes 1 ownership query + 2 snapshot retrieval queries = 3 DB queries.
-- For a user with 10 applications: 10 parallel calls → 30 DB queries total on a single page load.
+**Accessibility:**
+- Link text "Update your profile →" is descriptive and meaningful — screen reader friendly.
+- Correct element type (`<a>` for navigation, not `<button>`).
+- The arrow `→` is a Unicode character; some screen readers will read it as "rightwards arrow" or "right arrow". Wrapping in `<span aria-hidden="true">` suppresses this if the arrow is decorative.
+- No redundant `aria-label` needed given the descriptive text.
 
-**Scale concern:**
-| Applications | Parallel calls | DB queries | Risk |
-|---|---|---|---|
-| 1–5 | Low | 3–15 | Acceptable |
-| 6–15 | Medium | 18–45 | Moderate |
-| 16–30 | High | 48–90 | Concerning |
-| 30+ | Very high | 90+ | High — browser connection limits, server connection pool saturation |
+**Placement:** Inside `.app-snapshot-tips--required`, shown only when `snap.missingRequired?.length > 0`. Contextually correct — the CTA appears only when there are actionable gaps. The recommended tips block has no CTA, which is correct (recommended items are optional).
 
-**No caching exists.** Each page visit or `retry()` refires all calls. There is no HTTP cache header on the endpoint, no in-memory cache on the BE, and no service-level cache on the FE.
+**FINDING 6.1 (LOW):** The `→` arrow will be announced by some screen readers. Wrap in `<span aria-hidden="true">→</span>` if this is undesirable.
 
-**Missing index risk:** `getCompletenessSnapshot` queries `application_completeness_snapshots WHERE application_id = $1`. If this table lacks an index on `application_id`, each retrieval is a full table scan. This compounds with N parallel calls.
-
-**Mitigation options (not yet implemented):**
-1. Batch endpoint: `GET /applicant/application/snapshots?ids=id1,id2,id3` — single call, single response.
-2. FE-side simple cache: store results in a service-level Map that survives route navigation, so re-opening the page does not refetch.
-3. DB index: ensure `application_id` is indexed on both snapshot tables.
+**FINDING 6.2 (LOW):** `routerLink="/user/profile/edit"` is hardcoded with no compile-time check. Verify the route exists in the router config before production release.
 
 ---
 
-## §6 UX/State Review
-
-### Applicant View — State Machine
-
-| State | Trigger | Template behavior | Assessment |
-|---|---|---|---|
-| Loading (applications) | `loading = true` | `app-inline-loading` spinner | Correct |
-| Error (applications) | `error = true` | Error block with retry button | Correct |
-| Empty applications | `applications.length === 0` | Empty state with "Find jobs" CTA | Correct |
-| Loading snapshots | `!snapshotsLoaded` | Skeleton shimmer per row | Correct |
-| Snapshot success, hasSnapshot=true | `snap.hasSnapshot` | Score + badge + tips + disclaimer | Correct |
-| Snapshot success, hasSnapshot=false | `!snap.hasSnapshot` | "Submitted before completeness tracking" message | Correct |
-| Snapshot call failed | `catchError` → `data: null` | `snapSilent` — renders nothing | **Concern (see below)** |
-| No jobApplicationId on app | `!app.jobApplicationId` | Snapshot div not rendered | Correct |
-
-**Concern — silent null state:** When a snapshot call fails (network error, server error, 403), `snapshotsMap.get(id)` returns `undefined` (never set for that key), which the template resolves via `snapshotFor()` as `null`. The `*ngIf="snapshotFor(app.jobApplicationId) as snap"` block fails because `null` is falsy, so `snapSilent` fires — rendering nothing. The user sees no indication that the completeness section failed to load. This is a deliberate choice ("don't alarm the user") but creates an invisible gap in the UI for what could be a systemic outage.
-
-**Concern — all-or-nothing reveal:** Because `snapshotsLoaded` is a single boolean set when `forkJoin` completes, every row shows a skeleton until the slowest call finishes. There is no per-row reveal.
-
-### Employer View — State Machine
-
-| State | Template behavior | Assessment |
-|---|---|---|
-| `snapshotSummaryLoading = true` | Shimmer skeleton (3 lines + 2 badge placeholders) | Correct |
-| `snapshotSummary = null` (failed or no appId) | Card hidden entirely | Correct |
-| `snapshotSummary.hasSnapshot = false` | Calm muted empty message | Correct |
-| `snapshotSummary.hasSnapshot = true` | Completeness score + match level + disclaimer | Correct |
-| `snapshotSummaryLoading = false && snapshotSummary = null` | Card hidden | Correct |
-
-**STITCH fix correctness:** `snapshotSummary = null; snapshotSummaryLoading = false` are reset unconditionally before `loadSnapshotSummary` is called, even if the next applicant has no `applicationId`. This prevents a prior applicant's card persisting into the next applicant's panel. **Correct.**
-
----
-
-## §7 Copy Review
-
-### Reason Strings (missingRequired / missingRecommended)
-
-| Field | Reason string | Assessment |
-|---|---|---|
-| basic_profile | "Helps employers understand your current professional focus" | Clear, second-person implied, value-framed |
-| work_experience | "Helps employers understand your work history" | Clear, functional |
-| skills | "Lets employers see what you can do and how you align with the role" | Strong — names alignment benefit |
-| education | "Gives employers a fuller picture of your background" | Good, soft tone appropriate for optional field |
-| cv_submitted | "A CV gives employers more detail to review alongside your application" | Clear, accurate |
-| video_answers | "Video answers let you present yourself beyond a written application" | Good — positions as an opportunity |
-| certifications | "Certifications can strengthen your profile for roles that require specific credentials" | Appropriate — hedged with "can" and "for roles that require" |
-
-**Overall assessment:** All strings are second-person, action-oriented, and explain the value of completing the section. None are alarm-tone or finger-pointing. The word "employers" is used consistently, which is accurate (the data is shared with employers). **Pass.**
-
-**One minor gap:** The tip heading "Complete your profile to strengthen future applications:" implies these tips apply to future applications but not the current one. This is technically accurate (the snapshot is already captured), but may confuse users who think they can update and resubmit. A clarifying phrase like "...future applications (this application's snapshot is already captured)" would remove the ambiguity.
-
-### disclaimerNote
-
-```
-"Application completeness measures submitted information, not candidate quality. It is not a hiring score."
-```
-
-**Assessment:** Clear, accurate, non-alarming. Explicitly separates completeness from quality/hiring, which is the key risk of misinterpretation. **Pass.**
-
-### privacyNote
-
-```
-"Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring."
-```
-
-**Assessment:** Specific, reassuring, examples provided. Uses plain-English category names rather than technical field names. **Pass.**
-
-### Employer matchDisclaimer
-
-Sourced from `DISCLAIMER` constant in `employerApplicantSignalsService.js` — not changed in this deployment. Not re-reviewed here.
-
----
-
-## §8 Risk Register
+## §7 Risk Register
 
 | ID | Area | Severity | Description | Fix Required |
-|---|---|---|---|---|
-| R01 | Performance | HIGH | `forkJoin` blocks all row reveals until the slowest call completes. A single slow DB call holds every row's skeleton indefinitely. | No (acceptable now, revisit at scale) |
-| R02 | Performance | HIGH | N parallel API calls per page load with no batching endpoint and no client-side cache. Degrades linearly with application count. | No (must address before scale) |
-| R03 | UX | MEDIUM | Failed snapshot calls render completely silently (`snapSilent` is an empty template). Users with systemic snapshot failures see unexplained gaps. | No |
-| R04 | Data integrity | MEDIUM | `hasSnapshot=true` + missing completeness row renders `null%` score and `null` level badge. Possible if completeness insert failed silently at submission time. | No (edge case, low probability) |
-| R05 | Security | LOW | Applicant endpoint returns 404 for unknown `applicationId` (not 403 as on employer endpoint). UUID-format IDs make enumeration impractical, but the split is inconsistent. | No |
-| R06 | Data quality | LOW | `SELECT *` in `getApplicationSnapshot`, `getCompletenessSnapshot`, `getMatchSnapshot` retrieval helpers exposes any future column automatically. | No |
-| R07 | Maintainability | LOW | `retry()` calls `ngOnInit()` directly. This works but is non-idiomatic and could cause double-subscription issues if `loading$` subscription is added to this component in future. | No |
-| R08 | DB | LOW | No confirmed index on `application_id` for snapshot tables. Each N+1 retrieval may be a full table scan at low row counts, will degrade as table grows. | Verify index exists |
-| R09 | UX | LOW | Tips heading says "to strengthen future applications" — technically correct but may confuse users expecting to update the current application. | No (copy polish only) |
+|----|------|----------|-------------|--------------|
+| R-01 | FE Subscription | HIGH | `loadSnapshots()` subscription never stored/unsubscribed — leak on navigate-away, race condition on `retry()` | Store as `snapSub`, unsubscribe in `ngOnDestroy` and `retry()` |
+| R-02 | Backfill Script | MEDIUM | "Already backfilled" check only excludes `source='backfill_current_data'` rows — real `application_submit` snapshots don't block the backfill, risking a shadow completeness row that overwrites the real one on retrieval | Broaden JOIN to exclude any existing snapshot row regardless of source |
+| R-03 | FE Batch Size | MEDIUM | `loadSnapshots()` sends all IDs without slicing to 50 — BE returns 400, swallowed by `catchError`, all snapshot cards show "unavailable" for users with >50 applications | Add `.slice(0, 50)` |
+| R-04 | Batch Endpoint | MEDIUM | `hasSnapshot` query filters `source = 'application_submit'` only — backfilled applications always show `hasSnapshot: false` even after a successful backfill run | Clarify intentional or include `'backfill_current_data'` in the IN list |
+| R-05 | FE Lifecycle | LOW | `retry()` calls `this.ngOnInit()` directly — bad Angular pattern | Extract to `private loadApplications()` |
+| R-06 | Backfill Script | LOW | No runtime preflight check that all 3 snapshot tables exist | Add `SELECT to_regclass(...)` checks at startup |
+| R-07 | companyId Guard | LOW | `!companyId` matches `0` as well as null/undefined/empty string | Change to `companyId == null \|\| companyId === ''` |
+| R-08 | CTA Accessibility | LOW | Arrow `→` in CTA text announced by some screen readers | Wrap in `<span aria-hidden="true">` |
+| R-09 | CTA Route | LOW | `routerLink="/user/profile/edit"` unverified against actual router config | Verify route in `app-routing.module.ts` |
+| R-10 | Batch Response | LOW | Empty `verifiedIds` returns `{ snapshots: {} }` with no count metadata — opaque for debugging | Add `verifiedCount` / `requestedCount` to response |
+
+**Critical risks: 0**
+**High risks: 1 (R-01)**
+**Medium risks: 3 (R-02, R-03, R-04)**
+**Low risks: 6 (R-05 through R-10)**
 
 ---
 
-## §9 Opportunity Register
+## §8 Opportunity Register
 
-| ID | Area | Description | Effort |
-|---|---|---|---|
-| O01 | Performance | Implement a batch snapshot endpoint `GET /applicant/application/snapshots?ids=...` returning a map in one call, reducing N calls to 1. | Medium |
-| O02 | Performance | Add a service-level cache in `ApplicationService` (Map keyed by applicationId, cleared on logout) to avoid refetching on re-navigation. | Low |
-| O03 | UX | Replace the all-or-nothing `snapshotsLoaded` flag with per-row loading state, so fast-resolving snapshots render immediately while slow ones still shimmer. | Medium |
-| O04 | UX | Add a minimal fallback in `snapSilent` (e.g. a muted "Completeness not available" line) so users know the section exists and why it is empty. | Low |
-| O05 | Copy | Refine the required tip heading to clarify the snapshot is already captured: "Add these to strengthen future applications — this application's snapshot is already recorded." | Low |
-| O06 | DB | Verify and add explicit indexes on `application_id` for all three snapshot tables; add FK constraints to prevent orphan rows if applications are deleted. | Low |
-| O07 | Security | Normalize applicant endpoint to return 403 (not 404) for unknown `applicationId`, matching employer endpoint convention and reducing information leakage. | Low |
-| O08 | Employer UX | Surface `missingRequired` / `missingRecommended` tips on the employer snapshot card (currently only shows score + match level). Gives recruiters richer context for profile gaps. | Medium |
-| O09 | Testing | Add unit tests for: `loadSnapshots()` with all-fail, partial-fail, and all-success scenarios; `snapshotFor()` null/undefined key behavior; `snapshotsLoaded` timing correctness. | Medium |
-| O10 | Observability | Log a warning (server-side) when `completenessScore` is returned as null despite `hasSnapshot=true`, to surface the data integrity gap in R04. | Low |
+| ID | Area | Opportunity |
+|----|------|------------|
+| O-01 | FE Performance | Pre-compute a keyed lookup object aligned with `applications` array once in `loadSnapshots()` rather than calling `snapshotFor()` (function call) from the template on every CD cycle |
+| O-02 | Backfill Script | Add `--offset=N` flag to allow resuming a partial backfill from a specific starting position without re-processing already-completed applications |
+| O-03 | Batch Endpoint | Return `requestedCount`, `verifiedCount`, `foundCount` alongside `snapshots` map for easier client debugging and analytics |
+| O-04 | Backfill Script | Add `--application-id=<id>` flag for one-off targeted backfills of a specific application (useful for support or debugging) |
+| O-05 | FE UX | "Update your profile →" CTA links to profile edit root — consider deep-linking to the specific missing section (e.g., `/user/profile/edit#work-experience`) to reduce friction |
+| O-06 | BE Logging | `getApplicantApplicationSnapshotsBatch` logs on error but does not log requested vs verified count — adding that improves observability |
+| O-07 | FE Accessibility | Completeness score percentage (`{{ snap.completenessScore }}%`) has no contextual `aria-label` — consider `aria-label="{{ snap.completenessScore }}% application completeness"` on the containing element |
+| O-08 | Backfill Script | Add to final summary the count of applications that were skipped because a real `application_submit` row already existed, to distinguish "nothing written because already covered" from "nothing written because no applications found" |
+
+---
+
+*Generated by SWEEP RECENT DEPLOYMENT — GetHired, 2026-06-24*

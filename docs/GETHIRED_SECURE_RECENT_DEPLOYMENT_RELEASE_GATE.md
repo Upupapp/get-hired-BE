@@ -1,42 +1,54 @@
-# GETHIRED SECURE — Release Gate (Recent Deployment: Applicant Completeness View)
+# GETHIRED SECURE — Release Gate (Recent Deployment: Batch Snapshot Endpoint)
 **Date:** 2026-06-24
-**Deployment:** FE 76c545e, BE faa2232
+**Deployment:** FE 20a44c5, BE 422d340
 **Auditor:** Claude Code (claude-sonnet-4-6)
 
 ---
 
-## Gate Results
+## Gate Summary
 
-| Gate | Description | Result | Evidence |
-|---|---|---|---|
-| A | Applicant BOLA: applicant can only see own snapshots | PASS | `getApplicantApplicationSnapshot` checks `appRows[0].candidate_id !== uid` → 403 before returning any data. `getJobAppliedList` scopes the ID list to JWT uid, so forkJoin cannot inject foreign IDs. |
-| B | No XSS: template bindings are safe | PASS | All snapshot fields rendered via `{{ }}` interpolation only. No `[innerHTML]`, no `bypassSecurityTrust*`, no `DomSanitizer` in new template or component. |
-| C | 403 collapse held: employer endpoint returns 403 not 404 for not-found | PASS | `getEmployerApplicantSnapshotSummary` lines 129–131: both "not found" and "wrong company" branches return `res.status(403)`. |
-| D | getUserCompany guard: Array.isArray check does not break legitimate employers | PASS | `getUserCompany` returns `[]` (not null) when no company exists, and a plain object when a row exists. `Array.isArray([]) === true` catches the no-company case. A user with a company gets a plain object, passes `Array.isArray` as `false`, and proceeds to company ownership check. |
-| E | forkJoin safety: encodeURIComponent called safely, no synchronous throw | PASS | `encodeURIComponent(null/undefined)` returns strings, does not throw. FE already filters `!!app.jobApplicationId` before building calls. `catchError` handles HTTP failures. No synchronous throw path escapes the observable. |
+| Gate | Description | Result |
+|------|-------------|--------|
+| A | Batch BOLA — cross-applicant IDs provably excluded from response | PASS |
+| B | SQL safety — ANY($1::text[]) parameterization via pg driver | PASS |
+| C | Input validation — repeated/nested query param handled without crash | PASS (fix applied; now intentional, not accidental) |
+| D | Max-50 bypass via %2C encoding | PASS |
+| E | Backfill script safety — env confirmation before live writes | PASS (fix applied; --confirm gate + startup log added) |
+
+---
+
+## Gate A Detail
+
+`verifiedIds` is built by filtering `appRows` where `candidate_id === uid` (JWT-derived, not caller-supplied). The two subsequent DB queries (`application_snapshots`, `application_completeness_snapshots`) are both parameterized with `verifiedIds`, not the original `applicationIds`. The final `snapshots` object iterates `verifiedIds`. Cross-applicant data cannot enter the response by any path.
+
+## Gate B Detail
+
+`node-postgres` handles JavaScript array parameters to `ANY($1)` at the protocol layer — values are serialized as a PostgreSQL array literal, not interpolated into SQL text. The `::text[]` cast makes the type explicit. All three queries in the batch handler are parameterized. The backfill script's sole unparameterized interpolation is `LIMIT ${parseInt(..., 10)}` where `parseInt` sanitizes to a number (NaN is falsy, produces `""`).
+
+## Gate C Detail
+
+Fix applied: explicit type guard distinguishes Array (from repeated params) from string (normal path) from object (from nested params). The object case now collapses to `''`, which produces `applicationIds.length === 0` and a clean 400 response instead of passing `"[object Object]"` to the DB.
+
+## Gate D Detail
+
+Express's URL decoding runs before controllers receive `req.query`. A caller supplying `?applicationIds=id1%2Cid2%2C...%2Cid51` (51 IDs joined with encoded commas) arrives as `"id1,id2,...,id51"` — a single string that `.split(",")` correctly splits into 51 tokens, hitting the `> 50` guard and returning 400. The bypass is not possible.
+
+## Gate E Detail
+
+Fix applied: live runs (without `--dry-run`) now require `--confirm` or immediately abort with a clear error message. The script also prints `DB host`, `DB database`, and `DB schema` before doing anything so the operator can visually confirm the target environment. Existing `ON CONFLICT DO NOTHING` and `source = 'backfill_current_data'` mitigations remain in place.
+
+---
+
+## Open Items (not blocking release)
+
+| ID | Severity | Item |
+|----|----------|------|
+| RR-01 | P1 | No rate limiting on batch endpoint or any endpoint repo-wide. Auth requirement (`verifyAuth`) provides first-line protection. Dedicated rate-limiting pass needed. |
 
 ---
 
 ## Overall Verdict
 
-**GO**
+**GO WITH CAUTION**
 
-All five deployment-specific gates pass. Zero new P0 or P1 findings. The deployment introduced no new attack surface. Pre-existing issues (R-01 through R-05) are carried in the risk register and are not blocking for this specific deployment.
-
----
-
-## Conditions
-
-None. This deployment may proceed (or remain deployed) without remediation conditions.
-
----
-
-## Remaining Debt (Pre-existing)
-
-| Priority | Item |
-|---|---|
-| P0 | PayMongo webhook signature verification |
-| P0 | Rotate credentials leaked in git history |
-| P1 | CORS policy lockdown |
-| P1 | Rate limiting on write endpoints |
-| P1 | SQL injection in job.service.js (getPublishedJobs / getAllVideoResponsesByJobIds) |
+All P0 security gates pass. Three P1 fixes were applied (type guard, chunking, backfill confirmation). One standing P1 (no rate limiting) remains open repo-wide and is not introduced by this deployment. The deployment is safe to ship; the rate-limiting gap should be addressed in the next maintenance window.

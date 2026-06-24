@@ -1,49 +1,81 @@
 # GETHIRED_TEST_RECENT_DEPLOYMENT_COVERAGE_MATRIX
-**Deployment:** Applicant Completeness View (FE 76c545e, BE faa2232)
-**Date:** 2026-06-24
+
+**Deployment:** FE 20a44c5 / BE 422d340  
+**Date:** 2026-06-24  
 
 ---
 
-| # | Test Area | Critical Flow | Risk Level | Current Coverage | Recommended Test Type | Status |
-|---|---|---|---|---|---|---|
-| 1 | **forkJoin isolation** | One snapshot 404 must not cancel the other parallel snapshot calls | HIGH | Static: catchError is inside the `calls.map()` — each observable resolves to `of({ id, data: null })` on error before forkJoin sees it; forkJoin only fails if its constituent observables error, and none can error here | Unit test: mock two calls, one returns 404, assert other call's data still lands in snapshotsMap | PASS (static) / PLANNED (automated) |
-| 2 | **catchError per-call scope** | A thrown exception must be caught per-call (not swallowing all others) | HIGH | Static: `.pipe(catchError(() => of({ id: app.jobApplicationId, data: null })))` is chained inside the map, one per call — not on the outer forkJoin | Unit test: verify snapshotsMap has null for errored id and real data for successful id | PASS (static) / PLANNED (automated) |
-| 3 | **snapshotFor(null/undefined/empty)** | Accessor must handle missing/invalid applicationId without throwing | MEDIUM | Static: `snapshotsMap.get(applicationId) ?? null` — Map.get(undefined) returns undefined, ?? coerces to null; Map.get(null) returns undefined → null; Map.get('') returns undefined → null. No throw in any case. | Unit test: call snapshotFor(null), snapshotFor(undefined), snapshotFor('') → assert null returned each time | PASS (static) / PLANNED (automated) |
-| 4 | **snapshotFor only called when ID exists** | Template must not invoke snapshotFor() for rows without a jobApplicationId | MEDIUM | Static: entire `.app-snapshot` div is guarded by `*ngIf="app.jobApplicationId"` — snapshotFor is only called inside this block | FE template test: render row without jobApplicationId → assert .app-snapshot not in DOM | PASS (static) / PLANNED (automated) |
-| 5 | **Skeleton shows while loading** | `app-snapshot-skeleton` must be visible while forkJoin is in-flight | HIGH | Static: `*ngIf="!snapshotsLoaded"` on skeleton div; snapshotsLoaded starts false and is only set true in the forkJoin subscribe callback or the early-return path | FE unit test: render component before forkJoin emits → assert skeleton visible | PASS (static) / PLANNED (automated) |
-| 6 | **Skeleton disappears when loaded** | `app-snapshot-skeleton` must be removed and content shown after forkJoin completes | HIGH | Static: `*ngIf="snapshotsLoaded"` on the `ng-container` wrapping all real content; skeleton and content container are mutually exclusive via `!snapshotsLoaded` / `snapshotsLoaded` | FE unit test: advance forkJoin to completion → assert skeleton absent, content container present | PASS (static) / PLANNED (automated) |
-| 7 | **snap.hasSnapshot === false: null state** | When hasSnapshot is false (pre-deployment application), the "not available" message must render | MEDIUM | Static: `*ngIf="!snap.hasSnapshot"` on `<p class="app-snapshot-empty">` — wording: "this application was submitted before completeness tracking was enabled" | FE unit test: set snapshotsMap entry to { hasSnapshot: false } → assert .app-snapshot-empty visible | PASS (static) / PLANNED (automated) |
-| 8 | **snap.hasSnapshot === true: score block** | When hasSnapshot is true, score percentage and badge must render | HIGH | Static: `*ngIf="snap.hasSnapshot"` on the score/tips/disclaimer ng-container | FE unit test: set { hasSnapshot: true, completenessScore: 78, completenessLevel: 'strong' } → assert .app-snapshot-score visible | PASS (static) / PLANNED (automated) |
-| 9 | **snap.missingRequired empty: tips block hidden** | When missingRequired is [] or null, required tips block must not render | MEDIUM | Static: `*ngIf="snap.missingRequired?.length > 0"` — optional chaining on null returns undefined (falsy); empty array length is 0 (falsy); block hidden in both cases | FE unit test: missingRequired=[] → assert .app-snapshot-tips--required absent; missingRequired=null → same | PASS (static) / PLANNED (automated) |
-| 10 | **snap.missingRequired populated: tips render** | When missingRequired has items, each reason string must appear | MEDIUM | Static: `*ngFor="let tip of snap.missingRequired"` renders `{{ tip.reason }}` | FE unit test: missingRequired=[{reason:'Add skills'}] → assert 'Add skills' in DOM | PASS (static) / PLANNED (automated) |
-| 11 | **snap.missingRecommended empty: tips block hidden** | When missingRecommended is [] or null, recommended tips block must not render | MEDIUM | Static: `*ngIf="snap.missingRecommended?.length > 0"` — same pattern as missingRequired | FE unit test: missingRecommended=[] → assert .app-snapshot-tips--recommended absent | PASS (static) / PLANNED (automated) |
-| 12 | **snap.missingRecommended populated: tips render** | When missingRecommended has items, each reason string must appear | LOW | Static: same *ngFor pattern | FE unit test: missingRecommended=[{reason:'Add certifications'}] → assert text in DOM | PASS (static) / PLANNED (automated) |
-| 13 | **Applications list with zero applications** | Empty state must render and snapshot code must not execute when applications=[] | HIGH | Static: `*ngIf="applications.length === 0"` empty state is in a separate branch from `*ngIf="applications.length > 0"` list. loadSnapshots() has `if (appsWithIds.length === 0) { snapshotsLoaded = true; return; }` — no forkJoin created. | FE unit test: set applications=[] → assert .applications-empty visible, no HTTP calls made | PASS (static) / PLANNED (automated) |
-| 14 | **Zero applications: snapshotsLoaded set correctly** | snapshotsLoaded must be set to true even when there are no applications to snapshot | MEDIUM | Static: early-return path `if (appsWithIds.length === 0) { this.snapshotsLoaded = true; return; }` — skeleton would otherwise show indefinitely if snapshotsLoaded stayed false | FE unit test: verify snapshotsLoaded===true after loadSnapshots() with empty array | PASS (static) / PLANNED (automated) |
-| 15 | **retry(): snapshotsMap.clear() resets state** | After retry(), snapshotsMap must be empty before reload begins | MEDIUM | Static: `snapshotsMap.clear()` called in retry() before ngOnInit(); Map is an instance property persisting across calls | FE unit test: populate snapshotsMap, call retry(), assert snapshotsMap.size===0 before getMyApplications() resolves | PASS (static) / PLANNED (automated) |
-| 16 | **retry(): snapshotsLoaded=false before reload** | Skeleton must reappear during retry | MEDIUM | Static: `snapshotsLoaded = false` in retry() before ngOnInit() — skeleton *ngIf="!snapshotsLoaded" becomes true again | FE unit test: call retry(), assert snapshotsLoaded===false and skeleton visible before getMyApplications() emits | PASS (static) / PLANNED (automated) |
-| 17 | **retry(): subscription stacking on hot observables** | retry() must not create stacked subscriptions if getMyApplications() is hot | MEDIUM GAP | Static: no unsubscribe before ngOnInit(); safe only if getMyApplications() returns a cold HTTP observable. ApplicantApplicationsService not audited in this deployment. | Read applicant-applications.service.ts to confirm cold/hot; add OnDestroy + Subscription if needed | PLANNED — NEEDS VERIFICATION |
-| 18 | **BE: applicationId ownership check** | Applicant A must not access applicant B's snapshot | HIGH | Static: applicationController.js lines 70-79: queries job_applicants for candidate_id, compares to uid from verifyAuth token; mismatch → 403 | Integration test: call GET /applicant/application/snapshot with uid !== candidate_id → expect 403 | PASS (static) / PLANNED (automated) |
-| 19 | **BE: application not found → 404** | Non-existent applicationId must return 404 on applicant endpoint | MEDIUM | Static: `if (!appRows || appRows.length === 0) { return res.status(status.notfound)...}` — correct; 404 on applicant endpoint is safe since applicants cannot probe cross-user existence | Integration test: call with random applicationId → expect 404 | PASS (static) / PLANNED (automated) |
-| 20 | **BE: employer endpoint 403 collapse** | Non-existent applicationId must return 403 (not 404) on employer endpoint | HIGH | Static: applicationController.js lines 129-131: `if (!appRows || appRows.length === 0) { return res.status(403)...}` — 403 returned for not-found, prevents enumeration oracle | Integration test: call GET /job/applicant/snapshot-summary with non-existent applicationId → expect 403 (not 404) | PASS (static) / PLANNED (automated) |
-| 21 | **BE: Array.isArray(callerCompany) guard** | getUserCompany() returning [] must return 403, not throw | HIGH | Static: `!callerCompany \|\| Array.isArray(callerCompany)` evaluated before `.companyId` access; empty array is truthy so `!callerCompany` misses it — `Array.isArray()` catches it correctly | Unit test: mock getUserCompany to return [] → assert 403 response, no crash | PASS (static) / PLANNED (automated) |
-| 22 | **BE: getUserCompany returns null → 403** | Null return from getUserCompany must be caught before .companyId access | MEDIUM | Static: `!callerCompany` catches null and returns 403 before Array.isArray check — correct | Unit test: mock getUserCompany to return null → assert 403 | PASS (static) / PLANNED (automated) |
-| 23 | **BE: privacyNote wording present in response** | privacyNote must appear in getApplicantApplicationSnapshot response | LOW | Static: applicationController.js line 96: `privacyNote: "Protected personal attributes..."` — present in successMessage.data | Integration test: call endpoint → assert privacyNote field in response body | PASS (static) / PLANNED (automated) |
-| 24 | **FE: privacyNote not rendered to applicant** | privacyNote returned by BE is NOT displayed in template | LOW (GAP) | Static: privacyNote is present in API response but not in applicant-applications.component.html. disclaimerNote is rendered; privacyNote is not. | Add `*ngIf="snap.privacyNote"` block; FE unit test to verify render | FINDING — not yet implemented |
-| 25 | **FE: badge ngClass completeness levels** | All 4 completeness levels (excellent/strong/basic/incomplete) must map to a CSS class | MEDIUM | Static: ngClass maps excellent+strong → bg-success, basic → bg-warning text-dark, incomplete → bg-secondary; no uncovered level | FE unit test: each level → assert correct class applied | PASS (static) / PLANNED (automated) |
-| 26 | **FE: snap.disclaimerNote rendered** | Disclaimer note from BE must appear below score card | MEDIUM | Static: `{{ snap.disclaimerNote }}` in `.app-snapshot-disclaimer` — field confirmed present in BE controller response | FE unit test: snap with disclaimerNote → assert text visible | PASS (static) / PLANNED (automated) |
-| 27 | **FE: snapshotFor returns null (not undefined) on miss** | On catchError path, snapshotFor(id) must return null, triggering #snapSilent template | MEDIUM | Static: catchError sets `data: null` in the `of()` result; snapshotsMap.set(id, null); snapshotFor returns `null ?? null = null`; `*ngIf="snapshotFor(...) as snap"` evaluates null as falsy → falls through to #snapSilent | FE unit test: error path → assert #snapSilent is used (no content rendered, no error shown) | PASS (static) / PLANNED (automated) |
-| 28 | **Angular production build** | ng build --configuration production must complete without errors | HIGH | NOT RUN — build environment not available in this session | Run `ng build --configuration production` in CI before deploying | UNKNOWN |
+## Legend
 
----
-
-## Summary Counts
-
-| Coverage status | Count |
+| Symbol | Meaning |
 |---|---|
-| PASS (static code review, logically sound) | 25 |
-| UNKNOWN (cannot verify without running build/tests) | 1 |
-| FINDING (gap identified, not yet addressed) | 1 |
-| PLANNED (code correct, no automated test exists) | 27 (all PASS items) |
+| PASS | Code path confirmed correct by static analysis |
+| FAIL | Bug or incorrect behaviour found |
+| UNKNOWN | Cannot verify without live DB or build execution |
+| N/A | Test case not applicable to this deployment |
 
-All critical security and isolation flows are correctly implemented by static analysis. The main gaps are: (1) automated test coverage — zero tests exist for any item in this deployment; (2) retry() subscription stacking needs service-layer verification; (3) privacyNote not surfaced to applicant.
+---
+
+## Batch Endpoint Tests
+
+| # | Test case | Expected | Actual / Code Evidence | Verdict |
+|---|---|---|---|---|
+| B-1 | Empty `applicationIds` param (absent) | 400 | `if (!raw) → status.bad` | PASS |
+| B-2 | More than 50 IDs | 400 | `applicationIds.length > 50 → status.bad` | PASS |
+| B-3 | Comma-separated IDs parsed correctly | Array of trimmed, non-empty strings | `String(raw).split(",").map(s=>s.trim()).filter(Boolean)` | PASS |
+| B-4 | IDs belonging to another applicant | Excluded from response (not 403) | `appRows.filter(row => row.candidate_id === uid)` — unowned rows filtered out; result still 200 | PASS |
+| B-5 | Mix of owned + unowned IDs | Only owned returned | Same filter as B-4; `verifiedIds` contains only caller-owned IDs | PASS |
+| B-6 | IDs with no snapshot row | `hasSnapshot: false` | `snapshotSet.has(id)` → false when ID absent from `application_snapshots` query result | PASS |
+| B-7 | IDs with snapshot but no completeness row | `hasSnapshot: true, score: null` | `snapshotSet.has(id)` → true; `comp = completenessMap[id] \|\| null` → null; `completenessScore: null` | PASS |
+
+---
+
+## companyId Guard Tests
+
+| # | Test case | Expected | Actual / Code Evidence | Verdict |
+|---|---|---|---|---|
+| C-1 | `null` companyId | Returns early, no INSERT attempted | `if (!companyId) { console.warn(...); return result; }` — before all persist calls | PASS |
+| C-2 | `undefined` companyId | Returns early | Same `!companyId` guard covers undefined | PASS |
+| C-3 | Valid companyId | Continues normally to profile/job fetch and persist | Guard not triggered; execution reaches `appplicantProfile` and `jobDetails` calls | PASS |
+
+---
+
+## Backfill Script Tests
+
+| # | Test case | Expected | Actual / Code Evidence | Verdict |
+|---|---|---|---|---|
+| BS-1 | `--dry-run` flag set | No DB writes | `if (DRY_RUN) { return { status: "dry-run" } }` — `createApplicationSnapshots` never called | PASS |
+| BS-2 | Already-backfilled rows | Skipped (not re-processed) | LEFT JOIN on `application_snapshots WHERE source='backfill_current_data'` + `WHERE aps.id IS NULL` excludes existing rows | PASS |
+| BS-3 | One row fails in batch | Does not stop remaining rows | `Promise.allSettled` — each row isolated | PASS |
+| BS-4 | Re-run after full backfill | No-op | `getUnsnapshotedApplications` returns 0 rows → "Nothing to do." exit | PASS |
+
+---
+
+## FE Response Shape Tests
+
+| # | Test case | Expected | Actual / Code Evidence | Verdict |
+|---|---|---|---|---|
+| E-1 | Batch response shape `{data: {snapshots: {id: {...}}}}` | `snapshotsMap` populated correctly | `map((res: any) => res?.data?.snapshots ?? {})` → `Object.entries(snapshots).forEach(([id, data]) => snapshotsMap.set(id, data))` | PASS |
+| E-2 | Batch 200 with empty snapshots object `{}` | `snapshotsLoaded=true`, all rows show `#snapSilent` | `Object.entries({})` iterates 0 times; `snapshotsLoaded = true` at end of subscribe; template shows `#snapSilent` fallback | PASS |
+| E-3 | Batch call throws | `catchError → of({}) → snapshotsLoaded=true`, graceful | `catchError(() => of({}))` returns `{}` (bypasses map); subscribe receives `{}`; `Object.entries({})` = 0; `snapshotsLoaded=true` | PASS (with caveat — see F-01 in report: `of({})` bypasses `map`, coincidentally produces same result but is pipe-order fragile) |
+
+---
+
+## FE Subscription Lifecycle Tests
+
+| # | Test case | Expected | Actual / Code Evidence | Verdict |
+|---|---|---|---|---|
+| L-1 | `ngOnDestroy` unsubscribes `appsSub` | No leaked subscription from `getMyApplications` | `this.appsSub?.unsubscribe()` in `ngOnDestroy` | PASS |
+| L-2 | `retry()` unsubscribes before reload | No double subscription | `this.appsSub?.unsubscribe()` called before `this.ngOnInit()` which reassigns `appsSub` | PASS |
+| L-3 | `loadSnapshots` subscribe lifecycle | Safe for HTTP; not tracked | Inline `.subscribe()` not assigned; HTTP observable completes on response so no leak in practice | PASS (HTTP), UNKNOWN (non-HTTP sources) |
+
+---
+
+## Total
+
+| Status | Count |
+|---|---|
+| PASS | 16 |
+| FAIL | 0 |
+| UNKNOWN | 1 (L-3 for non-HTTP sources — not a current risk) |
+| N/A | 0 |

@@ -1,6 +1,6 @@
 # GETHIRED_OPTIMIZE_RECENT_DEPLOYMENT_REPORT
 Scope: Application Snapshots System — Applicant Completeness View + Employer Applicant Card  
-Deployment: FE 76c545e / BE faa2232  
+Deployment: FE 76c545e / BE faa2232 (Sessions 1–2); FE 20a44c5 / BE 422d340 (Session 3)
 Date: 2026-06-24  
 Auditor: OPTIMIZE command (recent deployment mode)
 
@@ -10,164 +10,71 @@ Auditor: OPTIMIZE command (recent deployment mode)
 
 **Session 1 (prior):** Employer-side audit — `job-applicants.component.html` + `job-applicants.component.scss`. Applied: `aria-live`, badge `aria-label`s, snapshot card region label. Build: PASS.
 
-**Session 2 (this run):** Applicant-side audit — `applicant-applications.component.ts/html/scss`. Applied: `@keyframes` name collision fix, `aria-live` on snapshot container, `trackBy` on tip loops. Build: PASS.
+**Session 2 (prior):** Applicant-side audit — `applicant-applications.component.ts/html/scss`. Applied: `@keyframes` name collision fix, `aria-live` on snapshot container, `trackBy` on tip loops. Build: PASS.
+
+**Session 3 (this run):** Deep correctness audit of `getApplicantApplicationSnapshotsBatch` (BE) + subscription lifecycle (FE). Applied: explicit `::text[]` cast on all `ANY($1)` queries, named `snapshotsSub` to close subscription leak, `:focus-visible` on CTA link. Build: PASS.
 
 ---
 
-## 1. Performance Audit
+## Session 3 — Findings
 
-### 1.1 `snapshotFor()` method calls per change-detection cycle
+### F1 — `ANY($1)` missing explicit type cast [APPLIED]
+**Severity**: Low / best practice  
+**Location**: `applicationController.js` lines 185, 201, 205  
+**Detail**: `pg` 8.7.3 natively serializes a JS string array to a PostgreSQL array for `ANY($1)`, so queries work at runtime without a cast. However, without an explicit `::text[]` cast PostgreSQL must infer the element type from context. The columns are `varchar`; a future column-type change or a DB planner upgrade could cause implicit-cast failures. Adding `::text[]` makes the contract explicit and mirrors industry best practice for parameterized array queries.  
+**Fix**: Changed all three `ANY($1)` occurrences to `ANY($1::text[])` in `getApplicantApplicationSnapshotsBatch`.
 
-**Finding: ACCEPTABLE — single Map.get(), called twice per row max.**
+### F2 — Anonymous snapshot subscription leak [APPLIED]
+**Severity**: Low / technical debt  
+**Location**: `applicant-applications.component.ts` `loadSnapshots()`  
+**Detail**: The HTTP subscription from `getApplicationSnapshots()` was stored in an anonymous variable. If the user navigated away before the HTTP response arrived, the callback still fired, writing to a detached component's `snapshotsMap`. Angular's change detection does not crash from this, but it is a dangling-subscription pattern that would trigger `takeUntilDestroyed` warnings in Angular 17+ and creates hard-to-diagnose state in tests.  
+**Fix**: Stored the subscription in `private snapshotsSub: Subscription | null`. Added `snapshotsSub?.unsubscribe()` to both `retry()` and `ngOnDestroy()`.
 
-`snapshotFor(app.jobApplicationId)` is called at most twice per row per CD cycle:
-- Once for `*ngIf="snapshotFor(app.jobApplicationId) as snap"` (the outer guard)
-- Once resolved via the `as snap` alias for inner bindings (no second method call — the `as` alias captures the result once)
+### F3 — Missing `:focus-visible` style on CTA link [APPLIED]
+**Severity**: Low / accessibility (WCAG 2.4.7)  
+**Location**: `applicant-applications.component.scss` `.app-snapshot-cta`  
+**Detail**: The "Update your profile" routerLink had hover styles but no `:focus-visible` rule. Many global CSS resets and some browser defaults suppress the native focus ring on `<a>` elements. Keyboard users tabbing to this link would see no visible focus indicator.  
+**Fix**: Added `:focus-visible { outline: 2px solid $color-global-red-buttons; outline-offset: 2px; }` and `border-radius: 2px` to round the focus ring. Uses the brand color for visual consistency.
 
-`Map.get()` is O(1). With typical applicant list sizes (under 50 applications), the total cost per CD cycle is negligible. No memoization needed.
+### F4 — Arrow `→` already screen-reader friendly [VERIFIED — no change]
+**Severity**: Low / accessibility  
+**Location**: `applicant-applications.component.html` line 60  
+**Detail**: The `→` was already wrapped in `<span aria-hidden="true">` in current HEAD (a prior automated pass applied this). The link text "Update your profile" is read cleanly by screen readers without the arrow character. No further change required.
 
-**Note:** Angular's default `Zone.js` triggers change detection on any async event (HTTP, setTimeout, DOM events). Because `snapshotsLoaded` gates the inner template, the `snapshotFor()` call only evaluates when `snapshotsLoaded` is true — after which the map is frozen (no further writes). The cost is bounded.
+### F5 — Prototype pollution via `snapshots[id]` [DEFERRED — negligible risk]
+**Severity**: Theoretical / effectively zero  
+**Location**: `applicationController.js` `getApplicantApplicationSnapshotsBatch`  
+**Detail**: `snapshots[id] = { ... }` in a `forEach` could theoretically pollute `Object.prototype` if `id === '__proto__'`. In practice, `verifiedIds` contains only values returned by the database from `job_applicants.job_application_id` — which are varchar IDs generated by the application itself. A malicious value in the query string would not match any DB row and never reach `verifiedIds`. Risk is zero at the current code path. Using `Object.create(null)` would change the JSON serialization shape (no `hasOwnProperty`) and is not warranted.
 
-**Verdict:** No optimization needed. The pattern is correct.
-
-### 1.2 `*ngIf="snapshotFor(id) as snap"` with null values
-
-**Finding: CORRECT — null → `#snapSilent` branch.**
-
-When `snapshotsMap.has(id)` is true but value is `null` (API error / catchError path), `snapshotFor()` returns `null`. Angular's `*ngIf ... as snap` evaluates the falsy null, renders `#snapSilent` (empty), and shows nothing. This is the intended "silent failure" behavior documented in the template comment.
-
-**Edge case verified:** If `snapshotsMap.has(id)` is false (app was filtered out in `loadSnapshots`), `Map.get()` returns `undefined`, and `?? null` normalizes it to null. Same result: `#snapSilent`.
-
-### 1.3 `forkJoin` over N snapshot calls
-
-**Finding: EFFICIENT — all N calls parallel, unblocked by order.**
-
-`loadSnapshots()` uses `forkJoin(calls)` which fires all N HTTP requests concurrently and resolves when all complete. `snapshotsLoaded` is set to true only then. This is correct: the template shows a single skeleton (not N skeletons) until all are ready.
-
-**Acceptable trade-off:** For a user with 20+ applications, N=20 concurrent snapshot calls fire at once. At current scale this is fine. If scale requires it, a batched endpoint could replace this, but that is an architectural change beyond this scope.
-
----
-
-## 2. @keyframes Name Collision
-
-**Finding: REAL BUG — two `@keyframes gh-shimmer` definitions in global CSS scope.**
-
-Angular's `ViewEncapsulation.Emulated` scopes class selectors to component shadow DOM (using `_ngcontent-xxx` attribute selectors), but `@keyframes` are NOT scoped — they compile into the global CSS scope. Both files defined:
-
-```scss
-@keyframes gh-shimmer { ... }
-```
-
-- `applicant-applications.component.scss` — used -200px / calc(200px + 100%) offsets
-- `job-applicants.component.scss` — used -400px / 400px offsets (different values)
-
-Whichever loaded last would win globally, potentially breaking the shimmer animation on the component that loaded first.
-
-**Fix applied:** Renamed in `applicant-applications.component.scss` to `gh-app-shimmer` and updated the `animation:` reference. The employer-side `gh-shimmer` is left intact (it is the more complete implementation with `%gh-skeleton-base`, `ambient-motion-safe`, etc.).
+### F6 — Comma in IDs would break `getApplicationSnapshots` parsing [DEFERRED — theoretical]
+**Severity**: Very low / theoretical  
+**Location**: `application.service.ts` `getApplicationSnapshots()`  
+**Detail**: `ids.map(id => encodeURIComponent(id)).join(',')` — if an application ID contained a literal comma, the BE split on `,` would fragment it. UUIDs and the project's varchar IDs never contain commas; this is a theoretical-only risk. Noted for documentation; no fix warranted.
 
 ---
 
-## 3. Accessibility Audit
-
-### 3.1 `aria-live` on async snapshot container (applicant side)
-
-**Finding: MISSING — added.**
-
-The `.app-snapshot` div loaded async content after the initial page render, but had no `aria-live` attribute. Screen readers would not announce the snapshot when it appeared.
-
-**Fix applied:** Added `aria-live="polite" aria-atomic="true"` to the `.app-snapshot` container.
-
-Note: The employer-side snapshot card had this fixed in Session 1 (pre-existing fix in the current file state).
-
-### 3.2 Level badges — text equivalents
-
-**Finding: ADEQUATE — both color and text are present.**
-
-The completeness-level badge renders `{{ snap.completenessLevel | titlecase }}` (visible text) alongside the color class. Color is NOT the sole conveyor of meaning. `[attr.aria-label]` is already present on the badge (`'Completeness level: ' + snap.completenessLevel`), so screen readers get both context and value.
-
-**Additional finding:** The `incomplete` level now renders as "Getting started" via an inline ternary (pre-applied by linter pass), which is more user-friendly than the raw internal label.
-
-### 3.3 Loading skeleton announcement
-
-**Finding: ADEQUATE — `role="status"` and `aria-label` already present.**
-
-The skeleton div has `role="status" aria-label="Loading application snapshot"`. With the `aria-live="polite"` added to its parent (Fix 3.1 above), screen readers will correctly announce the loading state.
-
----
-
-## 4. Angular Template Pattern Audit
-
-### 4.1 `*ngFor trackBy` on tip loops
-
-**Finding: MISSING — added.**
-
-Both `*ngFor="let tip of snap.missingRequired"` and `*ngFor="let tip of snap.missingRecommended"` lacked `trackBy`. Without it, Angular re-creates all DOM nodes in the list on every change detection cycle where the reference changes.
-
-**Fix applied:** Added `trackBy: trackByTipReason` to both loops, with a new component method:
-```ts
-trackByTipReason(_index: number, tip: any): string {
-  return tip?.reason ?? String(_index);
-}
-```
-
-`tip.reason` is the natural stable identity (the string explaining what is missing). Falls back to index for any tip without a reason field.
-
-### 4.2 `*ngFor="let tag of job?.tags, 'skill_requirements'"` in job-applicants
-
-**Finding: PRE-EXISTING SYNTAX — no change.**
-
-The `'skill_requirements'` literal in the `ngFor` expression is dead syntax (it has no effect in Angular's `ngFor` directive). It is pre-existing and not introduced by this deployment. Removing it would change no behavior. Deferred as it is out of scope.
-
----
-
-## 5. SCSS Audit
-
-### 5.1 `@import "src/assets/styles/colors"` path
-
-**Finding: CORRECT — established project convention.**
-
-Over 60 component SCSS files in the project use this exact import path. Angular's SCSS loader resolves it from the workspace root (`src/`). The file exists at `src/assets/styles/colors.scss`. No issue.
-
-### 5.2 `@keyframes gh-shimmer` conflict (see §2 above)
-
-**Fixed** — renamed to `gh-app-shimmer` in the applicant component.
-
-### 5.3 `@keyframes` in global scope vs. component scope
-
-**Finding: Note for future work.**
-
-`@keyframes gh-snapshot-fadein` (employer side, `job-applicants.component.scss`) and `@keyframes app-snapshot-fadein` (applicant side, post-linter pass) use distinct names — no collision. The naming convention (`gh-` prefix for employer, `app-` prefix for applicant) is now consistent.
-
----
-
-## 6. Employer Card Residual Issues Audit
-
-**Finding: NO RESIDUAL CONFLICTS from prior BRAND/OPTIMIZE agent edits.**
-
-`job-applicants.component.html` (employer side) was reviewed for conflicts:
-- `aria-live="polite"` wrapper is present and correct (added in Session 1)
-- Badge `aria-label` bindings on both completeness and match-level badges: present and correct
-- `role="region" aria-label="Application snapshot summary"` on the card: present and correct
-- `gh-snapshot-skeleton` / `gh-skeleton-line` / `gh-skeleton-badge` classes: all defined in `job-applicants.component.scss`
-- `@keyframes gh-shimmer` in `job-applicants.component.scss`: retained, now distinct from the renamed `gh-app-shimmer` in applicant side
-
-No duplicate keyframe collision remains in the codebase.
-
----
-
-## 7. Summary of Findings (Both Sessions)
+## Summary of All Sessions
 
 | # | Finding | Severity | Session | Action |
 |---|---------|----------|---------|--------|
-| 1 | `@keyframes gh-shimmer` defined in 2 component SCSS files — global scope collision | Medium | 2 | Fixed (renamed applicant to `gh-app-shimmer`) |
-| 2 | `aria-live` missing on applicant-side snapshot container | Low/a11y | 2 | Fixed |
-| 3 | `trackBy` missing on `missingRequired`/`missingRecommended` `ngFor` loops | Low/perf | 2 | Fixed |
-| 4 | `aria-live` missing on employer-side snapshot loading state | Low/a11y | 1 | Fixed (prior session) |
-| 5 | `aria-label` missing on completeness + match badges (employer) | Low/a11y | 1 | Fixed (prior session) |
-| 6 | `snapshotFor()` called multiple times per row | Info | 2 | No action — O(1) Map.get(), acceptable |
-| 7 | `*ngIf ... as snap` with null return | Info | 2 | Verified correct — null → `#snapSilent` |
-| 8 | `forkJoin` N concurrent HTTP calls | Low | 2 | Acceptable at current scale; deferred batch endpoint |
-| 9 | `jobDetails()` over-fetch on snapshot fire-and-forget path | Medium/perf | 1 | Deferred — requires new service method |
-| 10 | No composite index `(application_id, created_at)` | Low/perf | 1 | Deferred — low risk at current volume |
-| 11 | `hasAnyMatchSignal()` method call per CD cycle | Low/perf | 1 | Deferred — negligible at current list sizes |
-| 12 | `ngFor, 'skill_requirements'` dead syntax (pre-existing) | Info | 2 | Deferred — no behavior change |
+| S1-1 | `aria-live` missing on employer snapshot loading state | Low/a11y | 1 | Fixed |
+| S1-2 | `aria-label` missing on employer completeness badge | Low/a11y | 1 | Fixed |
+| S1-3 | `aria-label` missing on employer match-level badge | Low/a11y | 1 | Fixed |
+| S1-4 | Snapshot card region label improvement | Low/a11y | 1 | Fixed |
+| S2-1 | `@keyframes gh-shimmer` global-scope collision between 2 components | Medium | 2 | Fixed |
+| S2-2 | `aria-live` missing on applicant-side snapshot container | Low/a11y | 2 | Fixed |
+| S2-3 | `trackBy` missing on `missingRequired`/`missingRecommended` loops | Low/perf | 2 | Fixed |
+| S3-1 | `ANY($1)` missing `::text[]` cast (3 occurrences) | Low/best practice | 3 | Fixed |
+| S3-2 | Anonymous snapshot subscription not cleaned up on destroy | Low/technical debt | 3 | Fixed |
+| S3-3 | Missing `:focus-visible` on CTA link | Low/a11y | 3 | Fixed |
+| S3-4 | Arrow `→` already has `aria-hidden` | Low/a11y | 3 | Verified OK — no change |
+| S3-5 | Prototype pollution via `snapshots[id]` | Theoretical | 3 | Deferred — risk is zero |
+| S3-6 | Comma-in-ID would break query string parsing | Theoretical | 3 | Deferred — IDs never contain commas |
+
+---
+
+## Build Results
+
+- Session 1: PASS
+- Session 2: PASS
+- Session 3: PASS — `ng build --configuration production`, 19161ms, zero new errors or warnings

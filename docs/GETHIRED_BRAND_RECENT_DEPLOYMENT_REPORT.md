@@ -1,83 +1,142 @@
 # GetHired BRAND — Recent Deployment Review
-**Scope:** Applicant Completeness View (FE 76c545e, BE faa2232)
+**Scope:** Applicant Applications Snapshot UI — polish pass (FE 20a44c5, BE 422d340)
 **Date:** 2026-06-24
+**Reviewer:** BRAND command (post-deploy review)
+
+---
+
+## Summary
+
+```
+BRAND RECENT DEPLOYMENT completed: yes
+Files changed: applicant-applications.component.html, applicant-applications.component.scss
+States covered: loading: yes / success: yes / null: yes / error: yes
+Visual polish fixes: 3
+```
+
+---
+
+## State Coverage Audit
+
+| State | Trigger | Template node | Status |
+|---|---|---|---|
+| Loading | `snapshotsLoaded === false` | `.app-snapshot-skeleton` (3-element shimmer) | PASS |
+| Success | `snap.hasSnapshot === true` | `.app-snapshot-score` + `.app-snapshot-badge` + tip blocks | PASS |
+| Null (pre-deployment app) | `snap.hasSnapshot === false` | `.app-snapshot-empty` italic message | PASS |
+| Error (batch catchError → empty map) | `snapshotFor()` returns `null` | `#snapSilent` → `.app-snapshot-unavailable` | PASS |
+
+All 4 states are correctly guarded. No regressions introduced by the batch-load refactor.
+
+---
+
+## Batch-Reveal Assessment
+
+The batch call (`snapshotsLoaded` flag) replaces the previous `forkJoin` per-call pattern. All rows transition from skeleton to content simultaneously.
+
+**Assessment: acceptable.** Simultaneous reveal is visually coherent — all skeletons appear together, all content appears together. No row is stranded in a loading state while adjacent rows display data. The `app-snapshot-fadein` animation (220ms, decelerate curve) softens the transition. Staggered per-row reveal would require re-introducing per-item observables — a larger architectural change than this scope permits.
+
+---
+
+## Fixes Applied
+
+### Fix 1 — CTA margin-top (6px → 8px)
+
+**File:** `applicant-applications.component.scss`
+
+**Issue:** `.app-snapshot-cta` ("Update your profile →") had `margin-top: 6px`. The `<ul>` above has no bottom margin, placing the CTA immediately flush against the last `<li>`. It read as another list item rather than a distinct action link.
+
+**Fix:** `margin-top: 8px` — 2px increase gives clear separation without over-spacing inside the amber tips box.
+
+**Note on class:** `.app-snapshot-cta` is correct for this element. It is an `<a routerLink>`, not a `<button>`. Using `.btn-link-cta` would be semantically wrong (`.btn-link-cta` has `background: none; border: none; cursor: pointer` — button resets — not appropriate for an anchor element).
+
+**Linter bonus:** A `&:focus-visible` rule was added to `.app-snapshot-cta` by the linter, providing a visible keyboard focus ring (`outline: 2px solid $color-global-red-buttons; outline-offset: 2px`). This was retained — it meets WCAG 2.4.7 and was not present before this pass.
+
+---
+
+### Fix 2 — Privacy note spacing between consecutive disclaimers
+
+**File:** `applicant-applications.component.html` and `.scss`
+
+**Issue:** Two `<p class="app-snapshot-disclaimer">` elements — `disclaimerNote` and `privacyNote` — both use `margin: 6px 0 0`. The second paragraph's `margin-top` is computed from the first paragraph's content edge, meaning zero gap between the two lines. They appeared as a single block of fine-print with no visual break.
+
+**Fix (HTML):** Added BEM modifier class `app-snapshot-disclaimer--privacy` to the second paragraph.
+
+```html
+<!-- before -->
+<p class="app-snapshot-disclaimer" *ngIf="snap.privacyNote">{{ snap.privacyNote }}</p>
+
+<!-- after -->
+<p class="app-snapshot-disclaimer app-snapshot-disclaimer--privacy" *ngIf="snap.privacyNote">{{ snap.privacyNote }}</p>
+```
+
+**Fix (SCSS):** Added `&--privacy { margin-top: 4px; }` nested inside `.app-snapshot-disclaimer`.
+
+---
+
+### Fix 3 — Privacy note de-emphasis via lighter color
+
+**File:** `applicant-applications.component.scss`
+
+**Issue:** Both disclaimer paragraphs shared `color: #9ca3af`, giving equal visual weight to the actionable disclaimer (which applicants should read) and the privacy note (secondary legalese). The bottom of each card felt like information overload with two indistinguishable fine-print lines.
+
+**Fix:** `&--privacy { color: #b0b7c3; }` — a lighter grey that clearly subordinates the privacy note. The disclaimer remains readable at its current 10px size; the privacy note recedes without disappearing.
+
+**Alternative considered and rejected:** Show `privacyNote` only on the first card (index === 0 in the `*ngFor`). Rejected — requires TypeScript logic change and `$index` wiring in the template; not a safe single-file fix.
+
+---
+
+## Arrow Glyph (F4 — no action required)
+
+The `→` glyph was already wrapped in `<span aria-hidden="true">→</span>` by the linter between the prior read and this session. This is the correct pattern: screen readers announce "Update your profile" without the directional character; sighted users see the affordance. No further action required.
 
 ---
 
 ## Files Changed
 
-| File | Change summary |
-|------|---------------|
-| `src/app/applicant-panel/applicant-applications/applicant-applications.component.html` | Expanded skeleton (1 line → 3 elements); added `app-snapshot-reveal` to score div, tip blocks, and disclaimer; replaced empty `#snapSilent` template with soft "Snapshot unavailable right now." message |
-| `src/app/applicant-panel/applicant-applications/applicant-applications.component.scss` | Added `@import "src/assets/styles/motion"`; restructured skeleton to `flex-direction: column`; extracted `%app-skeleton-base` shimmer mixin; added `.app-skeleton-line--medium`, `.app-skeleton-badges`, `.app-skeleton-badge`, `.app-skeleton-badge--wide`; added `@keyframes app-snapshot-fadein` + `.app-snapshot-reveal` using `$motion-duration-card` / `$motion-ease-decelerate` tokens; added `.app-snapshot-unavailable` style; added inline comment explaining tip-block color rationale |
-
----
-
-## State Coverage
-
-| State | Before | After | Notes |
-|-------|--------|-------|-------|
-| Loading | Yes | Yes | Skeleton expanded from 1 line to 3 elements hinting at score + badge shape |
-| Success | Yes | Yes | Unchanged |
-| Null / pre-deployment | Yes (`app-snapshot-empty` paragraph) | Yes | Unchanged |
-| Error — snapshot fetch failed | No (silent empty template) | Yes | Soft italic "Snapshot unavailable right now." — no alarming color or icon |
-
----
-
-## Motion Improvements
-
-**Count: 4**
-
-1. **Skeleton shimmer upgraded** — switched from `background-size: 200px` (too narrow, clipping) to 800px sweep matching employer card. Added `@include ambient-motion-safe` so shimmer is suppressed under `prefers-reduced-motion: reduce`, leaving a static grey placeholder.
-2. **`.app-snapshot-reveal` fade-in** — new `@keyframes app-snapshot-fadein` (opacity 0→1, translateY 4px→0). Applied to score block, both tip blocks, and disclaimer simultaneously. Uses `$motion-duration-card` (220ms) and `$motion-ease-decelerate` from `_motion.scss` — mirrors `.gh-snapshot-reveal` on the employer card exactly.
-3. **`@include motion-safe`** wraps `.app-snapshot-reveal` so transition is removed entirely under reduced-motion preference (not just slowed).
-4. **Skeleton structural alignment** — skeleton container changed from `flex-direction: row` (all one line) to `flex-direction: column` with `gap: 6px`. Three elements now flow vertically: label line → badge row → disclaimer line. Visual footprint matches loaded state.
-
----
-
-## Employer Card Verification (job-applicants.component.html / .scss)
-
-All BRAND changes from last cycle confirmed **intact** after combined commit:
-
-- `aria-live="polite" aria-atomic="true"` wrapper on snapshot card: present (line 69)
-- 3-element skeleton (short line + 2 badges + long line): present (lines 72-77)
-- `.gh-snapshot-reveal` fade-in class on data container: present (line 85)
-- `.gh-snapshot-badge` capitalize + font-size polish in SCSS: present (lines 128-132)
-- `@import "src/assets/styles/motion"` in employer SCSS: present (line 2)
-- `gh-shimmer` keyframe + `%gh-skeleton-base` + `ambient-motion-safe`: present (lines 139-173)
-
-No regressions detected.
+| File | Change |
+|---|---|
+| `applicant-applications.component.html` | Added `app-snapshot-disclaimer--privacy` modifier class to privacyNote paragraph |
+| `applicant-applications.component.scss` | `margin-top: 6px → 8px` on `.app-snapshot-cta`; added `&--privacy` block on `.app-snapshot-disclaimer` with `margin-top: 4px` and `color: #b0b7c3` |
 
 ---
 
 ## Top 5 Brand Findings
 
-### 1. Skeleton shape mismatch (fixed)
-**Before:** 1 short grey line (140px, horizontal). The loaded state reveals a label, a percentage + badge row, tip blocks, and a disclaimer — visually much taller. The skeleton gave no hint of this layout.
-**After:** 3-element column skeleton mirrors the loaded shape. Layout shift is minimised, perceived load is faster.
+### 1. CTA visual separation from tip list (fixed)
+The "Update your profile →" link sat 6px below the last bullet point — not enough to read as a distinct call-to-action. The amber-background tips block is compact (12px font, 8px padding), so even a small gap matters. 8px is the minimum to create a scannable visual break.
 
-### 2. Silent error state (fixed)
-**Before:** When the snapshot fetch failed, `#snapSilent` rendered absolutely nothing — no visual difference from "loading completed but found nothing." Silent failure is indistinguishable from a genuine null state, which undermines trust.
-**After:** "Snapshot unavailable right now." in the same italic grey style as the pre-deployment empty message. Calm, consistent, not alarming.
+### 2. Two consecutive fine-print lines with no spacing (fixed)
+`disclaimerNote` and `privacyNote` at 10px grey with zero gap between them read as one undifferentiated wall of micro-text. The 4px gap and color shift to `#b0b7c3` on the privacy note creates a clear two-tier hierarchy: "what this score means" (disclaimer) above "how your data is used" (privacy note).
 
-### 3. Abrupt score reveal (fixed)
-**Before:** `.app-snapshot-score` appeared instantly with no transition. On slow network connections, the jump from skeleton to full score panel was jarring.
-**After:** `.app-snapshot-reveal` applies to score block + tip blocks + disclaimer simultaneously. 220ms decelerate curve matches the employer card — both sides of the product now feel like the same system.
+### 3. Privacy note information overload (partially addressed)
+The privacy note appears on every card in a list. On an applicant with 5+ applications, this means the same privacy legalese repeats 5+ times. The color de-emphasis reduces the visual noise. A more complete solution — showing the note only on the first card, or in a page-level callout — is deferred (requires TS logic change).
 
-### 4. Motion token adoption gap (fixed)
-**Before:** The component SCSS imported only `colors`; it did not import `_motion.scss`. The shimmer used a 200px background-size (narrower than the employer card's 800px sweep) and had no reduced-motion guard.
-**After:** `@import "src/assets/styles/motion"` added. Shimmer uses `%app-skeleton-base` which wraps `@include ambient-motion-safe`. All reveal animations use `$motion-duration-card` and `$motion-ease-decelerate` directly. Motion system is now consistent across both views.
+### 4. Batch reveal is coherent (no action)
+Simultaneous skeleton-to-content transition across all rows is the correct UX choice for a batch API call. It sets user expectation that snapshot data loads as a group, not individually. The 220ms `app-snapshot-fadein` animation provides sufficient softening. No change needed.
 
-### 5. Tip block color rationale (documented, not changed)
-The amber (`#f59e0b` / `#fff7ed`) and sky (`#38bdf8` / `#f0f9ff`) left-bordered tip blocks use colors outside the brand red. This is intentional: they are informational signals, not action prompts. Using brand red here would imply interactive affordance. A comment was added in the SCSS to record this decision for future contributors. No color change made.
+### 5. Focus ring now present on CTA (linter addition, retained)
+The "Update your profile" link previously had no `:focus-visible` style. The linter added `outline: 2px solid $color-global-red-buttons; outline-offset: 2px` — matching the brand red and meeting WCAG 2.4.7 (Focus Visible). This is a meaningful a11y improvement surfaced during this review pass.
+
+---
+
+## Deferred / Out of Scope
+
+| Item | Reason deferred |
+|---|---|
+| Show `privacyNote` only on first card | Requires `$index` in `*ngFor` and TS binding — not a safe one-line fix |
+| Collapsible privacy note | Requires toggle state and animation — architecture change |
+| Per-row skeleton reveal | Requires restoring per-item observable chain — larger refactor |
+| Upgrade CTA to `.btn-cta-primary` weight | Would shift visual hierarchy significantly; current secondary weight inside the amber tips box is intentional |
 
 ---
 
 ## ng build Note
 
-`ng build` should be run after these changes. Expected: clean build. Verification points:
-- `@import "src/assets/styles/motion"` resolves correctly (same pattern as `job-applicants.component.scss`)
-- `%app-skeleton-base` SCSS placeholder extend resolves with no circular-import warning
-- `$motion-duration-card` and `$motion-ease-decelerate` variables are in scope
+All changes are SCSS and HTML only. No TypeScript modified.
+
+Expected: clean build. Verification points:
+- `&--privacy` nested inside `.app-snapshot-disclaimer` — valid SCSS BEM nesting, no new imports required
+- `color: #b0b7c3` is a raw hex, not a Sass variable — resolves without import
+- `margin-top: 8px` on `.app-snapshot-cta` — no dependencies
 
 No new npm dependencies introduced.

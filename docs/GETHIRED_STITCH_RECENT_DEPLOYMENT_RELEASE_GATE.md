@@ -1,69 +1,58 @@
 # GETHIRED STITCH — Recent Deployment Release Gate
-## Deployment: Applicant Completeness View (FE 76c545e / BE faa2232)
-**Date:** 2026-06-24
-**Gate evaluator:** STITCH v2 — integration-safety review
+## Deployment: Batch Snapshot Endpoint (FE 20a44c5 / BE 422d340)
+**Date:** 2026-06-24  
+**Gate evaluator:** STITCH v2 — integration-safety review  
+**Verdict: SHIP**
 
 ---
 
 ## Gate Results
 
-| Gate | Description | Result |
-|------|-------------|--------|
-| A — URL contract | FE URL matches BE route path exactly | PASS |
-| B — Key names | All field names FE reads exist in BE response with correct types | PASS |
-| C — jobApplicationId | FE receives `jobApplicationId` from `getMyApplications()` | PASS |
-| D — Null safety | Failed snapshot → silent, row intact, list unbroken | PASS |
-| E — forkJoin safety | Empty array handled before forkJoin called | PASS |
-
-**Overall gate: PASS — deployment is integration-safe.**
+| ID | Gate | Files | Result | Notes |
+|----|------|-------|--------|-------|
+| A | Route `GET /applicant/application/snapshots` registered with `verifyAuth` | `applicationRoute.js` line 42 | **PASS** | Exact path match. Auth present. |
+| B | FE reads `res?.data?.snapshots` — correct nesting for raw `HttpClient` response | `base.service.ts`, `applicant-applications.component.ts` line 56 | **PASS** | `BaseService.get` is a pass-through; no unwrapping. Wire payload nesting confirmed. |
+| C | Non-existent IDs absent from map → `snapshotFor()` returns `null` → `#snapSilent` rendered | `applicationController.js` lines 189-191, component `snapshotFor()` | **PASS** | Silent exclusion is correct; ownership-safe; no enumeration oracle. |
+| D | 51+ IDs → HTTP 400 caught by `catchError(() => of({}))` → graceful degradation | `applicationController.js` line 175, component line 57 | **PARTIAL** | Degradation is graceful (no crash, no user error). Silent badge loss for 51+ apps. Batching fix deferred. |
+| E | `encodeURIComponent` is no-op on UUIDs; Express auto-decodes; no double-encoding | `application.service.ts` line 29, Express query parsing | **PASS** | UUIDs are hex+hyphen only. RFC 3986 unreserved chars. No encoding ambiguity. |
 
 ---
 
-## Gate Evidence
+## Verdict Rationale
 
-### Gate A — URL contract
-- FE sends: `${environment.api_url}/applicant/application/snapshot?applicationId=...`
-- `api_url` in all environments: ends in `/api` (confirmed `environment.ts`, `environment.prod.ts`, `environment.staging.ts`)
-- BE mount: `server.js` line 47 → `app.use("/api", applicationRoutes)`
-- BE route: `applicationRoute.js` line 39 → `router.get("/applicant/application/snapshot", verifyAuth, getApplicantApplicationSnapshot)`
-- Resolved: `GET /api/applicant/application/snapshot` — **exact match** with FE URL
+**4 gates PASS. 1 gate PARTIAL.**
 
-### Gate B — Key names
-All keys the FE template reads are confirmed present in `getApplicantApplicationSnapshot()` response:
+Gate D (51+ IDs) is the only gap. The degradation path is confirmed graceful: no exception is thrown, no user-visible error appears, the page renders correctly (badges show "no snapshot" state). The failure mode only manifests for applicants with more than 50 submitted applications — an uncommon edge case at current product scale.
 
-| FE access | BE field | Source | Status |
-|-----------|----------|--------|--------|
-| `snap.hasSnapshot` | `hasSnapshot: !!snap` | applicationController.js line 88 | PASS |
-| `snap.completenessScore` | `completenessScore: comp ? comp.completeness_score : null` | line 90 | PASS |
-| `snap.completenessLevel` | `completenessLevel: comp ? comp.completeness_level : null` | line 91 | PASS |
-| `snap.missingRequired` | `missingRequired: comp ? comp.missing_required : null` | line 93 | PASS |
-| `snap.missingRequired[i].reason` | `{ field, label, reason }` objects in JSONB column | applicationSnapshotService.js scoreApplicationCompleteness() | PASS |
-| `snap.missingRecommended` | `missingRecommended: comp ? comp.missing_recommended : null` | line 94 | PASS |
-| `snap.missingRecommended[i].reason` | `{ field, label, reason }` objects in JSONB column | applicationSnapshotService.js | PASS |
-| `snap.disclaimerNote` | `disclaimerNote: "Application completeness..."` | line 95 (hardcoded) | PASS |
+The fix (FE-side batching) requires a non-trivial change to the component and is outside the small/safe/additive scope of this STITCH pass. It is documented in the Fix Log as DEFERRED-1 with a complete code recommendation.
 
-JSONB auto-parse note: `missing_required` and `missing_recommended` are stored as `jsonb` (confirmed `application_snapshots_ddl.sql` line 68). `node-postgres` (`pg`) automatically deserializes `jsonb` columns to JS objects/arrays — no manual `JSON.parse()` gap.
-
-### Gate C — jobApplicationId
-- `getMyApplications()` → `GET /api/candidates/appliedjobslist` → `getJobAppliedList()` → `listOfAppliedJobsById(uid)` → `mappedApplication(row)`
-- `candidate.service.js` line 212: `jobApplicationId: raw.job_application_id`
-- FE filter: `this.applications.filter(app => !!app.jobApplicationId)` — correctly typed, non-null key present on all returned rows
-
-### Gate D — Null safety
-- `catchError(() => of({ id: app.jobApplicationId, data: null }))` — all errors produce `null` data entry
-- `snapshotFor(id)` returns `null` for failed entries
-- `*ngIf="snapshotFor(app.jobApplicationId) as snap; else snapSilent"` — `null` is falsy → falls through to `#snapSilent` (empty template)
-- Application row fields (`jobTitle`, `companyName`, status, message thread) are outside `.app-snapshot` and unaffected
-
-### Gate E — forkJoin safety
-- Component lines 44-47: explicit `if (appsWithIds.length === 0) { this.snapshotsLoaded = true; return; }` before `forkJoin(calls)`
-- `forkJoin` is never called with an empty array
-- Even if the guard were absent: `forkJoin([])` in RxJS completes immediately with `[]`, which would correctly set `snapshotsLoaded = true`
+**This deployment is safe to ship.**
 
 ---
 
-## Release Recommendation
+## Known Gaps Carried Forward
 
-**CLEARED FOR PRODUCTION.**
+| Ref | Gap | Risk | Owner |
+|-----|-----|------|-------|
+| DEFERRED-1 | No FE guard on 51+ IDs — silent badge loss | Low (rare edge case, graceful degradation) | FE team — next sprint |
+| DEFERRED-2 | `successMessage` singleton mutation tech debt | Latent (no current bug) | BE team — batch refactor |
 
-The Applicant Completeness View integration is correct as deployed. No fixes required. No open integration gaps.
+---
+
+## Merge Checklist
+
+- [x] Route registered and auth-guarded
+- [x] Response shape matches FE read path
+- [x] Missing IDs degrade silently to `#snapSilent`
+- [x] Error path (400) caught by `catchError` — no crash
+- [x] No double-encoding on UUID IDs
+- [x] Ownership enforced server-side (candidate_id === uid)
+- [x] N+1 eliminated (3 queries total vs N*2 previously)
+- [ ] FE batching for 51+ IDs (DEFERRED-1)
+- [ ] successMessage singleton refactor (DEFERRED-2, tech debt)
+
+---
+
+## Blocking Issues
+
+**None.** The deployment may proceed.
