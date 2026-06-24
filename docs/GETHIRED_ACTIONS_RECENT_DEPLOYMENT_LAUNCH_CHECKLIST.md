@@ -1,8 +1,8 @@
 # GETHIRED — Launch Checklist
-## Application Snapshots System — Batch Endpoint + Backfill + CTA Cycle
+## Applicant Completeness UI — Badge + Card + Detail Route Cycle
 **Generated:** 2026-06-24
-**Deployment:** FE 20a44c5 / BE 422d340
-**Supersedes:** Previous launch checklist (FE 76c545e / BE faa2232)
+**Deployment:** FE 5ab9a05 / BE 422d340 (BE unchanged from prior cycle)
+**Supersedes:** Previous launch checklist (FE 20a44c5 / BE 422d340)
 
 ---
 
@@ -10,202 +10,202 @@
 
 Work through each item in order. Do not mark an item complete without direct verification. Items marked BLOCKED must be resolved before the deployment is considered production-ready. Sections 1 and 2 are hard prerequisites — complete them before any other section.
 
+Section 6 (Backfill) must be completed after section 1 but can be done separately from the rest.
+
 ---
 
 ## 1. DB Migration Applied to Production
 
-> Hard prerequisite for this deployment and for running the backfill script. If the tables are missing, the batch endpoint (BE 422d340) will throw on every call, catchError will silence it, and all rows on "My Applications" will show "not available." The backfill script will crash immediately.
+> Hard prerequisite for ALL snapshot functionality. If the tables are missing: the batch endpoint returns 500s silenced by catchError (every applicant sees "not available"); the detail page single endpoint also returns null; the backfill script crashes immediately. This check was on the previous checklist and has not been confirmed closed — it remains the single most important action.
 
 - [ ] **1.1** Connect to the production database with read access.
 - [ ] **1.2** Run: `SELECT to_regclass('gethired.application_snapshots');` — result must NOT be null.
 - [ ] **1.3** Run: `SELECT to_regclass('gethired.application_completeness_snapshots');` — result must NOT be null.
 - [ ] **1.4** Run: `SELECT to_regclass('gethired.match_snapshots');` — result must NOT be null.
 - [ ] **1.5** Run: `SELECT COUNT(*) FROM gethired.application_snapshots;` — must return without error.
-- [ ] **1.6** Verify the partial unique index exists: `SELECT indexname FROM pg_indexes WHERE tablename = 'application_snapshots' AND indexname = 'application_snapshots_application_id_source_unique';` — must return one row.
+- [ ] **1.6** Verify the partial unique index: `SELECT indexname FROM pg_indexes WHERE tablename = 'application_snapshots' AND indexname = 'application_snapshots_application_id_source_unique';` — must return one row.
 - [ ] **1.7** Record the timestamp the migration was applied and the person who applied it.
 
-**Status:** [ ] PASS / [ ] BLOCKED (apply `db/application_snapshots_ddl.sql` to production before proceeding to any other section)
+**Status:** [ ] PASS / [ ] BLOCKED — apply `db/application_snapshots_ddl.sql` to production before proceeding
 
 ---
 
-## 2. Both Repos Deployed in Sync (FE 20a44c5 + BE 422d340)
+## 2. Both Repos Deployed in Sync (FE 5ab9a05 + BE 422d340)
 
-> Verifies that the BE and FE changes are both live and compatible.
+> BE is unchanged from the prior cycle. The FE-only changes in this cycle add a new route and component. Confirm the FE is at the correct commit.
 
-- [ ] **2.1** Confirm the BE deployment at 422d340 includes: updated `controllers/applicationController.js` (with `getApplicantApplicationSnapshotsBatch` and the new route), updated `routes/applicationRoute.js` (with `GET /applicant/application/snapshots`), updated `services/applicationSnapshotService.js` (with companyId null guard), `scripts/backfill_application_snapshots.js`.
-- [ ] **2.2** Confirm the FE deployment at 20a44c5 includes: `ApplicantApplicationsComponent` using the batch endpoint (`getApplicationSnapshots` single call replacing forkJoin), `appsSub` subscription pattern, `ngOnDestroy`, "Update your profile" routerLink, `privacyNote` display.
-- [ ] **2.3** Check git HEAD of both repos on the production server or deployment platform — confirm both are at the expected commit SHAs.
-- [ ] **2.4** Confirm no pending migrations or BE restarts are needed.
+- [ ] **2.1** Confirm the FE deployment at 5ab9a05 includes:
+  - `ApplicantApplicationDetailComponent` in `src/app/applicant-panel/applicant-application-detail/`
+  - Route declared in `applicant-panel.module.ts` (path: `applications/:id`, component: `ApplicantApplicationDetailComponent`)
+  - `ApplicationCompletenessCardComponent` updated with `@Input() applicationId` and `onCtaClick()` analytics handler
+  - `applicant-applications.component.html` includes "View full details →" link passing router state
+  - `PublicPortalAnalyticsService` includes `trackApplicationCompletenessDetailViewed` (if added this cycle) or `trackApplicationCompletenessCtaClicked` (wired to CTA clicks)
+- [ ] **2.2** Confirm BE deployment at 422d340 is unchanged from prior cycle — no new endpoints or schema changes needed for this FE-only release.
+- [ ] **2.3** Check git HEAD on production for both repos — confirm FE at 5ab9a05, BE at 422d340.
+- [ ] **2.4** Confirm no pending BE restarts or migrations needed.
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
 ---
 
-## 3. Batch Snapshot Endpoint Tested
+## 3. New Detail Route: /user/applications/:id
 
-> Verifies the new batch endpoint operates correctly end-to-end.
+> Verifies the dedicated application detail page is accessible and functional.
 
-- [ ] **3.1** Log in as an applicant with at least two applications. Note their `jobApplicationId` values from the DB or from the network tab on `/user/applications`.
-- [ ] **3.2** Call `GET /applicant/application/snapshots?applicationIds=<id1>,<id2>` with a valid Bearer token. Expect HTTP 200 and `data.snapshots` as a map keyed by application ID.
-- [ ] **3.3** Verify each snapshot entry includes: `hasSnapshot`, `completenessScore`, `completenessLevel`, `missingRequired`, `missingRecommended`, `disclaimerNote`, `privacyNote`.
-- [ ] **3.4** Call with an applicationId owned by a different applicant mixed into the list. Verify that ID is silently omitted from the response (not a 403).
-- [ ] **3.5** Call with more than 50 IDs. Expect HTTP 400 "applicationIds must be a non-empty comma-separated list of up to 50 IDs."
-- [ ] **3.6** Call with no `applicationIds` param. Expect HTTP 400 "applicationIds is required."
-- [ ] **3.7** Call with an empty string `applicationIds=`. Expect HTTP 400.
-- [ ] **3.8** Call unauthenticated (no Bearer token). Expect HTTP 401.
-- [ ] **3.9** Confirm in BE logs that one request is handled (not N) for the batch call.
+### 3a. Normal navigation from list
 
-**Status:** [ ] PASS / [ ] BLOCKED
+- [ ] **3a.1** Log in as an applicant with at least one application.
+- [ ] **3a.2** Navigate to `/user/applications`. Verify the list loads.
+- [ ] **3a.3** Expand a badge by clicking the toggle button. Verify the card reveals within the list row.
+- [ ] **3a.4** Click "View full details →" in the expanded section. Verify navigation to `/user/applications/<id>`.
+- [ ] **3a.5** Verify the detail page header shows the correct job title, company name, and status (populated from router state).
+- [ ] **3a.6** Verify the "Application completeness" section shows the `ApplicationCompletenessCardComponent` in its correct state (loading → resolved).
+- [ ] **3a.7** For an application with a real snapshot, verify `snapshotCreatedAt` is displayed as "Captured <date>" below the score.
+- [ ] **3a.8** Verify the "My Applications" back button navigates to `/user/applications`.
 
----
+### 3b. Cold navigation (direct URL)
 
-## 4. Applicant "My Applications" Page — Batch Loading Tested
+- [ ] **3b.1** Paste `/user/applications/<id>` directly in the address bar (or open in a new tab without prior list navigation).
+- [ ] **3b.2** Verify the page loads without error.
+- [ ] **3b.3** Verify completeness data loads correctly (the single endpoint is called regardless of router state).
+- [ ] **3b.4** Verify the heading falls back gracefully to "Application Details" when jobTitle and companyName are absent from router state (this is the expected fallback for cold navigation — DETAIL-P2-001).
+- [ ] **3b.5** Verify no broken layout, no 404, no infinite loading.
 
-> Verifies the FE now uses the batch endpoint and renders correctly.
+### 3c. Non-existent application ID
 
-### 4a. Normal load with applications
+- [ ] **3c.1** Navigate to `/user/applications/nonexistent-id`.
+- [ ] **3c.2** Verify error state is shown: the card component renders the error block.
+- [ ] **3c.3** Verify no unhandled exception or blank white screen.
 
-- [ ] **4a.1** Log in as an applicant with at least two applications.
-- [ ] **4a.2** Navigate to `/user/applications` and open the network tab.
-- [ ] **4a.3** Verify exactly ONE request to `/applicant/application/snapshots` (not N requests to `/applicant/application/snapshot`).
-- [ ] **4a.4** Verify skeleton rows appear while the batch call is in-flight.
-- [ ] **4a.5** After the batch call resolves, verify all rows reveal simultaneously (expected behavior with the shared snapshotsLoaded flag).
-- [ ] **4a.6** Verify each row with a real snapshot shows: completeness score, level badge, missingRequired tips (if any), missingRecommended tips (if any), disclaimerNote, privacyNote.
-- [ ] **4a.7** Verify the "Update your profile" link is present for rows with missing required items and navigates to `/user/profile/edit`.
-- [ ] **4a.8** Verify `privacyNote` is rendered below the completeness data (not just in the API response but visible in the UI).
+### 3d. Error and retry on detail page
 
-### 4b. Pre-snapshot applications
-
-- [ ] **4b.1** Log in as an applicant with an application submitted before the snapshot system was deployed (no row in `application_snapshots` with `source = 'application_submit'`).
-- [ ] **4b.2** Navigate to `/user/applications`.
-- [ ] **4b.3** Verify that application row shows `hasSnapshot: false` path — "Snapshot not available — this application was submitted before completeness tracking was enabled." (or equivalent).
-- [ ] **4b.4** Verify no error or blank space where the snapshot section would be.
-
-### 4c. Batch call failure (simulated)
-
-- [ ] **4c.1** Temporarily block the `/applicant/application/snapshots` endpoint in dev/staging.
-- [ ] **4c.2** Navigate to `/user/applications`.
-- [ ] **4c.3** Verify `catchError` fires: all rows show the "not available" silent fallback (no error banner, no broken layout).
-- [ ] **4c.4** Verify the application list itself (job title, company, status) is unaffected.
-
-### 4d. Empty state
-
-- [ ] **4d.1** Log in as an applicant with no applications.
-- [ ] **4d.2** Navigate to `/user/applications`.
-- [ ] **4d.3** Verify the empty state renders: "No applications yet", description text, and "Find jobs" CTA.
-- [ ] **4d.4** Verify clicking "Find jobs" navigates to `/jobs`.
-
-### 4e. Error state and retry
-
-- [ ] **4e.1** Block the `GET /candidates/appliedjobslist` endpoint in dev/staging.
-- [ ] **4e.2** Navigate to `/user/applications`.
-- [ ] **4e.3** Verify error message and "Try again" button.
-- [ ] **4e.4** Click "Try again" — verify the applications and batch snapshot call re-fires.
-- [ ] **4e.5** Verify `snapshotsMap` is cleared on retry (no stale data from a previous successful load).
+- [ ] **3d.1** In dev/staging: block `GET /applicant/application/snapshot?applicationId=<id>`.
+- [ ] **3d.2** Navigate to `/user/applications/<id>`.
+- [ ] **3d.3** Verify error state renders in the card with a "Try again" button.
+- [ ] **3d.4** Restore the endpoint. Click "Try again". Verify data loads.
+- [ ] **3d.5** Verify `retry()` clears `loading`, `error`, and `snapshot` before re-calling `load()`.
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
 ---
 
-## 5. companyId Null Guard Verified
+## 4. CTA Analytics — Verify Click Events Fire
 
-> Verifies the null guard in createApplicationSnapshots prevents NOT NULL violations.
+> Verifies that the CTA analytics wiring in ApplicationCompletenessCardComponent works correctly.
 
-- [ ] **5.1** Check BE source: confirm `createApplicationSnapshots` in `services/applicationSnapshotService.js` has an early return when `companyId` is null/undefined, with a structured warning log.
-- [ ] **5.2** In dev/staging: submit an application to a job where the job's `company_id` is null in the DB (or mock `companyId: null` in the service call). Confirm:
-  - The application submission itself succeeds (HTTP 200).
-  - No Postgres NOT NULL violation appears in BE logs.
-  - A structured warning log entry appears: `[createApplicationSnapshots] skipping: companyId is null` (or equivalent), including `applicationId` and `jobId`.
-  - No row is inserted in any of the three snapshot tables for that application.
-- [ ] **5.3** Confirm that for a normal application with a valid `companyId`, all three snapshot rows are still written (no regression from the guard).
-
-**Status:** [ ] PASS / [ ] BLOCKED
-
----
-
-## 6. Backfill Script — Pre-Flight Verification
-
-> Verifies readiness to run the backfill script. Do NOT run the live backfill until all items here are PASS.
-
-- [ ] **6.1** Section 1 (DDL verification) must be PASS before proceeding. Do not run the backfill if any snapshot table is missing.
-- [ ] **6.2** Run the backfill in dry-run mode against production: `node scripts/backfill_application_snapshots.js --dry-run`. Verify it prints the count of un-snapshotted applications and exits cleanly.
-- [ ] **6.3** Run the backfill with `--limit=5` (live, not dry-run) against a staging environment with the real schema. Verify 5 rows are inserted in `application_completeness_snapshots` with `source = 'backfill_current_data'`.
-- [ ] **6.4** Rerun with `--limit=5` against the same staging environment. Verify no duplicate rows are created (idempotency: the LEFT JOIN filter skips already-backfilled rows and `ON CONFLICT DO NOTHING` handles any race).
-- [ ] **6.5** Check BE logs during the staging run for any `[createApplicationSnapshots] skipping:` or partial-error entries. Investigate before running on prod.
-- [ ] **6.6** Note: the script does NOT have a pre-flight DDL check of its own (tracked as BACKFILL-P0-001 — not yet fixed). Rely on section 1 of this checklist as the gate.
-- [ ] **6.7** Schedule the live prod backfill run during a low-traffic window. Monitor logs in real time.
-- [ ] **6.8** After the live run: `SELECT COUNT(*) FROM gethired.application_completeness_snapshots WHERE source = 'backfill_current_data';` — count should equal the number reported by the dry-run query.
+- [ ] **4.1** Open browser DevTools console.
+- [ ] **4.2** Navigate to `/user/applications` as an applicant with a non-complete application (has missingRequired or missingRecommended items).
+- [ ] **4.3** Expand the completeness card for that application.
+- [ ] **4.4** Click "Update your profile →" in the amber required-tips block. Verify:
+  - Console shows `[Analytics] applicationCompletenessCtaClicked { applicationId: '...', ctaLabel: 'Update your profile' }` (or equivalent debug output).
+  - Navigation to `/user/profile/edit` occurs.
+- [ ] **4.5** Navigate back. Expand the card for an application with only recommended tips.
+- [ ] **4.6** Click "Add to your profile →" in the blue recommended-tips block. Verify:
+  - Console shows `[Analytics] applicationCompletenessCtaClicked { applicationId: '...', ctaLabel: 'Add to your profile' }` (or equivalent).
+  - Navigation to `/user/profile/edit` occurs.
+- [ ] **4.7** Click "View full details →" to navigate to the detail page. Verify the card CTAs also fire analytics on the detail page (same component reused with `[applicationId]` input set).
+- [ ] **4.8** Verify `applicationId` in the analytics payload matches the actual application being viewed (not null, not a different ID).
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
 ---
 
-## 7. Snapshot Creation Verified in Application Submit Flow
+## 5. snapshotCreatedAt Display Verified
 
-> Verifies that submitting a new application still triggers snapshot creation correctly (regression test).
+> Verifies the "Captured on..." timestamp appears on the detail page and is absent (gracefully) on the list.
 
-- [ ] **7.1** Log in as an applicant with a complete profile.
-- [ ] **7.2** Submit an application to an active job posting.
-- [ ] **7.3** Confirm submission succeeds with HTTP 200 and snapshot creation does not block or error the submission.
-- [ ] **7.4** Check the DB: `SELECT id, source, completeness_score FROM gethired.application_completeness_snapshots WHERE application_id = '<new_id>';` — must return one row with `source='application_submit'` and score > 0.
-- [ ] **7.5** Check: `SELECT id, source FROM gethired.application_snapshots WHERE application_id = '<new_id>';` — must return one row.
-- [ ] **7.6** Check: `SELECT id, source, match_score FROM gethired.match_snapshots WHERE application_id = '<new_id>';` — must return one row.
-- [ ] **7.7** Navigate to `/user/applications` as the same applicant — verify the new application shows completeness score and tips via the batch endpoint.
-- [ ] **7.8** Submit the same application again (expect 409) — confirm no duplicate snapshot rows.
-- [ ] **7.9** Check BE logs for any `[applicationSnapshot] snapshot creation failed:` errors.
+- [ ] **5.1** Log in as an applicant with an application that has a real snapshot (`source = 'application_submit'` row in `application_completeness_snapshots`).
+- [ ] **5.2** Navigate to `/user/applications/<id>` (detail page, direct or via "View full details" link).
+- [ ] **5.3** Verify "Captured <date>" is displayed in the completeness card, using the `snapshotCreatedAt` value from the single endpoint.
+- [ ] **5.4** Navigate back to `/user/applications`. Expand the same application's card.
+- [ ] **5.5** Verify the in-list card does NOT show "Captured <date>" (batch endpoint does not return `snapshotCreatedAt`). This is expected behavior (DETAIL-P3-001 tracks the future fix). No error, no blank field — the timestamp section is simply absent.
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
 ---
 
-## 8. Ownership and Auth Guards Verified
+## 6. Batch Snapshot Endpoint (From Prior Cycle — Carry-Forward)
 
-> Verifies authorization on all snapshot endpoints including the new batch endpoint.
+> These items were on the prior checklist. If they were previously verified, confirm they still pass. If not yet verified, complete them now.
 
-### 8a. Batch endpoint (`GET /applicant/application/snapshots`)
+- [ ] **6.1** Log in as an applicant with at least two applications. Call `GET /applicant/application/snapshots?applicationIds=<id1>,<id2>` with a valid Bearer token. Expect HTTP 200.
+- [ ] **6.2** Verify response contains `data.snapshots` as a map keyed by application ID with all required fields.
+- [ ] **6.3** Mix in an unowned application ID — verify it is silently omitted from the response.
+- [ ] **6.4** Call with >50 IDs — expect HTTP 400.
+- [ ] **6.5** Call unauthenticated — expect HTTP 401.
+- [ ] **6.6** On `/user/applications`, verify exactly ONE request to `/applicant/application/snapshots` in the network tab (not N requests).
 
-- [ ] **8a.1** Applicant A calls with their own applicationIds — expect HTTP 200 with snapshot data for each owned ID.
-- [ ] **8a.2** Applicant A calls with a mix of their own IDs and Applicant B's IDs — expect HTTP 200 with only Applicant A's IDs in the response (Applicant B's IDs silently omitted).
-- [ ] **8a.3** Applicant A calls with ONLY Applicant B's IDs — expect HTTP 200 with `data.snapshots = {}` (empty map, not a 403).
-- [ ] **8a.4** Unauthenticated call — expect HTTP 401.
-- [ ] **8a.5** More than 50 IDs — expect HTTP 400.
+**Status:** [ ] PASS / [ ] BLOCKED / [ ] CARRY-FORWARD (already verified in FE 20a44c5 cycle)
 
-### 8b. Single-application endpoint (`GET /applicant/application/snapshot`)
+---
 
-- [ ] **8b.1** Applicant A calls with their own `applicationId` — expect HTTP 200.
-- [ ] **8b.2** Applicant A calls with Applicant B's `applicationId` — expect HTTP 403.
-- [ ] **8b.3** Unauthenticated call — expect HTTP 401.
-- [ ] **8b.4** Non-existent `applicationId` — expect HTTP 404.
-- [ ] **8b.5** No `applicationId` param — expect HTTP 400.
+## 7. Backfill Script — Pre-Flight Verification
 
-### 8c. Employer endpoint (`GET /job/applicant/snapshot-summary`)
+> Section 1 (DDL check) must be PASS before this section. Do NOT run the live backfill until all items here are PASS.
 
-- [ ] **8c.1** Employer from Company A calls with an applicationId for Company A's job — expect HTTP 200.
-- [ ] **8c.2** Employer from Company B calls with the same applicationId — expect HTTP 403.
-- [ ] **8c.3** Non-existent applicationId — expect HTTP 403 (not 404 — enumeration oracle).
-- [ ] **8c.4** Unauthenticated call — expect HTTP 401.
-- [ ] **8c.5** Verify `Array.isArray(callerCompany)` guard: user with no company (getUserCompany returns `[]`) — expect HTTP 403.
+- [ ] **7.1** Section 1 must be PASS. Do not proceed if any snapshot table is missing.
+- [ ] **7.2** Run dry-run against production: `node scripts/backfill_application_snapshots.js --dry-run`. Verify it prints the count of un-snapshotted applications and exits cleanly.
+- [ ] **7.3** Run with `--limit=5` against staging (real schema). Verify 5 rows in `application_completeness_snapshots` with `source = 'backfill_current_data'`.
+- [ ] **7.4** Rerun `--limit=5` against same staging env. Verify no duplicates (idempotent).
+- [ ] **7.5** Note: BACKFILL-P0-001 is still open — the script has no programmatic DDL pre-flight check. Rely on section 1 of this checklist as the gate. Do not skip section 1.
+- [ ] **7.6** Schedule live prod backfill during a low-traffic window. Monitor logs in real time.
+- [ ] **7.7** After live run: `SELECT COUNT(*) FROM gethired.application_completeness_snapshots WHERE source = 'backfill_current_data';` — count must equal the dry-run count.
+
+**Status:** [ ] PASS / [ ] BLOCKED / [ ] NOT YET STARTED
+
+---
+
+## 8. Regression Verification — Prior Features Still Work
+
+> Confirms this FE-only cycle did not break prior functionality.
+
+- [ ] **8.1** `/user/applications` list loads without errors. Applications list is intact.
+- [ ] **8.2** Empty state renders for applicant with no applications.
+- [ ] **8.3** Error state and "Try again" button work for a failed applications list request.
+- [ ] **8.4** In-list badge toggle still works: click opens card, click again closes it.
+- [ ] **8.5** "Update your profile" CTA in the list-view card still routes to `/user/profile/edit`.
+- [ ] **8.6** Message thread toggle (`toggleMessages`) still works alongside badge toggle (both can be open independently).
+- [ ] **8.7** Employer side: `GET /job/applicant/snapshot-summary` endpoint still returns correct employer-scoped snapshot data (no regression from FE-only change).
+- [ ] **8.8** Reduced-motion simulation (DevTools → Rendering → Prefer reduced motion): badge shimmer and card fade-in are suppressed.
+- [ ] **8.9** Keyboard navigation: toggle button for badge is reachable and activatable via Enter/Space. Detail page back button is reachable via Tab + Enter.
+- [ ] **8.10** `ng build --configuration production` — confirm zero new errors (was PASS in the release gate for 5ab9a05).
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
 ---
 
-## 9. Known Open Items at Launch (Non-Blocking for FE 20a44c5 / BE 422d340)
+## 9. Ownership and Auth Guards — Detail Route
+
+> Verifies the new detail route and single endpoint enforce ownership correctly.
+
+- [ ] **9.1** Applicant A navigates to `/user/applications/<applicant-A-app-id>` — expect completeness data for that application.
+- [ ] **9.2** Applicant A navigates to `/user/applications/<applicant-B-app-id>` — the single endpoint should return HTTP 403. The detail page should render the error state (not a 500).
+- [ ] **9.3** Unauthenticated user navigates to `/user/applications/<id>` — expect redirect to login (Angular auth guard fires before the route is activated).
+- [ ] **9.4** Verify the single endpoint ownership check: `getApplicantApplicationSnapshot` must verify `candidate_id = uid` before returning data.
+
+**Status:** [ ] PASS / [ ] BLOCKED
+
+---
+
+## 10. Known Open Items at Launch (Non-Blocking for FE 5ab9a05)
 
 These items must be tracked in the backlog but do not block deployment:
 
-- SNAP-P0-001: DDL must be confirmed applied to production (listed here but is a hard blocker for section 1 and for the backfill)
-- BACKFILL-P0-001: Backfill script has no programmatic pre-flight DDL check — operator must rely on section 1 of this checklist
-- BATCH-P2-001: Batch endpoint source filter excludes backfill completeness rows — backfilled applications still show "not available" to applicants
-- BACKFILL-P2-001: No resume-from-crash in the backfill script — a crash requires rerunning from scratch (safe but wasteful)
-- BACKFILL-P2-002: Backfill completeness data not visually distinguished from real submission data (contingent on BATCH-P2-001)
-- COMP-P2-007: No fragment anchors for tip deep-links — CTA lands at top of profile edit form
-- COMP-P2-008: snapshotsLoaded still a shared flag — all skeletons spin during the batch call, reveal all at once
-- COMP-P3-009: retry() still calls ngOnInit directly (subscription management is correct; naming contract is not)
-- COMP-P3-010: Disclaimer does not say score is frozen at submission time
-- SNAP-P2-001: snapshot_hash column is always NULL
-- SNAP-P2-002: Match score formula duplicated between snapshot service and signals service
-- SNAP-P1-003: No completeness distribution endpoint for employers
+- **SNAP-P0-001** — DDL must be confirmed applied to production. Hard blocker for ALL snapshot functionality, but tracked separately from this FE release. Treat as an infrastructure ticket that must be closed ASAP.
+- **BACKFILL-P0-001** — Backfill script has no programmatic pre-flight DDL check.
+- **DETAIL-P2-001** — Direct URL navigation to `/user/applications/:id` loses job metadata; heading falls back to "Application Details".
+- **DETAIL-P2-002** — No badge impression or detail page view analytics event.
+- **COMP-TEST-P2-001** — No Angular unit tests for badge, card, or detail components.
+- **BATCH-P2-001** — Backfilled applications still show "not available" in the list (source filter gap).
+- **BACKFILL-P2-001** — Backfill script has no resume-from-crash capability.
+- **BACKFILL-P2-002** — Backfill completeness data not visually distinguished from real submission data.
+- **COMP-P2-007** — CTA deep-links go to top of `/user/profile/edit`, not to the relevant section.
+- **COMP-P2-008** — All skeletons reveal simultaneously on batch call completion.
+- **DETAIL-P3-001** — `snapshotCreatedAt` not returned by batch endpoint; timestamp only visible on detail page.
+- **COMP-P3-010** — Disclaimer does not state score is frozen at submission time.
+- **SNAP-P2-001** — `snapshot_hash` column always NULL.
+- **SNAP-P2-002** — Match score formula duplicated between snapshot and signals services.
+- **SNAP-P1-003** — No completeness distribution endpoint for employers.
 
 ---
 
@@ -215,13 +215,14 @@ These items must be tracked in the backlog but do not block deployment:
 |---------|--------|-------------|------|
 | 1. DB Migration Applied | | | |
 | 2. Both Repos In Sync | | | |
-| 3. Batch Endpoint Tested | | | |
-| 4. My Applications Page — Batch Loading | | | |
-| 5. companyId Null Guard | | | |
-| 6. Backfill Script Pre-Flight | | | |
-| 7. Snapshot Creation — Submit Flow | | | |
-| 8. Ownership and Auth Guards | | | |
+| 3. New Detail Route /user/applications/:id | | | |
+| 4. CTA Analytics Wiring | | | |
+| 5. snapshotCreatedAt Display | | | |
+| 6. Batch Endpoint (carry-forward) | | | |
+| 7. Backfill Script Pre-Flight | | | |
+| 8. Regression Verification | | | |
+| 9. Ownership and Auth Guards — Detail Route | | | |
 
-**All sections must be PASS before this deployment is considered production-ready.**
-**Section 1 (DB Migration) is a hard prerequisite — complete it before proceeding to any other section.**
-**Section 6 (Backfill Pre-Flight) must PASS before running the live backfill on production.**
+**Sections 1 and 2 are hard prerequisites — complete them before any other section.**
+**Section 1 is also a prerequisite for section 7.**
+**Sections 3–9 (excluding 7) can be completed in parallel once 1 and 2 pass.**

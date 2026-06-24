@@ -1,142 +1,126 @@
-# GetHired BRAND — Recent Deployment Review
-**Scope:** Applicant Applications Snapshot UI — polish pass (FE 20a44c5, BE 422d340)
+# GETHIRED BRAND — RECENT DEPLOYMENT AUDIT
 **Date:** 2026-06-24
-**Reviewer:** BRAND command (post-deploy review)
+**Scope:** ApplicationCompletenessBadge, ApplicationCompletenessCard, ApplicantApplicationDetail, applicant-applications list
+**FE HEAD:** 5ab9a05
+**Build:** PASS (production, 24 430ms, zero new errors)
 
 ---
 
-## Summary
+## Audit Findings & Fixes Applied
 
-```
-BRAND RECENT DEPLOYMENT completed: yes
-Files changed: applicant-applications.component.html, applicant-applications.component.scss
-States covered: loading: yes / success: yes / null: yes / error: yes
-Visual polish fixes: 3
-```
+### 1. Positive State (isComplete=true) — FIXED
+**Finding:** The check-circle SVG used `stroke-width="1"` for the circle ring and `stroke-width="1.5"` for the checkmark path. At 16x16px this rendered as a thin, easy-to-miss icon that did not feel meaningfully different from neutral states. No entry animation separated the positive state visually.
 
----
+**Fix applied:**
+- SVG enlarged from 16x16 to 18x18; circle `stroke-width` raised to 1.5; checkmark `stroke-width` raised to 2; circle gains `fill="#e6faf7"` (same teal tint as the panel background) for a "filled" feel.
+- New `@keyframes acdc-positive-pop` (scale 0.85->1.08->1, opacity 0->1, 320ms decelerate) applied to `.acdc-positive-icon`. Spring-in on card reveal signals success distinctly from static neutral/warning states. Wrapped in `@include motion-safe`.
+- The left-border accent panel (`border-left: 3px solid #04A08B` on `#e6faf7`) already provides adequate colour contrast; no change needed there.
 
-## State Coverage Audit
-
-| State | Trigger | Template node | Status |
-|---|---|---|---|
-| Loading | `snapshotsLoaded === false` | `.app-snapshot-skeleton` (3-element shimmer) | PASS |
-| Success | `snap.hasSnapshot === true` | `.app-snapshot-score` + `.app-snapshot-badge` + tip blocks | PASS |
-| Null (pre-deployment app) | `snap.hasSnapshot === false` | `.app-snapshot-empty` italic message | PASS |
-| Error (batch catchError → empty map) | `snapshotFor()` returns `null` | `#snapSilent` → `.app-snapshot-unavailable` | PASS |
-
-All 4 states are correctly guarded. No regressions introduced by the batch-load refactor.
+**File:** `src/app/shared/components/application-completeness-card/application-completeness-card.component.html` + `.scss`
 
 ---
 
-## Batch-Reveal Assessment
+### 2. Progress Bar Fill Animation — FIXED
+**Finding:** The progress fill used `transition: width 650ms` but the width is bound via `[style.width.%]="snapshot.completenessScore"` — Angular sets the final value on first render (no prior 0% state), so the CSS transition never fires. The bar appeared static (jumped straight to value).
 
-The batch call (`snapshotsLoaded` flag) replaces the previous `forkJoin` per-call pattern. All rows transition from skeleton to content simultaneously.
+**Fix applied:**
+- Added `@keyframes acdc-progress-enter { from { width: 0 !important; } }` in the card SCSS.
+- Applied `animation: acdc-progress-enter $motion-duration-meter-fill $motion-ease-decelerate both` to `.acdc-progress-fill`. The `both` fill-mode holds width at 0 before the animation starts, then the keyframe drives 0->final. The existing `transition` remains for subsequent value changes. Both wrapped in `@include motion-safe`.
 
-**Assessment: acceptable.** Simultaneous reveal is visually coherent — all skeletons appear together, all content appears together. No row is stranded in a loading state while adjacent rows display data. The `app-snapshot-fadein` animation (220ms, decelerate curve) softens the transition. Staggered per-row reveal would require re-introducing per-item observables — a larger architectural change than this scope permits.
-
----
-
-## Fixes Applied
-
-### Fix 1 — CTA margin-top (6px → 8px)
-
-**File:** `applicant-applications.component.scss`
-
-**Issue:** `.app-snapshot-cta` ("Update your profile →") had `margin-top: 6px`. The `<ul>` above has no bottom margin, placing the CTA immediately flush against the last `<li>`. It read as another list item rather than a distinct action link.
-
-**Fix:** `margin-top: 8px` — 2px increase gives clear separation without over-spacing inside the amber tips box.
-
-**Note on class:** `.app-snapshot-cta` is correct for this element. It is an `<a routerLink>`, not a `<button>`. Using `.btn-link-cta` would be semantically wrong (`.btn-link-cta` has `background: none; border: none; cursor: pointer` — button resets — not appropriate for an anchor element).
-
-**Linter bonus:** A `&:focus-visible` rule was added to `.app-snapshot-cta` by the linter, providing a visible keyboard focus ring (`outline: 2px solid $color-global-red-buttons; outline-offset: 2px`). This was retained — it meets WCAG 2.4.7 and was not present before this pass.
+**File:** `src/app/shared/components/application-completeness-card/application-completeness-card.component.scss`
 
 ---
 
-### Fix 2 — Privacy note spacing between consecutive disclaimers
+### 3. "View full details" Link Separation — FIXED
+**Finding:** The link sat inside `.app-snapshot` with only `margin-top: 8px` and `opacity: 0.75`, making it feel like part of the card body rather than a discrete call-to-action. The reduced opacity (0.75) meant contrast was below the card's own CTA links.
 
-**File:** `applicant-applications.component.html` and `.scss`
+**Fix applied:**
+- Changed from `display: inline-block` to `display: block`.
+- Removed `opacity: 0.75` — full colour, full contrast (same `$color-global-red-buttons` as other CTAs).
+- Added `padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.06)` — matches the border already used to separate `.app-snapshot` from `.application-row-header`, creating a consistent "footer separator" pattern.
+- `margin-top` increased from 8px to 12px for breathing room.
+- `font-size` raised from 11px to 12px — matches `.acdc-cta` links inside the card for size parity.
 
-**Issue:** Two `<p class="app-snapshot-disclaimer">` elements — `disclaimerNote` and `privacyNote` — both use `margin: 6px 0 0`. The second paragraph's `margin-top` is computed from the first paragraph's content edge, meaning zero gap between the two lines. They appeared as a single block of fine-print with no visual break.
-
-**Fix (HTML):** Added BEM modifier class `app-snapshot-disclaimer--privacy` to the second paragraph.
-
-```html
-<!-- before -->
-<p class="app-snapshot-disclaimer" *ngIf="snap.privacyNote">{{ snap.privacyNote }}</p>
-
-<!-- after -->
-<p class="app-snapshot-disclaimer app-snapshot-disclaimer--privacy" *ngIf="snap.privacyNote">{{ snap.privacyNote }}</p>
-```
-
-**Fix (SCSS):** Added `&--privacy { margin-top: 4px; }` nested inside `.app-snapshot-disclaimer`.
+**File:** `src/app/applicant-panel/applicant-applications/applicant-applications.component.scss`
 
 ---
 
-### Fix 3 — Privacy note de-emphasis via lighter color
+### 4. Detail Page — Back Button + Mobile Breakpoint — FIXED
+**Finding A:** Back button used the `<` single angle quotation mark (U+2039). This is a typographic quote character, not a navigation arrow. Screen readers may announce it unexpectedly; visually it was lighter and narrower than the navigation arrows used elsewhere.
 
-**File:** `applicant-applications.component.scss`
+**Fix applied:** Changed to the leftwards arrow (U+2190) — universally recognised navigation affordance, consistent with the right arrow used in CTA links throughout the same file.
 
-**Issue:** Both disclaimer paragraphs shared `color: #9ca3af`, giving equal visual weight to the actionable disclaimer (which applicants should read) and the privacy note (secondary legalese). The bottom of each card felt like information overload with two indistinguishable fine-print lines.
+**Finding B:** The mobile padding reduction fired at `@media (max-width: 480px)` but the page has `max-width: 640px`. On viewports 481-640px the page already spans full width (no margin) but kept the 24px desktop padding, wasting horizontal space on larger phones and small tablets.
 
-**Fix:** `&--privacy { color: #b0b7c3; }` — a lighter grey that clearly subordinates the privacy note. The disclaimer remains readable at its current 10px size; the privacy note recedes without disappearing.
+**Fix applied:** Breakpoint changed from `480px` to `640px` — padding reduces to 16px across the entire single-column range.
 
-**Alternative considered and rejected:** Show `privacyNote` only on the first card (index === 0 in the `*ngFor`). Rejected — requires TypeScript logic change and `$index` wiring in the template; not a safe single-file fix.
+**Files:** `applicant-application-detail.component.html` + `.scss`
 
 ---
 
-## Arrow Glyph (F4 — no action required)
+### 5. Expand Chevron (`.app-completeness-toggle-chevron`) — PASS (no fix needed)
+**Finding:** CSS already correct. Closed state: `transform: rotate(90deg)` (chevron pointing downward). Open state (`--open` modifier): `transform: rotate(270deg)` (pointing upward). Transition: `$motion-duration-micro` (160ms) ease-standard wrapped in `@include motion-safe`. Hover state changes colour to `$color-global-red-buttons` for feedback. No fix required.
 
-The `→` glyph was already wrapped in `<span aria-hidden="true">→</span>` by the linter between the prior read and this session. This is the correct pattern: screen readers announce "Update your profile" without the directional character; sighted users see the affordance. No further action required.
+---
+
+### 6. Skeleton Elements — FIXED
+**Finding:** Original skeleton had 5 elements (label, badge, progress, line wide, line medium). The real content shape has: label, timestamp, score row [pct number + badge], progress bar, tips block [heading + body + cta]. The skeleton omitted the timestamp row and merged score-pct + badge into a single badge element, giving a poor content-shape hint.
+
+**Fix applied:**
+- Added `.acdc-sk-timestamp` (9px high, 30% wide) below the label to represent the "Captured [date]" line.
+- Split the badge row into `.acdc-sk-score-row` (flex container) housing `.acdc-sk-score-pct` (20px x 42px rectangle) and `.acdc-sk-badge` (20px x 90px pill) side-by-side — matching the real `acdc-score-row` layout.
+- Total: 7 skeleton elements (was 5). Two existing `acdc-sk-line` elements continue to hint at tips block body text.
+
+**Files:** `application-completeness-card.component.html` + `.scss`
+
+---
+
+### 7. Color Hierarchy Audit — PASS (one note, no fix)
+**Finding:** Excellent/Strong: `#04A08B` = `$color-green-secondary` (brand teal, correct). Incomplete: `$color-global-red` (`#FE6F61`, brand coral, correct). Basic (amber): `#f59e0b` (progress fill) / `#b45309` (badge text) — these are Tailwind amber values, not `$color-yellow-secondary: #EC8000`.
+
+**Decision:** No change. `$color-yellow-secondary: #EC8000` is a deep orange-amber that reads more "urgent warning" than "partial progress". The softer amber (`#f59e0b` fill / `#b45309` text) provides better semantic distance between "partial" and "incomplete" (coral). The badge SCSS documents this choice. Accepted as intentional.
 
 ---
 
 ## Files Changed
 
 | File | Change |
-|---|---|
-| `applicant-applications.component.html` | Added `app-snapshot-disclaimer--privacy` modifier class to privacyNote paragraph |
-| `applicant-applications.component.scss` | `margin-top: 6px → 8px` on `.app-snapshot-cta`; added `&--privacy` block on `.app-snapshot-disclaimer` with `margin-top: 4px` and `color: #b0b7c3` |
+|------|--------|
+| `src/app/shared/components/application-completeness-card/application-completeness-card.component.html` | Larger check SVG (18x18, heavier strokes, filled circle); +2 skeleton elements (timestamp + score-row) |
+| `src/app/shared/components/application-completeness-card/application-completeness-card.component.scss` | `acdc-positive-pop` spring animation on check icon; `acdc-progress-enter` keyframe for 0-to-N bar fill; `.acdc-sk-timestamp`, `.acdc-sk-score-row`, `.acdc-sk-score-pct` skeleton styles |
+| `src/app/applicant-panel/applicant-applications/applicant-applications.component.scss` | `app-detail-link`: block display, full opacity, font-size 12px, top border separator |
+| `src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.html` | Back button arrow glyph fixed (typographic quote to leftwards arrow) |
+| `src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.scss` | Mobile breakpoint 480px raised to 640px (matches page max-width) |
+
+**Total visual polish fixes: 6**
 
 ---
 
-## Top 5 Brand Findings
+## States Coverage
 
-### 1. CTA visual separation from tip list (fixed)
-The "Update your profile →" link sat 6px below the last bullet point — not enough to read as a distinct call-to-action. The amber-background tips block is compact (12px font, 8px padding), so even a small gap matters. 8px is the minimum to create a scannable visual break.
-
-### 2. Two consecutive fine-print lines with no spacing (fixed)
-`disclaimerNote` and `privacyNote` at 10px grey with zero gap between them read as one undifferentiated wall of micro-text. The 4px gap and color shift to `#b0b7c3` on the privacy note creates a clear two-tier hierarchy: "what this score means" (disclaimer) above "how your data is used" (privacy note).
-
-### 3. Privacy note information overload (partially addressed)
-The privacy note appears on every card in a list. On an applicant with 5+ applications, this means the same privacy legalese repeats 5+ times. The color de-emphasis reduces the visual noise. A more complete solution — showing the note only on the first card, or in a page-level callout — is deferred (requires TS logic change).
-
-### 4. Batch reveal is coherent (no action)
-Simultaneous skeleton-to-content transition across all rows is the correct UX choice for a batch API call. It sets user expectation that snapshot data loads as a group, not individually. The 220ms `app-snapshot-fadein` animation provides sufficient softening. No change needed.
-
-### 5. Focus ring now present on CTA (linter addition, retained)
-The "Update your profile" link previously had no `:focus-visible` style. The linter added `outline: 2px solid $color-global-red-buttons; outline-offset: 2px` — matching the brand red and meeting WCAG 2.4.7 (Focus Visible). This is a meaningful a11y improvement surfaced during this review pass.
-
----
-
-## Deferred / Out of Scope
-
-| Item | Reason deferred |
-|---|---|
-| Show `privacyNote` only on first card | Requires `$index` in `*ngFor` and TS binding — not a safe one-line fix |
-| Collapsible privacy note | Requires toggle state and animation — architecture change |
-| Per-row skeleton reveal | Requires restoring per-item observable chain — larger refactor |
-| Upgrade CTA to `.btn-cta-primary` weight | Would shift visual hierarchy significantly; current secondary weight inside the amber tips box is intentional |
+| State | Component | Status |
+|-------|-----------|--------|
+| Loading / skeleton | Badge + Card | Audited — skeleton fidelity improved (7 elements, was 5) |
+| Error | Card | Audited — no change needed |
+| Null snapshot | Card | Audited — no change needed |
+| Pre-deployment | Card | Audited — no change needed |
+| Positive / isComplete=true | Card | Fixed (icon weight + spring animation) |
+| Required missing | Card | Audited — no change needed |
+| Recommended missing | Card | Audited — no change needed |
+| Unavailable | Badge | Audited — no change needed |
+| Progress fill | Card | Fixed (0-to-N keyframe animation) |
+| Detail page | ApplicantApplicationDetail | Fixed (back arrow glyph, mobile breakpoint) |
+| "View full details" CTA | applicant-applications | Fixed (separator border, full opacity, font-size) |
+| Chevron open/close | applicant-applications | Audited — no change needed |
 
 ---
 
-## ng build Note
-
-All changes are SCSS and HTML only. No TypeScript modified.
-
-Expected: clean build. Verification points:
-- `&--privacy` nested inside `.app-snapshot-disclaimer` — valid SCSS BEM nesting, no new imports required
-- `color: #b0b7c3` is a raw hex, not a Sass variable — resolves without import
-- `margin-top: 8px` on `.app-snapshot-cta` — no dependencies
-
-No new npm dependencies introduced.
+## Build Output
+```
+Build at: 2026-06-24T13:57:36.185Z
+Hash: 4d3ee90e6cc502a6
+Time: 24430ms
+Errors: 0
+Warnings: 2 (pre-existing autoprefixer flex-start in unrelated contact-group component;
+             pre-existing CommonJS xlsx warning — neither introduced by this pass)
+```

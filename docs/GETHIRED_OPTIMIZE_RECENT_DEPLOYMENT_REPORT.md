@@ -1,80 +1,148 @@
 # GETHIRED_OPTIMIZE_RECENT_DEPLOYMENT_REPORT
-Scope: Application Snapshots System — Applicant Completeness View + Employer Applicant Card  
-Deployment: FE 76c545e / BE faa2232 (Sessions 1–2); FE 20a44c5 / BE 422d340 (Session 3)
-Date: 2026-06-24  
-Auditor: OPTIMIZE command (recent deployment mode)
+Scope: FE HEAD 5ab9a05 — ApplicationCompletenessBadge, ApplicationCompletenessCard,
+       ApplicantApplications, ApplicantApplicationDetail, applicant-panel.module.ts
+Date: 2026-06-24
+Auditor: OPTIMIZE command (recent deployment mode — Session 4)
 
 ---
 
 ## Session history
 
-**Session 1 (prior):** Employer-side audit — `job-applicants.component.html` + `job-applicants.component.scss`. Applied: `aria-live`, badge `aria-label`s, snapshot card region label. Build: PASS.
+**Session 1 (prior):** Employer-side audit — `job-applicants.component.html` + `.scss`.
+Applied: `aria-live`, badge `aria-label`s, snapshot card region label. Build: PASS.
 
-**Session 2 (prior):** Applicant-side audit — `applicant-applications.component.ts/html/scss`. Applied: `@keyframes` name collision fix, `aria-live` on snapshot container, `trackBy` on tip loops. Build: PASS.
+**Session 2 (prior):** Applicant-side audit — `applicant-applications.component.ts/html/scss`.
+Applied: `@keyframes` name collision fix, `aria-live` on snapshot container, `trackBy` on tip loops. Build: PASS.
 
-**Session 3 (this run):** Deep correctness audit of `getApplicantApplicationSnapshotsBatch` (BE) + subscription lifecycle (FE). Applied: explicit `::text[]` cast on all `ANY($1)` queries, named `snapshotsSub` to close subscription leak, `:focus-visible` on CTA link. Build: PASS.
+**Session 3 (prior):** Deep correctness audit of `getApplicantApplicationSnapshotsBatch` (BE) +
+subscription lifecycle (FE). Applied: explicit `::text[]` cast on all `ANY($1)` queries, named
+`snapshotsSub` to close subscription leak, `:focus-visible` on CTA link. Build: PASS.
 
----
-
-## Session 3 — Findings
-
-### F1 — `ANY($1)` missing explicit type cast [APPLIED]
-**Severity**: Low / best practice  
-**Location**: `applicationController.js` lines 185, 201, 205  
-**Detail**: `pg` 8.7.3 natively serializes a JS string array to a PostgreSQL array for `ANY($1)`, so queries work at runtime without a cast. However, without an explicit `::text[]` cast PostgreSQL must infer the element type from context. The columns are `varchar`; a future column-type change or a DB planner upgrade could cause implicit-cast failures. Adding `::text[]` makes the contract explicit and mirrors industry best practice for parameterized array queries.  
-**Fix**: Changed all three `ANY($1)` occurrences to `ANY($1::text[])` in `getApplicantApplicationSnapshotsBatch`.
-
-### F2 — Anonymous snapshot subscription leak [APPLIED]
-**Severity**: Low / technical debt  
-**Location**: `applicant-applications.component.ts` `loadSnapshots()`  
-**Detail**: The HTTP subscription from `getApplicationSnapshots()` was stored in an anonymous variable. If the user navigated away before the HTTP response arrived, the callback still fired, writing to a detached component's `snapshotsMap`. Angular's change detection does not crash from this, but it is a dangling-subscription pattern that would trigger `takeUntilDestroyed` warnings in Angular 17+ and creates hard-to-diagnose state in tests.  
-**Fix**: Stored the subscription in `private snapshotsSub: Subscription | null`. Added `snapshotsSub?.unsubscribe()` to both `retry()` and `ngOnDestroy()`.
-
-### F3 — Missing `:focus-visible` style on CTA link [APPLIED]
-**Severity**: Low / accessibility (WCAG 2.4.7)  
-**Location**: `applicant-applications.component.scss` `.app-snapshot-cta`  
-**Detail**: The "Update your profile" routerLink had hover styles but no `:focus-visible` rule. Many global CSS resets and some browser defaults suppress the native focus ring on `<a>` elements. Keyboard users tabbing to this link would see no visible focus indicator.  
-**Fix**: Added `:focus-visible { outline: 2px solid $color-global-red-buttons; outline-offset: 2px; }` and `border-radius: 2px` to round the focus ring. Uses the brand color for visual consistency.
-
-### F4 — Arrow `→` already screen-reader friendly [VERIFIED — no change]
-**Severity**: Low / accessibility  
-**Location**: `applicant-applications.component.html` line 60  
-**Detail**: The `→` was already wrapped in `<span aria-hidden="true">` in current HEAD (a prior automated pass applied this). The link text "Update your profile" is read cleanly by screen readers without the arrow character. No further change required.
-
-### F5 — Prototype pollution via `snapshots[id]` [DEFERRED — negligible risk]
-**Severity**: Theoretical / effectively zero  
-**Location**: `applicationController.js` `getApplicantApplicationSnapshotsBatch`  
-**Detail**: `snapshots[id] = { ... }` in a `forEach` could theoretically pollute `Object.prototype` if `id === '__proto__'`. In practice, `verifiedIds` contains only values returned by the database from `job_applicants.job_application_id` — which are varchar IDs generated by the application itself. A malicious value in the query string would not match any DB row and never reach `verifiedIds`. Risk is zero at the current code path. Using `Object.create(null)` would change the JSON serialization shape (no `hasOwnProperty`) and is not warranted.
-
-### F6 — Comma in IDs would break `getApplicationSnapshots` parsing [DEFERRED — theoretical]
-**Severity**: Very low / theoretical  
-**Location**: `application.service.ts` `getApplicationSnapshots()`  
-**Detail**: `ids.map(id => encodeURIComponent(id)).join(',')` — if an application ID contained a literal comma, the BE split on `,` would fragment it. UUIDs and the project's varchar IDs never contain commas; this is a theoretical-only risk. Noted for documentation; no fix warranted.
+**Session 4 (this run):** Targeted audit of the six points raised for the FE HEAD 5ab9a05 deployment.
+One bug fixed (router navigation footgun). All others verified clean. Build: PASS.
 
 ---
 
-## Summary of All Sessions
+## Session 4 — Findings
 
-| # | Finding | Severity | Session | Action |
-|---|---------|----------|---------|--------|
-| S1-1 | `aria-live` missing on employer snapshot loading state | Low/a11y | 1 | Fixed |
-| S1-2 | `aria-label` missing on employer completeness badge | Low/a11y | 1 | Fixed |
-| S1-3 | `aria-label` missing on employer match-level badge | Low/a11y | 1 | Fixed |
-| S1-4 | Snapshot card region label improvement | Low/a11y | 1 | Fixed |
-| S2-1 | `@keyframes gh-shimmer` global-scope collision between 2 components | Medium | 2 | Fixed |
-| S2-2 | `aria-live` missing on applicant-side snapshot container | Low/a11y | 2 | Fixed |
-| S2-3 | `trackBy` missing on `missingRequired`/`missingRecommended` loops | Low/perf | 2 | Fixed |
-| S3-1 | `ANY($1)` missing `::text[]` cast (3 occurrences) | Low/best practice | 3 | Fixed |
-| S3-2 | Anonymous snapshot subscription not cleaned up on destroy | Low/technical debt | 3 | Fixed |
-| S3-3 | Missing `:focus-visible` on CTA link | Low/a11y | 3 | Fixed |
-| S3-4 | Arrow `→` already has `aria-hidden` | Low/a11y | 3 | Verified OK — no change |
-| S3-5 | Prototype pollution via `snapshots[id]` | Theoretical | 3 | Deferred — risk is zero |
-| S3-6 | Comma-in-ID would break query string parsing | Theoretical | 3 | Deferred — IDs never contain commas |
+### F1 — CRITICAL BUG FIXED: `router.getCurrentNavigation()` called in ngOnInit
+**File:** `src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.ts`
+**Severity:** High — functional correctness defect
+**Status:** Applied
+
+`router.getCurrentNavigation()` is only valid synchronously during Angular's construction phase.
+By the time `ngOnInit` fires, the router's internal navigation reference has been cleared and the
+method returns `null`. The code correctly fell back to `window.history.state` (which does persist),
+but the navigation state branch was dead code — always bypassed, silently.
+
+The consequence: any scenario where `window.history.state` is not set (e.g. typed URL, back-button
+on a page that reset state, or a programmatic `navigateByUrl` call without explicit `state`) would
+leave `jobTitle`, `companyName`, and `statusName` as empty strings, causing the detail-page header
+to render blank.
+
+Fix: moved the entire state-reading block into the constructor (3 lines), where
+`getCurrentNavigation()` is guaranteed to be populated. `window.history.state` is retained as the
+fallback for direct URL access.
+
+---
+
+### F2 — PASS: Badge @keyframes prefix (`acb-*`)
+**File:** `src/app/shared/components/application-completeness-badge/application-completeness-badge.component.scss`
+**Keyframes declared:** `acb-shimmer`, `acb-fadein`
+
+Full project scan of all component SCSS files confirmed no other file uses the `acb-` prefix.
+Angular's `ViewEncapsulation.Emulated` does NOT scope `@keyframes` — they are global. Both names
+are unique across the project. No collision. No fix needed.
+
+---
+
+### F3 — PASS: Card @keyframes prefix (`acdc-*`)
+**File:** `src/app/shared/components/application-completeness-card/application-completeness-card.component.scss`
+**Keyframes declared:** `acdc-shimmer`, `acdc-fadein`
+
+Full project scan confirmed no other file uses the `acdc-` prefix. No collision. No fix needed.
+
+---
+
+### F4 — PASS: SCSS import paths consistent with applicant-panel convention
+**File:** `src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.scss`
+
+Uses `@import "src/assets/styles/colors"` and `@import "src/assets/styles/motion"`.
+Audit of all 14 SCSS files in `src/app/applicant-panel/**` confirms this is the exact convention
+used throughout the module. Shared components (badge, card) use the same pattern. Consistent.
+No fix needed.
+
+---
+
+### F5 — PASS: DatePipe availability for card template
+**File:** `src/app/shared/components/application-completeness-card/application-completeness-card.component.html`
+**Usage:** `{{ snapshot.snapshotCreatedAt | date:'mediumDate' }}`
+
+`ApplicationCompletenessCardComponent` is declared in `SharedModule`. `SharedModule` imports
+`CommonModule` directly in its `imports` array, which provides `DatePipe`. A component declared
+in a module that imports `CommonModule` can use `DatePipe` in its template — the pipe does not
+need to be explicitly listed in `providers`. Verified by the successful production build (no
+template compilation error). No fix needed.
+
+`ApplicantPanelModule` also imports `CommonModule` directly (line 2 + line 78) as belt-and-
+suspenders for the module's own declared components. Not needed for the card (declared in
+SharedModule), but confirms belt-and-suspenders pattern is already in place.
+
+---
+
+### F6 — PASS: Global @keyframes inventory (no collisions with deployed names)
+All existing project keyframe names:
+- `gh-success-pulse-kf` (assets/styles/_motion.scss)
+- `portal-hero-reveal`, `employer-hero-reveal`, `portal-seeker-hero-reveal` (public portal)
+- `portal-waveform-shimmer`, `portal-match-pulse` (job-seeker portal)
+- `emp-shimmer`, `emp-hero-reveal`, `emp-card-reveal` (company dashboard)
+- `employer-cta-reveal` (job-board-employer-cta)
+- `gh-snapshot-fadein`, `gh-shimmer`, `gh-app-shimmer` (job-applicants / applicant-applications)
+- `locked-match-teaser-in`, `talent-proof-reveal` (shared components)
+- `animate-title`, `animate-description`, `animate` (custom-profile-loader — scoped inside :host)
+- Bootstrap globals: `progress-bar-stripes`, `spinner-border`, `spinner-grow`
+
+None collide with `acb-shimmer`, `acb-fadein`, `acdc-shimmer`, or `acdc-fadein`.
+
+---
+
+## Summary Table
+
+| # | Finding | Severity | Action |
+|---|---------|----------|--------|
+| F1 | `getCurrentNavigation()` called in ngOnInit — always returns null | High | Fixed |
+| F2 | Badge @keyframes prefix `acb-*` | Check | Pass — no collision |
+| F3 | Card @keyframes prefix `acdc-*` | Check | Pass — no collision |
+| F4 | Detail component SCSS import paths | Check | Pass — consistent |
+| F5 | DatePipe / CommonModule availability for card template | Check | Pass — available |
+| F6 | Global @keyframes inventory | Check | Pass — no collisions |
+
+---
+
+## Files Changed (Session 4)
+| File | Change |
+|------|--------|
+| `src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.ts` | Moved router state reading from ngOnInit to constructor |
+
+## Files Audited (No Change Needed)
+- `application-completeness-badge.component.scss` — keyframes OK
+- `application-completeness-card.component.scss` — keyframes OK
+- `applicant-application-detail.component.scss` — import paths OK
+- `application-completeness-card.component.html` — DatePipe OK
+- `shared.module.ts` — CommonModule present
+- `applicant-panel.module.ts` — CommonModule + SharedModule both imported
 
 ---
 
 ## Build Results
 
-- Session 1: PASS
-- Session 2: PASS
-- Session 3: PASS — `ng build --configuration production`, 19161ms, zero new errors or warnings
+| Session | Result | Time | Notes |
+|---------|--------|------|-------|
+| 1 | PASS | — | |
+| 2 | PASS | — | |
+| 3 | PASS | 19161ms | |
+| 4 | PASS | 27029ms | Hash: 051561e197aadd79 |
+
+Pre-existing warnings (not introduced by any session):
+- autoprefixer `start` value in `add-contact-group.component.scss`
+- xlsx CommonJS optimization bailout in `excel-downloader.service.ts`

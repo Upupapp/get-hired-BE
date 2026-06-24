@@ -1,58 +1,135 @@
-# GETHIRED NOTIFY — Fix Log: Recent Deployment Delta
-**Scope:** FE 20a44c5 / BE 422d340
-**Previous NOTIFY pass:** FE 76c545e / BE faa2232 (10 prior fixes, gates A–E all PASS)
+# GetHired NOTIFY — Fix Log: Recent Deployment
+**Scope:** FE HEAD 5ab9a05 (completeness badge, card, detail page, applications list)
 **Date:** 2026-06-24
-**Rule:** Small/safe copy fixes only — no logic changes, no business rule changes, no schema changes. No emails sent.
+**Rule:** Small/safe copy and aria-label fixes only — no logic changes, no business rule changes, no schema changes. No emails sent.
 
 ---
 
-## Fix 1 — Arrow aria-hidden on CTA link
+## Fixes Applied: 4
+
+---
+
+### Fix 1 — Badge null-state aria-label: "unavailable" → "Snapshot unavailable"
+
+**File:** `get-hired-FE/src/app/shared/components/application-completeness-badge/application-completeness-badge.component.ts`
+**Method:** `get accessibleLabel()`
+
+**Before:**
+```ts
+if (!this.level && this.score === null) return 'Application completeness: unavailable';
+```
+
+**After:**
+```ts
+if (!this.level && this.score === null) return 'Application completeness: Snapshot unavailable';
+```
+
+**Reason:** Spec requires "Application completeness: Snapshot unavailable". The lowercase "unavailable" produced a mismatch between aria-label and visible badge text ("Unavailable"). The longer form explains what is unavailable (the snapshot), not just a generic state.
+
+**Impact:** Screen reader users. No visible change.
+
+**Risk:** None — aria-label copy change only.
+
+---
+
+### Fix 2 — Back button: added explicit aria-label for directional clarity
+
+**File:** `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.html`
+**Line:** 4
+
+**Before:**
+```html
+<button type="button" class="aad-back" (click)="goBack()">
+  <span aria-hidden="true">‹</span> My Applications
+</button>
+```
+
+**After:**
+```html
+<button type="button" class="aad-back" aria-label="Back to My Applications" (click)="goBack()">
+  <span aria-hidden="true">‹</span> My Applications
+</button>
+```
+
+**Reason:** Visible text "My Applications" is accessible but lacks directional context. A screen reader user tabbing to this button needs to understand it *navigates back*. "Back to My Applications" is unambiguous. The `‹` icon is aria-hidden so the aria-label becomes the complete accessible name.
+
+**Impact:** Screen reader users. No visual change.
+
+**Risk:** None — additive aria-label.
+
+---
+
+### Fix 3 — Toggle button: replaced title-only with dynamic aria-label
+
 **File:** `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html`
-**Line:** 60
+**Lines:** 23–29 (completeness toggle button)
 
 **Before:**
 ```html
-<a class="app-snapshot-cta" routerLink="/user/profile/edit">Update your profile →</a>
+<button type="button"
+        class="app-completeness-toggle"
+        [attr.aria-expanded]="expandedSnapshotId === app.jobApplicationId"
+        [attr.aria-controls]="'completeness-' + app.jobApplicationId"
+        (click)="toggleSnapshot(app.jobApplicationId)"
+        title="View application completeness details">
 ```
 
 **After:**
 ```html
-<a class="app-snapshot-cta" routerLink="/user/profile/edit">Update your profile <span aria-hidden="true">→</span></a>
+<button type="button"
+        class="app-completeness-toggle"
+        [attr.aria-expanded]="expandedSnapshotId === app.jobApplicationId"
+        [attr.aria-controls]="'completeness-' + app.jobApplicationId"
+        [attr.aria-label]="(expandedSnapshotId === app.jobApplicationId ? 'Hide' : 'Show') + ' application completeness for ' + app.jobTitle"
+        (click)="toggleSnapshot(app.jobApplicationId)"
+        title="View application completeness details">
 ```
 
-**Why (Gate A — accessible link text):**
-The `→` character (U+2192 RIGHT ARROW) was inside the link as raw text. Screen readers announce it literally as "right-pointing arrow" or "right arrow", breaking the natural reading of "Update your profile right arrow". Wrapping in `aria-hidden="true"` hides it from assistive technology while keeping it visually present. Link text "Update your profile" is self-describing out of context. No visual change for sighted users.
+**Reason:** `title` attributes are not reliably announced by screen readers. The button had no explicit aria-label. Multiple rows in the list meant screen readers could not distinguish which job's toggle was focused. The dynamic aria-label now reads "Show application completeness for {jobTitle}" or "Hide application completeness for {jobTitle}", matching the aria-expanded state.
+
+**Impact:** Screen reader users in applications list. No visual change.
+
+**Risk:** None — additive aria-label; title retained for tooltip users.
 
 ---
 
-## Fix 2 — privacyNote wording alignment: single-app endpoint → batch endpoint
-**File:** `get-hired-BE/controllers/applicationController.js`
-**Line:** 96 (function `getApplicantApplicationSnapshot`)
+### Fix 4 — "View full details" link: added descriptive aria-label per application
+
+**File:** `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html`
+**Lines:** 57–61
 
 **Before:**
-```js
-privacyNote: "Personal attributes such as gender, age, religion, and disability status are never part of this score.",
+```html
+<a class="app-detail-link"
+   [routerLink]="['/user/applications', app.jobApplicationId]"
+   [state]="{ jobTitle: app.jobTitle, companyName: app.companyName, status: app.applicantStatusName }">
+  View full details <span aria-hidden="true">→</span>
+</a>
 ```
 
 **After:**
-```js
-privacyNote: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring.",
+```html
+<a class="app-detail-link"
+   [routerLink]="['/user/applications', app.jobApplicationId]"
+   [state]="{ jobTitle: app.jobTitle, companyName: app.companyName, status: app.applicantStatusName }"
+   [attr.aria-label]="'View full application details for ' + app.jobTitle">
+  View full details <span aria-hidden="true">→</span>
+</a>
 ```
 
-**Why (copy consistency):**
-The previous NOTIFY pass (Fix 7) deliberately shortened the privacyNote for the single-app endpoint. The new batch endpoint (`getApplicantApplicationSnapshotsBatch`, line 215) introduced the longer form. The FE applicant-applications component now calls the batch endpoint for all snapshot data — meaning the single-app endpoint's wording was inconsistent with what applicants now see. To avoid divergence if both endpoints are ever called in the same session, they are aligned to the batch endpoint's wording. The batch form is more precise: "Protected" signals these are legally sensitive attributes; "never included in completeness scoring" names the specific scoring process rather than "never part of this score" (ambiguous).
+**Reason:** "View full details" is ambiguous in a list context — a screen reader user tabbing through links would hear "View full details, View full details..." with no way to distinguish which application each link opens. The aria-label is descriptive out of context.
+
+**Impact:** Screen reader users in applications list. No visual change.
+
+**Risk:** None — additive aria-label; visible text unchanged.
 
 ---
 
-**Total fixes applied this pass: 2**
+## Fixes Considered and Rejected
 
-Files changed:
-- `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html` — Fix 1
-- `get-hired-BE/controllers/applicationController.js` — Fix 2
-
-No logic was changed. No business rules were changed. No schema was changed. No emails were sent.
-
----
-
-## Note on Linter Change (not a manual fix)
-The linter automatically added class `app-snapshot-disclaimer--privacy` to the privacyNote `<p>` tag (line 72 of the HTML). This is a styling class addition — no copy change — and is consistent with the BEM modifier pattern used elsewhere in the component. Recorded here for traceability.
+| Considered Fix | Reason Not Applied |
+|----------------|-------------------|
+| Change visible back-button text to "← Back to My Applications" | Requires SCSS change (visual scope exceeds copy-only); aria-label fix (Fix 2) is sufficient |
+| Remove `title` from toggle button | `title` provides tooltip for mouse/pointer users; harmless to retain alongside aria-label |
+| Add explicit `aria-live` to badge loading span | `role="status"` already implies `aria-live="polite"` per HTML spec; duplication unnecessary |
+| Change "What was missing when you applied" wording | Current copy is historically precise; altering it would misrepresent the snapshot's purpose (historical observation, not current recommendation) |

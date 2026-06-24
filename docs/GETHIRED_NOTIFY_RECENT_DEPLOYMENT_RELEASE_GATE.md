@@ -1,79 +1,63 @@
-# GETHIRED NOTIFY — Release Gate: Recent Deployment Delta
-**Scope:** FE 20a44c5 / BE 422d340
+# GetHired NOTIFY — Release Gate: Recent Deployment
+**Scope:** FE HEAD 5ab9a05 — ApplicationCompletenessBadge, ApplicationCompletenessCard, ApplicantApplicationDetail, ApplicantApplications list
 **Date:** 2026-06-24
+**Verdict:** SHIP
 
 ---
 
-## Gate A — CTA accessible: "→" has aria-hidden or text alternative; link text makes sense out of context
-**Status: PASS (after fix)**
+## Gate Results
 
-- `→` wrapped in `<span aria-hidden="true">` — screen readers skip the arrow character
-- Link text "Update your profile" is self-describing out of context; no context-dependent phrasing like "click here" or "here"
-- Verified: `routerLink="/user/profile/edit"` routes to the correct profile edit destination
-
----
-
-## Gate B — privacyNote placement: renders below disclaimer without awkward juxtaposition
-**Status: PASS**
-
-- `disclaimerNote` renders first: "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions."
-- `privacyNote` renders second: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring."
-- Both rendered as `<p class="app-snapshot-disclaimer">` siblings inside `*ngIf="snap.hasSnapshot"` — sequenced logically (what the score is → what is never included)
-- `privacyNote` guarded by `*ngIf="snap.privacyNote"` — only renders if the API supplies a value; no blank `<p>` if omitted
-- Linter additionally added `app-snapshot-disclaimer--privacy` class for styling differentiation — no copy impact
+| Gate | Description | Result | Notes |
+|------|-------------|--------|-------|
+| A | No forbidden language in any user-facing string | PASS | Zero matches for: "bad application", "weak candidate", "rejected", "AI score", "guaranteed", "auto-rejected", "you are not qualified". Two code-comment hits (internal only, not rendered to users). |
+| B | Tone is encouraging, not punitive | PASS | Tips use past-tense anchoring ("What was missing when you applied"). Sub-headings are action-forward ("strengthen future applications"). Complete state is affirming. Pre-deployment message is factual and neutral. |
+| C | Disclaimer present when score shown | PASS | BE hardcodes disclaimerNote on both endpoints. Card template renders it via `*ngIf="snapshot.disclaimerNote"`. Score section and disclaimer are co-located in the same `*ngIf="snapshot.hasSnapshot"` block — disclaimer cannot appear without score or vice versa (within the hasSnapshot path). |
+| D | Error messages don't expose internal details | PASS | All error responses are generic ("Unable to retrieve..."). No stack traces, SQL, DB schema names, or raw error objects in any user-facing error path. FE card surfaces "Couldn't load completeness details right now." — safe. |
+| E | Back button and detail link are clear to screen readers | PASS (after fixes) | 4 fixes applied: badge null aria-label, back button aria-label, toggle button aria-label, detail link aria-label. All interactive elements now have unambiguous accessible names in list context. |
 
 ---
 
-## Gate C — Error messages safe: no stack traces, no internal terms exposed to API callers
-**Status: PASS**
+## Fix Summary
 
-All three batch endpoint error messages verified:
+4 fixes applied pre-ship (all aria-label / copy only — no logic, no schema, no email):
 
-| Error | Exposure check | Verdict |
-|---|---|---|
-| `"applicationIds is required."` | No DB names, no stack trace, no internal identifiers | PASS |
-| `"applicationIds must be a non-empty comma-separated list of up to 50 IDs."` | Technical language appropriate for API caller; no system internals | PASS |
-| `"Unable to retrieve your application snapshots. Please try again later."` | Generic safe message; raw error caught and logged server-side only (`console.error`) | PASS |
-
-Single-app endpoint existing errors also verified intact and safe (no regression).
+1. Badge null-state aria-label: `"Application completeness: unavailable"` → `"Application completeness: Snapshot unavailable"`
+2. Detail page back button: added `aria-label="Back to My Applications"`
+3. Applications list toggle button: added dynamic `aria-label` ("Show/Hide application completeness for {jobTitle}")
+4. Applications list detail link: added `aria-label="View full application details for {jobTitle}"`
 
 ---
 
-## Gate D — All previous strings intact: existing copy not accidentally overwritten
-**Status: PASS**
+## Strings Confirmed Clean (No Fix Required)
 
-| String | Expected location | Verified present |
-|---|---|---|
-| `"What was missing when you applied — add these now for stronger future applications:"` | HTML line 56 | Yes |
-| `"Getting started"` (badge, incomplete level) | HTML line 50 | Yes |
-| `"Completeness details aren't available for this application — it was submitted before this feature was introduced."` | HTML line 35 | Yes |
-| `"Snapshot unavailable right now."` | HTML line 77 (`#snapSilent`) | Yes |
-
-No existing strings were overwritten or regressed by template changes.
-
----
-
-## Gate E — Batch 400 error: FE catchError swallows silently; no alarming message shown
-**Status: PASS**
-
-- `catchError(() => of({}))` at `applicant-applications.component.ts` line 57 catches all errors from the batch endpoint (including 400 for 51+ IDs)
-- Resolves with empty map `{}`; `snapshotsLoaded` becomes `true`
-- All `snapshotFor()` calls return `null` → `#snapSilent` template fires per row: "Snapshot unavailable right now."
-- Result: soft, non-alarming degradation. Applicants see a neutral message rather than a technical error or blank space.
-- FE currently sends at most N applicationIds where N = `applications.length`. The 50-ID limit would only be hit by applicants with 51+ applications. Even then the FE degrades gracefully.
+- "Getting started" / "Excellent" / "Strong" / "Basic" / "Unavailable" — badge level labels
+- "Loading application completeness" — skeleton state
+- "Couldn't load completeness details right now." + "Try again" — error state
+- "Completeness details unavailable right now." — null snapshot
+- "This application was submitted before completeness tracking was introduced..." — pre-deployment
+- "Application completeness when submitted" — score header
+- "Captured {date}" — timestamp
+- "Your profile was complete when you applied. Keep it updated for future applications." — positive state
+- "What was missing when you applied" + "Add these now to strengthen future applications:" — required tips
+- "Nice-to-haves (not required)" + "Extra details that help you stand out:" — recommended tips
+- "Update your profile →" / "Add to your profile →" — CTAs
+- Disclaimer and privacyNote from BE — both clear, appropriate, and consistently delivered
+- "Application Details" — fallback h1 on detail page
+- "Application completeness" — section heading
+- "My Applications" — page h1 and back button visible text
 
 ---
 
-## Gate Summary
+## Open Items (Not Blocking Ship)
 
-| Gate | Status | Notes |
-|---|---|---|
-| A — CTA accessible | PASS | `→` aria-hidden; link text self-describing |
-| B — privacyNote placement | PASS | Logical sequence after disclaimerNote; guarded by `*ngIf` |
-| C — Error messages safe | PASS | No internals exposed; all errors are generic or parameter-naming only |
-| D — Previous strings intact | PASS | All 4 carry-over strings present at expected locations |
-| E — Batch 400 silent | PASS | `catchError(() => of({}))` degrades gracefully to soft unavailable message |
+| Item | Severity | Notes |
+|------|----------|-------|
+| `disclaimerNote` present in batch response even for `hasSnapshot === false` entries | INFO | Disclaimer text is benign in any context; no score is displayed for those entries |
+| `title` attribute retained on toggle button alongside new aria-label | INFO | Harmless; provides tooltip for pointer users |
+| Back button visible text does not say "Back to" | COSMETIC | aria-label covers this for screen readers; visual change is out of scope for copy-only pass |
 
-**Overall release gate for this deployment delta: PASS**
+---
 
-2 copy fixes applied (arrow aria-hidden + privacyNote alignment). No logic, business rules, or schema changed.
+## Verdict
+
+**SHIP** — All 5 gates pass. 4 minor accessibility copy fixes applied. No user-facing string uses forbidden language. Tone is consistently encouraging. Error messages are safe. Disclaimer is reliably present with every score. Screen reader experience is now unambiguous across the applications list and detail page.

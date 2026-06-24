@@ -1,200 +1,198 @@
-# GETHIRED STITCH — Recent Deployment Integration Report
-## Deployment: Batch Snapshot Endpoint (FE 20a44c5 / BE 422d340)
-**Date:** 2026-06-24  
-**Scope:** FE→BE contract for `GET /applicant/application/snapshots?applicationIds=<csv>`  
-**STITCH version:** v2 (integration-safety focus, small/safe/additive fixes only)
+# GETHIRED STITCH — Recent Deployment Report
+_Scoped to FE HEAD 5ab9a05 / BE applicationController.js snapshot+batch endpoints_
+_Generated: 2026-06-24_
 
 ---
 
-## 1. Deployment Summary
+## Scope
 
-Two controllers and two FE files shipped in this deployment:
+Two new API call patterns deployed:
 
-**BE:**
-- `controllers/applicationController.js` — added `getApplicantApplicationSnapshotsBatch`
-- `routes/applicationRoute.js` — registered `GET /applicant/application/snapshots`
-
-**FE:**
-- `src/app/application/application.service.ts` — added `getApplicationSnapshots(applicationIds)`
-- `src/app/applicant-panel/applicant-applications/applicant-applications.component.ts` — calls `loadSnapshots()` after applications load; maps results into `snapshotsMap`
+| Pattern | FE Method | Endpoint | FE Read Path |
+|---|---|---|---|
+| Batch (list) | `getApplicationSnapshots(ids[])` | `GET /applicant/application/snapshots?applicationIds=…` | `res?.data?.snapshots ?? {}` |
+| Single (detail) | `getApplicationSnapshot(applicationId)` | `GET /applicant/application/snapshot?applicationId=…` | `res?.data ?? null` |
 
 ---
 
-## 2. Contract Seams Verified
+## Seam-by-Seam Findings
 
-### Seam 1 — Route Path (Gate A)
+### Seam 1 — Single endpoint response shape vs FE consumption (Gate B)
 
-**File:** `get-hired-BE/routes/applicationRoute.js` line 42
-
+**BE sends (applicationController.js line 86–98):**
 ```js
-router.get("/applicant/application/snapshots", verifyAuth, getApplicantApplicationSnapshotsBatch)
+successMessage.data = {
+  applicationId,
+  hasSnapshot: !!snap,
+  snapshotCreatedAt: snap ? snap.created_at : null,
+  completenessScore: comp ? comp.completeness_score : null,
+  completenessLevel: comp ? comp.completeness_level : null,
+  completedSections: comp ? comp.completed_sections : null,
+  missingRequired: comp ? comp.missing_required : null,
+  missingRecommended: comp ? comp.missing_recommended : null,
+  disclaimerNote: "...",
+  privacyNote: "...",
+};
+return res.status(200).send(successMessage);
+// => { status: "success", data: { applicationId, hasSnapshot, snapshotCreatedAt, ... } }
 ```
 
-Path is `GET /applicant/application/snapshots` — singular "applicant", plural "snapshots".
+`successMessage` is the shared singleton `{ status: "success" }` from `helpers/status.js`. After mutation: `{ status: "success", data: { ... } }`.
 
-FE call (`application.service.ts` line 30):
+**FE reads (applicant-application-detail.component.ts line 54):**
 ```ts
-return this.baseService.get<any>(`${environment.api_url}/applicant/application/snapshots?applicationIds=${ids}`);
+map((res: any) => res?.data ?? null)
 ```
+`res.data` resolves to the full inner object `{ applicationId, hasSnapshot, snapshotCreatedAt, ... }`.
 
-Path segment matches exactly. Auth middleware `verifyAuth` is present. Route is registered before any wildcard/catch-all routes.
-
-**Gate A: PASS**
+**Result: MATCH.** FE correctly unwraps the single level of wrapping. `this.snapshot` receives the flat data object.
 
 ---
 
-### Seam 2 — Response Shape / BaseService Unwrapping (Gate B)
+### Seam 2 — `snapshotCreatedAt` path in card template (Gate B continued)
 
-**Three files form this seam: `status.js`, `base.service.ts`, component.**
-
-**`helpers/status.js`:**
-```js
-const successMessage = { status: "success" };
+**Card template (application-completeness-card.component.html line 39):**
+```html
+<span class="acdc-timestamp" *ngIf="snapshot.snapshotCreatedAt">
+  Captured {{ snapshot.snapshotCreatedAt | date:'mediumDate' }}
+</span>
 ```
-`successMessage` is a module-level singleton. Controller mutates it in place:
+
+`this.snapshot` = `res.data` = `{ snapshotCreatedAt: snap?.created_at, ... }`. So `snapshot.snapshotCreatedAt` is at depth 1 — correct.
+
+**Result: CORRECT.** The `snapshotCreatedAt` field is present at the right level. The batch endpoint does NOT include `snapshotCreatedAt` (by design — list card shows badge only, not timestamp). The detail view is the only consumer of this field, and it uses the single endpoint which includes it. No mismatch.
+
+---
+
+### Seam 3 — `null?.length > 0` guard in Angular template (Gate C)
+
+**Card template (line 83):**
+```html
+*ngIf="snapshot.missingRequired?.length > 0"
+```
+
+**Batch BE response (applicationController.js line 239):**
+```js
+missingRequired: comp ? comp.missing_required : null,
+```
+When no completeness row exists: `comp = null` → `missingRequired = null`.
+When rows exist but field is empty: `comp.missing_required` may be `null` or `[]`.
+
+**Angular evaluation chain:**
+- `null?.length` → `undefined` (optional chain short-circuits)
+- `undefined > 0` → `false` (JS coerces undefined to NaN; NaN > 0 is false)
+- Result: `*ngIf` is `false` → section hidden. Correct behavior.
+
+Same chain applies to `missingRecommended?.length > 0`.
+
+The `isComplete` getter in the TS component (line 79) uses `!this.snapshot.missingRequired?.length` which is `!undefined` = `true` when null — also correct.
+
+**Result: SAFE.** Null is handled correctly by optional chaining in both the template and the component getter.
+
+---
+
+### Seam 4 — Route order: `applications` before `applications/:id` (Gate D)
+
+**applicant-panel.module.ts lines 52–58:**
+```ts
+{
+  path: 'applications',
+  component: ApplicantApplicationsComponent,
+},
+{
+  path: 'applications/:id',
+  component: ApplicantApplicationDetailComponent,
+},
+```
+
+Angular's router uses first-match wins within a `children` array. However, `applications` (exact match) and `applications/:id` (parameterized) are not in conflict for any actual URL:
+
+- `/user/applications` → matches `applications` (no trailing segment) → correct
+- `/user/applications/some-uuid` → does NOT match `applications` (different segment count); matches `applications/:id` → correct
+
+Angular does not shadow parameterized routes with exact siblings because it matches path segments independently. The default `pathMatch` is `'prefix'` but `applications` only matches when there is no further segment (the child router strips the parent prefix). No shadow exists.
+
+**Result: SAFE.** Route order is not a concern here. Both routes resolve independently regardless of declaration order.
+
+---
+
+### Seam 5 — `applicationId` flow to card analytics in both contexts (Gate E)
+
+**List context (applicant-applications.component.html line 54):**
+```html
+[applicationId]="app.jobApplicationId"
+```
+Source: `app.jobApplicationId` from the `getMyApplications()` response array.
+
+**Detail context (applicant-application-detail.component.html line 23):**
+```html
+[applicationId]="applicationId"
+```
+Source: `this.applicationId` set from `this.route.snapshot.paramMap.get('id')` (line 34 of detail component TS).
+
+The route param `:id` is populated from `[routerLink]="['/user/applications', app.jobApplicationId]"` in the list template (line 59 of list HTML). So both paths originate from the same `app.jobApplicationId` value.
+
+**Card component (application-completeness-card.component.ts lines 55–58):**
+```ts
+onCtaClick(label: string): void {
+  if (this.applicationId) {
+    this.analytics.trackApplicationCompletenessCtaClicked(this.applicationId, label);
+  }
+}
+```
+Guard `if (this.applicationId)` prevents analytics call with empty string (safe for both contexts before data loads).
+
+**Result: CORRECT.** Both contexts deliver the same UUID to the card's `applicationId` input. Analytics fires with a valid, consistent ID in both list and detail views.
+
+---
+
+## Batch Response Shape Verification (Gate A)
+
+**BE sends (applicationController.js line 246):**
 ```js
 successMessage.data = { snapshots };
-return res.status(status.success).send(successMessage);
-```
-Wire payload is:
-```json
-{ "status": "success", "data": { "snapshots": { "<id>": { "hasSnapshot": true, "completenessScore": 80, ... } } } }
+// => { status: "success", data: { snapshots: { [applicationId]: { hasSnapshot, completenessScore, ... } } } }
 ```
 
-**`base.service.ts`:**
+**FE reads (applicant-applications.component.ts line 77):**
 ```ts
-public get<T>(url: string): Observable<T> {
-  return this.http.get<T>(url);
-}
+map((res: any) => res?.data?.snapshots ?? {})
 ```
-`BaseService.get<T>()` is a pass-through to Angular `HttpClient.get<T>()`. No interceptor, no `.data` unwrapping, no custom transform exists in BaseService. The Observable emits the raw parsed JSON body.
 
-**Component (`applicant-applications.component.ts` line 56):**
-```ts
-map((res: any) => res?.data?.snapshots ?? {}),
-```
-`res` is the raw JSON body `{ status, data: { snapshots } }`. Therefore:
-- `res.data` = `{ snapshots: {...} }`
-- `res.data.snapshots` = the ID-keyed map
+`res.data.snapshots` resolves to the keyed map. The fallback `{}` is used if the batch returns an empty result (BE returns `{ snapshots: {} }` which also resolves cleanly).
 
-The nesting level is correct. If the response were already unwrapped to `{ snapshots }`, the FE would read `undefined` and fall back to `{}` (silent failure). Confirmed it is NOT unwrapped — reading at the correct level.
-
-**Gate B: PASS**
-
-**Tech debt noted:** `successMessage` is a module-level singleton mutated on every request (pattern repeated 124 times across 15 controllers). Node.js is single-threaded so there is no actual race condition in current code — `successMessage.data = x` and `res.send(successMessage)` execute in the same event loop tick with no `await` between them. The risk is future: any refactor introducing an `await` between mutation and send could silently corrupt concurrent responses. Recommend inline response objects: `res.status(200).send({ status: "success", data: { snapshots } })`. Tracked as tech debt.
+**Result: MATCH.**
 
 ---
 
-### Seam 3 — Missing IDs / snapshotFor() (Gate C)
+## Notable Non-Blocking Observations
 
-**Flow for an applicationId that does not exist in `job_applicants`:**
+### OBS-1: `successMessage` is a shared mutable singleton
+`helpers/status.js` exports `successMessage = { status: "success" }` as a module-level singleton. All controllers in `applicationController.js` mutate `.data` directly on it. Under concurrent async operations (two requests racing), the second `successMessage.data =` assignment could overwrite the first before the first `res.send()` completes.
 
-1. BE: `SELECT ... FROM job_applicants WHERE job_application_id = ANY($1)` returns no row for the unknown ID.
-2. `verifiedIds` excludes it — it never enters the `snapshots` map.
-3. Wire: `snapshots` has no key for the unknown ID.
-4. FE: `snapshotsMap.get(unknownId)` returns `undefined`.
-5. `snapshotFor(unknownId)` returns `undefined ?? null` = `null`.
-6. Template: `*ngIf="snapshotFor(app.jobApplicationId)"` is falsy → `#snapSilent` renders.
+**Risk level: LOW-MEDIUM.** Node.js is single-threaded (no true race on a CPU tick), and `res.send()` is called synchronously after the assignment. Under normal single-instance Node operation this is safe. Under high concurrency with event-loop interleaving at await points this is theoretically unsafe. The pattern is widespread across the codebase (not introduced by this deployment) and is not fixed here — tracked for a future SECURE pass.
 
-This is the intended design per the controller comment: *"IDs that don't exist are silently excluded from results (not a 403 — the caller owns the list, they may have IDs from before snapshots existed)."*
+### OBS-2: Batch endpoint — `forkJoin` error handling
+If all chunks fail, `forkJoin` emits to the `error` handler and `snapshotsError = true`. The UI shows a retry button. If some chunks succeed and some fail, the individual `catchError(() => of({}))` per chunk means partial results are merged — failed chunk IDs get no entry in `snapshotsMap`, so `snapshotFor(id)` returns `null`, rendering the "unavailable" state. Behavior is acceptable.
 
-**Gate C: PASS**
+### OBS-3: `snapshotCreatedAt` absent from batch response (by design)
+The batch endpoint does not include `snapshotCreatedAt`. The list view (which uses the batch) does not display it. The detail view (which uses the single endpoint) does display it via `snapshot.snapshotCreatedAt | date:'mediumDate'`. This division is intentional and correct.
 
----
-
-### Seam 4 — 51+ IDs / Max-50 Guard (Gate D)
-
-**BE guard (`applicationController.js` line 175):**
-```js
-if (applicationIds.length === 0 || applicationIds.length > 50) {
-  errorMessage.error = "applicationIds must be a non-empty comma-separated list of up to 50 IDs.";
-  return res.status(status.bad).send(errorMessage);  // HTTP 400
-}
-```
-
-**FE — no pre-send guard.** `loadSnapshots()` sends all IDs from `this.applications` without checking count.
-
-**FE error handling:**
-```ts
-catchError(() => of({})),
-```
-Angular treats HTTP 400 as an error. `catchError` intercepts it, returns `of({})`. The `map` operator before `catchError` is bypassed (error path skips `map`). The subscriber receives `{}`. `Object.entries({})` iterates nothing. `snapshotsLoaded = true`. All rows render `#snapSilent`.
-
-**Failure mode documentation:**
-- An applicant with 51+ applications loses all completeness badge data silently.
-- The page renders without error. No user-facing message appears.
-- Developer console shows an `HttpErrorResponse` (if DevTools open), but production users see nothing.
-
-**Known gap, not fixed this pass** (fix would require FE batching logic — outside small/safe scope). Tracked in Fix Log as DEFERRED.
-
-**Gate D: PARTIAL PASS** — graceful degradation confirmed; silent failure for 51+ applications documented.
+### OBS-4: Detail component — `getCurrentNavigation()` timing
+`this.router.getCurrentNavigation()` on line 37 of the detail component returns `null` when `ngOnInit` fires after navigation has completed (which is common). The fallback `window.history.state ?? {}` handles this correctly, as Angular populates `history.state` with navigation extras. No functional gap.
 
 ---
 
-### Seam 5 — encodeURIComponent / Double-Encoding (Gate E)
+## Summary
 
-**FE (`application.service.ts` line 29):**
-```ts
-const ids = applicationIds.map(id => encodeURIComponent(id)).join(',');
-```
+| Gate | Status | Evidence |
+|---|---|---|
+| A | PASS | Batch: BE sends `{data:{snapshots:{...}}}`, FE reads `res?.data?.snapshots` — exact match |
+| B | PASS | Single: BE sends `{data:{applicationId, snapshotCreatedAt, ...}}`, FE reads `res?.data` → `snapshot.snapshotCreatedAt` correct |
+| C | PASS | `null?.length > 0` evaluates to `false` via optional chain → undefined → NaN > 0 → false; section hidden correctly |
+| D | PASS | No route shadow: `applications` and `applications/:id` have different segment counts, Angular resolves independently |
+| E | PASS | Both list (`app.jobApplicationId`) and detail (route param from same UUID) deliver identical ID to card `[applicationId]` input |
 
-UUIDs contain only hex digits (`0-9`, `a-f`) and hyphens (`-`). These are RFC 3986 unreserved characters — `encodeURIComponent` does not percent-encode them. The call is a functional no-op on valid UUIDs.
-
-**BE (`applicationController.js` line 174):**
-```js
-const applicationIds = String(raw).split(",").map(s => s.trim()).filter(Boolean);
-```
-Express automatically URL-decodes `req.query` values before the handler runs. No manual decode in the controller. The split delimiter is literal `,` — not `%2C`. If a comma were ever percent-encoded, Express would decode it first and the split would handle it correctly.
-
-**Upstream encoding check:** `applicationIds` originates from `this.applications.map(app => app.jobApplicationId)` — raw UUID strings from the API response JSON. No prior encoding in the data path was found.
-
-**Gate E: PASS**
-
----
-
-## 3. Cross-Cutting Observations
-
-### Auth coverage
-All three snapshot routes are protected:
-- `GET /applicant/application/snapshot` — `verifyAuth` ✓
-- `GET /applicant/application/snapshots` — `verifyAuth` ✓
-- `GET /job/applicant/snapshot-summary` — `verifyAuth` ✓
-
-### Ownership enforcement
-The batch endpoint enforces ownership before returning data:
-```js
-const verifiedIds = appRows
-  .filter(row => row.candidate_id === uid)
-  .map(row => row.job_application_id);
-```
-IDs from other applicants are silently excluded rather than 403'd. This is correct — 403ing would allow enumeration: a caller could detect whether an ID is valid by comparing 403 vs absence.
-
-### N+1 elimination confirmed
-Previous single-snapshot endpoint (`/snapshot`) made 2 DB calls per ID. The new batch endpoint makes 3 DB calls total regardless of input list size (`job_applicants` ownership check + `application_snapshots` + `application_completeness_snapshots`). For 50 applications: 100 queries → 3 queries.
-
----
-
-## 4. Gates Summary
-
-| Gate | Description | Result |
-|------|-------------|--------|
-| A | `GET /applicant/application/snapshots` registered with `verifyAuth` | PASS |
-| B | FE reads `res?.data?.snapshots` — correct nesting for raw `HttpClient` response | PASS |
-| C | Non-existent IDs absent from map → `snapshotFor()` returns `null` → `#snapSilent` | PASS |
-| D | 51+ IDs → HTTP 400 caught by `catchError(() => of({}))` → graceful degradation | PARTIAL |
-| E | `encodeURIComponent` is no-op on UUIDs; no double-encoding; Express auto-decodes | PASS |
-
-**Overall: 4 PASS / 1 PARTIAL — safe to ship, Gate D documented as known gap**
-
----
-
-## 5. Files Inspected
-
-| File | Purpose |
-|------|---------|
-| `get-hired-BE/controllers/applicationController.js` | Controller logic, ownership check, batch query, response shape |
-| `get-hired-BE/routes/applicationRoute.js` | Route registration, auth middleware |
-| `get-hired-BE/helpers/status.js` | `successMessage` singleton structure |
-| `get-hired-FE/src/app/application/application.service.ts` | FE API call construction |
-| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.ts` | `loadSnapshots()`, `snapshotFor()`, error handling |
-| `get-hired-FE/src/app/core/services/base.service.ts` | BaseService — confirms no response unwrapping |
+**Seams verified: 5**
+**Issues found: 0 blocking, 1 low-medium non-blocking (OBS-1 singleton mutation), 3 informational**
+**Fixes applied: 0**

@@ -1,79 +1,143 @@
-# GETHIRED NOTIFY — Recent Deployment Audit Report
-**Scope:** FE 20a44c5, BE 422d340 (batch snapshot endpoint + applicant-applications template update)
-**Previous NOTIFY pass:** FE 76c545e / BE faa2232 (10 fixes; gates A–E all PASS)
+# GetHired NOTIFY — Recent Deployment Audit Report
+**Scope:** FE HEAD 5ab9a05 — ApplicationCompletenessBadge, ApplicationCompletenessCard, ApplicantApplicationDetail, ApplicantApplications list
 **Date:** 2026-06-24
-**Auditor:** NOTIFY command
+**Auditor:** NOTIFY command (scoped to recent deployment)
 
 ---
 
-## Context
+## Summary
 
-This is an incremental NOTIFY pass over the delta since the previous NOTIFY run. The previous pass established a clean baseline with all 5 gates passing. This pass audits only the new strings introduced in this deployment.
+32 user-facing strings audited across 4 components (2 shared, 2 applicant-panel). 4 fixes applied. All 5 gates pass.
 
 ---
 
 ## Files Audited
 
 | File | Role |
-|---|---|
-| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html` | FE template — new CTA + privacyNote placement |
-| `get-hired-BE/controllers/applicationController.js` | BE batch endpoint error strings + privacyNote consistency |
-| `get-hired-BE/scripts/backfill_application_snapshots.js` | Developer-facing console messages only — out of scope |
+|------|------|
+| `get-hired-FE/src/app/shared/components/application-completeness-badge/application-completeness-badge.component.ts` | Badge aria-label logic |
+| `get-hired-FE/src/app/shared/components/application-completeness-badge/application-completeness-badge.component.html` | Badge template |
+| `get-hired-FE/src/app/shared/components/application-completeness-card/application-completeness-card.component.html` | Card template (all score/tip/disclaimer states) |
+| `get-hired-FE/src/app/shared/components/application-completeness-card/application-completeness-card.component.ts` | Card logic |
+| `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.html` | Detail page (back button, section heading) |
+| `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.ts` | Detail page logic |
+| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html` | Applications list (detail link, toggle button) |
+| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.ts` | Applications list logic |
+| `get-hired-BE/controllers/applicationController.js` | BE disclaimer/privacyNote strings, error messages |
 
 ---
 
-## Message Inventory (13 audited)
+## String Inventory
 
-### FE Template
+### ApplicationCompletenessBadgeComponent (8 strings)
 
-| # | String / Element | Location | Finding |
-|---|---|---|---|
-| 1 | `Update your profile →` CTA | Line 60 | Arrow U+2192 rendered as raw link text. Screen readers announce "right-pointing arrow". **Fixed** — wrapped in `<span aria-hidden="true">`. |
-| 2 | `snap.privacyNote` placement | Line 72, after `disclaimerNote` | Renders as second `.app-snapshot-disclaimer` `<p>` immediately below disclaimerNote. Logical sequence: score definition first, then privacy assurance. No awkward juxtaposition. **Pass.** |
-| 3 | `What was missing when you applied — add these now for stronger future applications:` | Line 56 | Existing string from previous NOTIFY pass. Present and intact. **Pass.** |
-| 4 | `Getting started` badge | Line 50 | Existing string. Present and intact (`completenessLevel === 'incomplete'` branch). **Pass.** |
-| 5 | `Completeness details aren't available for this application — it was submitted before this feature was introduced.` | Line 35 | Existing string. Present and intact. **Pass.** |
-| 6 | `Snapshot unavailable right now.` | Line 77 (`#snapSilent`) | Existing string. Present and intact. **Pass.** |
+| # | String | State | Finding |
+|---|--------|-------|---------|
+| 1 | "Getting started" | badge level (incomplete) | PASS — neutral, encouraging, not judgmental |
+| 2 | "Excellent" | badge level | PASS — unambiguously positive |
+| 3 | "Strong" | badge level | PASS — positive |
+| 4 | "Basic" | badge level | PASS — descriptive, not pejorative |
+| 5 | "Unavailable" | visible text (null/null state) | PASS — factual and non-punitive |
+| 6 | "Application completeness: Snapshot unavailable" | aria-label (null/null) | FIXED — was "Application completeness: unavailable" (lowercase); corrected to match spec |
+| 7 | "Loading application completeness" | aria-label (loading) | PASS — clear to screen readers |
+| 8 | "Application completeness: {Level}, {N} percent" | aria-label (score) | PASS — reads aloud correctly, e.g. "Application completeness: Strong, 82 percent" |
 
-### BE — applicationController.js (batch endpoint: user-facing API errors)
+### ApplicationCompletenessCardComponent (18 strings)
 
-| # | String | Endpoint | Finding |
-|---|---|---|---|
-| 7 | `applicationIds is required.` | Batch GET 400 | New string. Clear and precise — names the missing parameter. Appropriate for an API error. **Pass.** |
-| 8 | `applicationIds must be a non-empty comma-separated list of up to 50 IDs.` | Batch GET 400 | New string. Technical language ("comma-separated") is appropriate — this is an API error, not a UI error; callers are developers or FE code. Constraint (50 IDs max) is explicit. **Pass.** |
-| 9 | `Unable to retrieve your application snapshots. Please try again later.` | Batch GET 500 | New string. Generic safe error — no stack trace, no internal terms, no DB identifiers. "Please try again later" is appropriate for a transient server error. **Pass.** |
-| 10 | `applicationId is required.` (single-app endpoint) | Single GET 400 | Existing string — intact, not affected by new batch code. **Pass.** |
-| 11 | `Unable to retrieve your application snapshot. Please try again later.` (single-app endpoint) | Single GET 500 | Existing string — intact. **Pass.** |
-| 12 | `privacyNote` — single-app endpoint | `getApplicantApplicationSnapshot` line 96 | **Wording diverged from batch endpoint.** Single-app said "Personal attributes such as..." (shorter form from previous NOTIFY Fix 7). Batch says "Protected personal attributes (such as...) are never included in completeness scoring." The FE renders whichever string the API returns — both endpoints now feed the same `snap.privacyNote` field, so inconsistent wording produces inconsistent UI across application cards. **Fixed** — single-app endpoint now matches batch endpoint wording. |
-| 13 | `privacyNote` — batch endpoint | `getApplicantApplicationSnapshotsBatch` line 215 | Canonical wording. No change needed. **Pass.** |
+| # | String | State | Finding |
+|---|--------|-------|---------|
+| 9 | "Loading application completeness" | skeleton aria-label | PASS |
+| 10 | "Couldn't load completeness details right now." | error state | PASS — generic, safe, no internals |
+| 11 | "Try again" | error retry button | PASS |
+| 12 | "Completeness details unavailable right now." | null snapshot | PASS — temporary framing, not permanent failure |
+| 13 | "This application was submitted before completeness tracking was introduced. Completeness details are available for new applications going forward." | pre-deployment state | PASS — factual, forward-looking, no blame |
+| 14 | "Application completeness when submitted" | score header label | PASS — anchors score to submission moment, not current state |
+| 15 | "Captured {date}" | timestamp | PASS — precise and unambiguous; only shown when snapshotCreatedAt is present |
+| 16 | "Your profile was complete when you applied. Keep it updated for future applications." | positive/complete state | PASS — affirming, action-forward |
+| 17 | "What was missing when you applied" | required tips heading | PASS — past-tense framing; positions gap as historical, not current judgment |
+| 18 | "Add these now to strengthen future applications:" | required tips sub-heading | PASS — future-focused action framing |
+| 19 | "Nice-to-haves (not required)" | recommended tips heading | PASS — explicitly labels optional nature |
+| 20 | "Extra details that help you stand out:" | recommended tips sub-heading | PASS — positive framing |
+| 21 | "Update your profile →" | required CTA | PASS — directive action, not accusatory |
+| 22 | "Add to your profile →" | recommended CTA | PASS |
+| 23 | "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions." | disclaimerNote (from BE) | PASS — explicitly decouples from hiring; present whenever score shown |
+| 24 | "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring." | privacyNote (from BE) | PASS — explicit and reassuring |
+| 25 | "Application completeness: {N} percent" | progressbar aria-label | PASS — reads correctly for assistive tech |
+| 26 | "Application completeness details" | card region aria-label | PASS |
 
-### BE Script (developer-facing only)
+### ApplicantApplicationDetailComponent (6 strings)
 
-`backfill_application_snapshots.js` — all messages are `console.log/warn/error` output for developer CLI use only. No user-facing strings. Out of scope.
+| # | String | State | Finding |
+|---|--------|-------|---------|
+| 27 | "Back to My Applications" | back button aria-label | FIXED — added explicit aria-label; visible text ("My Applications") was screen-reader-accessible but lacked directional cue |
+| 28 | "My Applications" | back button visible text | PASS |
+| 29 | "‹" / "←" | back button icon | PASS — aria-hidden="true" |
+| 30 | "Application Details" | fallback h1 | PASS — minimal safe fallback when no jobTitle in router state |
+| 31 | "Application completeness" | section h2 | PASS |
+| 32 | "Application completeness" | section aria-label | PASS (redundant with h2 but not harmful) |
+
+### applicant-applications.component.html (4 strings/elements)
+
+| # | String/Element | State | Finding |
+|---|----------------|-------|---------|
+| 33 | Completeness toggle button | list row | FIXED — was title-attribute only; added dynamic aria-label ("Show/Hide application completeness for {jobTitle}") |
+| 34 | "View full details →" | detail link | FIXED — added aria-label="View full application details for {jobTitle}"; was ambiguous when multiple rows present |
+| 35 | "→" (link arrow) | detail link | PASS — aria-hidden="true" |
+| 36 | "Application completeness details" | expandable region aria-label | PASS |
 
 ---
 
-## Findings Detail
+## BE Error Message Safety
 
-### Finding 1 — Arrow not aria-hidden on CTA (LOW — accessibility)
-**File:** `applicant-applications.component.html` line 60
-**Before:** `<a ... >Update your profile →</a>`
-**After:** `<a ... >Update your profile <span aria-hidden="true">→</span></a>`
-Screen readers will now read "Update your profile" without the trailing "right-pointing arrow" announcement. Link text remains self-describing out of context.
+Both the single-app and batch snapshot endpoints return only safe, generic error messages:
 
-### Finding 2 — privacyNote wording inconsistency (LOW — copy consistency)
-**File:** `applicationController.js` line 96 (`getApplicantApplicationSnapshot`)
-**Before:** `"Personal attributes such as gender, age, religion, and disability status are never part of this score."`
-**After:** `"Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring."`
-The previous NOTIFY pass (Fix 7) deliberately shortened the string for the single-app endpoint. The new batch endpoint used the longer form. Since the FE reads `snap.privacyNote` from whichever endpoint responds, mixed wording would produce inconsistent UI across application cards depending on which endpoint served the data. Aligned to the batch endpoint wording (longer form is more precise: "Protected", "included in completeness scoring").
+| Endpoint | Error Message |
+|----------|---------------|
+| GET /applicant/application/snapshot (400) | "applicationId is required." |
+| GET /applicant/application/snapshot (500) | "Unable to retrieve your application snapshot. Please try again later." |
+| GET /applicant/application/snapshots (400) | "applicationIds is required." / "applicationIds must be a non-empty comma-separated list of up to 50 IDs." |
+| GET /applicant/application/snapshots (500) | "Unable to retrieve your application snapshots. Please try again later." |
 
-### Finding 3 — Gate E: 51+ IDs swallowed silently (INFORMATIONAL — by design)
-**Mechanism:** `catchError(() => of({}))` in `applicant-applications.component.ts` line 57.
-**Behavior:** If the batch endpoint returns 400 (e.g., 51+ applicationIds), the error is caught and resolved to an empty map. `snapshotsLoaded = true`. All `snapshotFor()` calls return `null`. The `#snapSilent` template fires per application row: "Snapshot unavailable right now." Not alarming, not misleading (snapshots are a supplementary feature). No fix needed.
+No stack traces, no SQL, no internal field names, no DB schema identifiers in any error response.
 
 ---
 
-## No Issues Found In
-- BE error string safety (Gate C): no stack traces, no internal DB schema, no raw error objects in any error response
-- Existing string integrity (Gate D): all 4 carry-over strings present at expected template locations
-- privacyNote placement (Gate B): renders cleanly after disclaimerNote, logically sequenced
+## Forbidden Language Scan
+
+Pattern: `bad application`, `weak candidate`, `rejected`, `AI score`, `guaranteed`, `auto-rejected`, `you are not qualified`
+
+- FE src/app: **0 user-facing matches** (1 code-comment hit on "guaranteed" in routing module — not user-facing)
+- BE applicationController.js: **0 user-facing matches** (1 code-comment hit on "rejected" in input-validation comment — not user-facing)
+
+Gate A: PASS
+
+---
+
+## Tone Assessment
+
+All tip sections use past-tense anchoring ("What was missing when you applied") to ensure the applicant understands observations are about the submission moment — not a current or ongoing judgment. Sub-headings are action-oriented ("Add these now") and future-facing ("strengthen future applications"). The complete-state message is affirming. The pre-deployment message is purely factual. No comparative, punitive, or accusatory framing found anywhere.
+
+Gate B: PASS
+
+---
+
+## Disclaimer Presence Analysis
+
+- `disclaimerNote` is hardcoded in both BE endpoints (single and batch) — never absent when data is returned
+- FE card template: `*ngIf="snapshot.disclaimerNote"` — renders when present
+- `disclaimerNote` is included in batch results even for `hasSnapshot === false` entries — in that case the score section is hidden (pre-deployment message shown instead), so the disclaimer paragraph is technically present in the DOM but associated with no displayed score. Low risk; disclaimer text is benign in any context.
+
+Gate C: PASS
+
+---
+
+## Screen Reader / Back Button / Detail Link
+
+| Issue | Before | After |
+|-------|--------|-------|
+| Badge null aria-label | "Application completeness: unavailable" | "Application completeness: Snapshot unavailable" |
+| Back button | Text-only (no explicit aria-label) | aria-label="Back to My Applications" |
+| Toggle button | title attribute only | aria-label="Show/Hide application completeness for {jobTitle}" (dynamic) |
+| Detail link | Generic "View full details" (no context) | aria-label="View full application details for {jobTitle}" |
+
+Gate E: PASS (after fixes)

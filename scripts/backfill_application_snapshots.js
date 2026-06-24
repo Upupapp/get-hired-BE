@@ -123,6 +123,29 @@ async function run() {
 
   if (LIMIT) console.log(`  Limit: ${LIMIT} applications`);
 
+  // Pre-flight: confirm the three snapshot tables exist before touching any data.
+  // Aborts with a clear message if the DDL hasn't been applied to this environment yet.
+  const REQUIRED_TABLES = [
+    'application_snapshots',
+    'application_completeness_snapshots',
+    'match_snapshots',
+  ];
+  console.log('\nChecking required tables exist...');
+  for (const table of REQUIRED_TABLES) {
+    const { rows } = await dbQuery.query(
+      `SELECT to_regclass($1::text) AS exists`,
+      [`${dbSchema}.${table}`]
+    );
+    if (!rows[0].exists) {
+      console.error(`\n[ABORT] Table "${dbSchema}.${table}" does not exist on this DB.`);
+      console.error('  Apply the DDL migration before running the backfill.');
+      console.error(`  Verify: SELECT to_regclass('${dbSchema}.${table}');`);
+      process.exit(1);
+    }
+    console.log(`  ✓ ${table}`);
+  }
+  console.log('All required tables present.\n');
+
   let applications;
   try {
     applications = await getUnsnapshotedApplications();

@@ -1,96 +1,75 @@
-# GETHIRED SECURE — Fix Log (Recent Deployment: Batch Snapshot Endpoint)
+# GETHIRED SECURE — Fix Log (Recent Deployment)
+**Scope:** FE HEAD 5ab9a05 — ApplicantApplicationDetailComponent + ApplicationCompletenessCardComponent
 **Date:** 2026-06-24
-**Deployment:** FE 20a44c5, BE 422d340
+**Total fixes applied:** 1
 
 ---
 
-## Fix 1 — Explicit type guard on `raw` query param (P1, RR-04)
+## Fix F-01 — Add canActivate: [ApplicantGuard] to applicant panel parent route
 
-**File:** `controllers/applicationController.js` — `getApplicantApplicationSnapshotsBatch`
+**Finding ID:** F-01
+**Severity:** P1
+**Type:** Access control — missing route guard
 
-**Before:**
-```js
-const applicationIds = String(raw).split(",").map(s => s.trim()).filter(Boolean);
+### Problem
+
+`applicant-panel.module.ts` defines a `path: ''` parent route with five child
+routes (`dashboard`, `profile`, `applications`, `applications/:id`, `settings`).
+`ApplicantGuard` was imported in the module but never placed on any route,
+leaving all five child routes guarded only by `AuthGuard` (applied at the
+`path: 'user'` level in `app.routing.module.ts`).
+
+`AuthGuard` checks that the user is authenticated and checks the role, but
+returns `true` for wrong-role authenticated users (it redirects but does not
+block). This means a logged-in recruiter (role=2) or admin (role=1) who directly
+navigates to `/user/applications/123` can mount the component and fire the API
+call before the redirect completes. The BE IDOR guard (403 on `candidate_id`
+mismatch) prevents data leakage, but the FE guard layer is porous.
+
+### Fix applied
+
+**File:** `src/app/applicant-panel/applicant-panel.module.ts`
+
+```diff
+  {
+    path: '',
+    component: ApplicantPanelComponent,
++   canActivate: [ApplicantGuard],
+    children: [
 ```
 
-**After:**
-```js
-const rawStr = Array.isArray(raw) ? raw.join(',') : (typeof raw === 'string' ? raw : '');
-const applicationIds = rawStr.split(",").map(s => s.trim()).filter(Boolean);
-```
+`ApplicantGuard.canActivate` checks:
+1. `state` in localStorage equals `'true'` (authenticated)
+2. `role` in localStorage equals `'3'` (applicant role)
 
-**Why:** Express query-string parsing produces Array for repeated params (`?applicationIds=a&applicationIds=b`) and a plain object for nested params (`?applicationIds[foo]=bar`). The original `String(raw)` on an Array accidentally works (`String(['a','b'])` = `"a,b"`), but on a plain object produces `"[object Object]"` — one bogus token passes `filter(Boolean)` and reaches the DB ownership check (no real breach, but semantically wrong and noisy). The explicit guard makes the behavior intentional and rejects plain objects cleanly via the `length === 0` check that follows.
+If either check fails it resets the router config and returns `false`, which
+properly blocks navigation — unlike `AuthGuard` which returns `true` after
+redirecting. Placing the guard on the parent `path: ''` route means it fires
+for all five child routes simultaneously.
 
----
+### Coverage after fix
 
-## Fix 2 — Backfill script: startup env log + --confirm gate (P1, RR-05)
+| Route | Guard chain |
+|-------|-------------|
+| `/user/dashboard` | AuthGuard + ApplicantGuard |
+| `/user/profile` | AuthGuard + ApplicantGuard |
+| `/user/applications` | AuthGuard + ApplicantGuard |
+| `/user/applications/:id` | AuthGuard + ApplicantGuard |
+| `/user/settings` | AuthGuard + ApplicantGuard |
 
-**File:** `scripts/backfill_application_snapshots.js`
+### Risk of change
 
-**Added:**
-```js
-const CONFIRM = process.argv.includes("--confirm");
-```
+Low. `ApplicantGuard` enforces the same intent already declared in
+`app.routing.module.ts` (`data: { role: '3' }`). Applicant users (role=3) see
+no change in behaviour. Wrong-role users are now properly blocked at the FE
+guard layer (in addition to being redirected by `AuthGuard` and blocked by the
+BE 403 guard).
 
-In `run()`, before any DB access:
-```js
-console.log(`  DB host:     ${env.host || "(not set)"}`);
-console.log(`  DB database: ${env.database || "(not set)"}`);
-console.log(`  DB schema:   ${dbSchema || "(not set)"}`);
+### Verification
 
-if (!DRY_RUN && !CONFIRM) {
-  console.error("\n[ABORT] Live run requires --confirm flag to prevent accidental production writes.");
-  console.error("  Add --confirm to proceed, or --dry-run to preview without writing.");
-  process.exit(1);
-}
-```
-
-**Why:** The script reads from whichever `.env` is loaded. Without a startup log or confirmation gate, a developer running it from a prod server context has no signal that they are about to write to production. The `--confirm` flag (opt-in, not opt-out) plus the DB host/schema log gives a clear "am I on the right environment?" moment before any write occurs. `--dry-run` is unaffected (no `--confirm` needed for dry-run mode).
-
----
-
-## Fix 3 — FE chunks >50 IDs via forkJoin (P1, RR-02)
-
-**File:** `src/app/applicant-panel/applicant-applications/applicant-applications.component.ts`
-
-**Before:** `loadSnapshots()` called `getApplicationSnapshots(ids)` with the full array. If `ids.length > 50`, the BE returned HTTP 400 and `catchError(() => of({}))` silently gave every application a null completeness score.
-
-**After:** `loadSnapshots()` slices `ids` into chunks of 50, maps each chunk to a `getApplicationSnapshots(chunk)` call (with `catchError`), fans them out via `forkJoin`, and merges all returned snapshot maps into `snapshotsMap`.
-
-```ts
-import { forkJoin } from 'rxjs';   // added to imports
-
-private loadSnapshots(): void {
-  const ids = ...;
-  const BATCH_LIMIT = 50;
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
-    chunks.push(ids.slice(i, i + BATCH_LIMIT));
-  }
-  const batchRequests = chunks.map(chunk =>
-    this.applicationService.getApplicationSnapshots(chunk).pipe(
-      map((res: any) => res?.data?.snapshots ?? {}),
-      catchError(() => of({} as Record<string, any>)),
-    )
-  );
-  this.snapshotsSub = forkJoin(batchRequests).subscribe((results) => {
-    results.forEach(snapshots =>
-      Object.entries(snapshots).forEach(([id, data]) => this.snapshotsMap.set(id, data))
-    );
-    this.snapshotsLoaded = true;
-  });
-}
-```
-
-**Why:** A user with 51+ applications would see all completeness tiles blank with no error — a silent data-loss bug. Chunking ensures the feature works for power users.
-
----
-
-## Non-fix observations (no code change needed)
-
-| Item | Reason not fixed |
-|------|-----------------|
-| No rate limiting (RR-01) | Repo-wide architectural gap; adding `express-rate-limit` to this route alone is inconsistent. Logged for a dedicated rate-limiting pass. |
-| Subscription leak on retry (RR-03) | Already fixed in the prior deployment pass — the component already has `snapshotsSub?.unsubscribe()` in both `retry()` and `ngOnDestroy()`. |
-| companyId falsy guard (Gate F) | Correct for UUID/string company IDs; no fix needed. |
-| Max-50 bypass via %2C (Gate D) | Express decodes before controller; bypass is impossible. No fix needed. |
+Confirm in the browser:
+1. Log in as recruiter (role=2) → direct navigate to `/user/applications` → should
+   redirect to recruiter dashboard, not show the applicant panel.
+2. Log in as applicant (role=3) → navigate to `/user/applications` → should load
+   normally.
+3. Log out → direct navigate to `/user/applications/123` → should redirect to /signin.

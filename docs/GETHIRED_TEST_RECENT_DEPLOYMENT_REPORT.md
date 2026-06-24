@@ -1,191 +1,152 @@
 # GETHIRED_TEST_RECENT_DEPLOYMENT_REPORT
 
-**Deployment:** FE 20a44c5 / BE 422d340  
+**Deployment:** FE HEAD 5ab9a05  
 **Test run date:** 2026-06-24  
 **Tester:** Claude Code — TEST RECENT DEPLOYMENT command  
-**Scope:** Batch snapshots endpoint + companyId guard + backfill script + FE applicant-applications component  
-**Method:** Full static code audit of all deployment files. Runtime controller-load check executed. No production DB connections, no destructive commands.
+**Scope:** ApplicationCompletenessBadge + ApplicationCompletenessCard + ApplicantApplications list + ApplicantApplicationDetail route
 
 ---
 
-## 1. Runtime Controller Check
+## Gate Results
 
-**Result: PASS**
+| Gate | Result | Evidence |
+|------|--------|----------|
+| A — Build passes zero errors | PASS | ng build --configuration production exits clean at 2026-06-24T13:55:04.831Z; 3 pre-existing warnings, none new |
+| B — Badge renders all 5 states without crash | PASS | Template mutual exclusion verified; all state branches confirmed |
+| C — Card renders all 7 states without crash | PASS | All ngIf guards verified; no unsafe property access |
+| D — Detail route registered, does not shadow list | PASS | `applications` declared before `applications/:id` in route array |
+| E — Analytics CTA guard prevents empty-applicationId calls | PASS | `if (this.applicationId)` guard confirmed in `onCtaClick()` |
 
-```
-node -e "require=require('esm')(module); const c = require('./controllers/applicationController'); console.log(Object.keys(c))"
-// Output: ['submitApplication','getApplicantApplicationSnapshot','getEmployerApplicantSnapshotSummary','getApplicantApplicationSnapshotsBatch']
-```
-
-`getApplicantApplicationSnapshotsBatch` is exported and the module loads without errors. A SendGrid API-key warning appears on stderr during require — this is a pre-existing issue with the mailer helper and is harmless (no email is sent).
-
----
-
-## 2. BE — Batch Endpoint (`GET /applicant/application/snapshots`)
-
-### 2.1 Input validation
-
-| Case | Expected | Code path | Verdict |
-|---|---|---|---|
-| `applicationIds` param absent | 400 | `if (!raw)` → `status.bad` | PASS |
-| Empty string after split/trim/filter | 400 | `applicationIds.length === 0` check | PASS |
-| More than 50 IDs | 400 | `applicationIds.length > 50` check | PASS |
-| 1–50 IDs, comma-separated | parsed correctly | `String(raw).split(",").map(s=>s.trim()).filter(Boolean)` | PASS |
-
-Both the empty-list and the over-50 branches share a single error message ("non-empty comma-separated list of up to 50 IDs"). Acceptable; both cases are invalid input.
-
-### 2.2 Ownership enforcement
-
-```js
-const verifiedIds = appRows
-  .filter(row => row.candidate_id === uid)
-  .map(row => row.job_application_id);
-```
-
-- IDs belonging to another applicant are silently excluded — not returned, not flagged with 403. PASS (correct by design).
-- Mix of owned + unowned → only owned IDs reach the snapshot queries. PASS.
-- All IDs unowned → `verifiedIds.length === 0` → `{ snapshots: {} }` 200. PASS.
-
-The silent-exclusion pattern prevents enumeration oracle attacks (an applicant cannot probe whether a foreign applicationId exists by comparing 403 vs 200-with-empty-data response codes).
-
-### 2.3 Snapshot presence vs completeness
-
-| Case | hasSnapshot | score | Verdict |
-|---|---|---|---|
-| ID in `application_snapshots` | true | from completenessMap | PASS |
-| ID absent from `application_snapshots` | false | null | PASS |
-| ID in `application_snapshots`, no `application_completeness_snapshots` row | true | null | PASS — `comp = completenessMap[id] || null` |
-
-### 2.4 Query efficiency
-
-Three DB queries regardless of list size:
-1. Ownership check (`job_applicants WHERE job_application_id = ANY($1)`)
-2. Snapshot presence (`application_snapshots WHERE application_id = ANY($1)`)
-3. Completeness data (`application_completeness_snapshots WHERE application_id = ANY($1)`)
-
-No N+1. Design comment in source is accurate.
+**Critical blockers: 0**
 
 ---
 
-## 3. BE — companyId Guard (`applicationSnapshotService.js`)
+## Scenario-by-Scenario Analysis
 
-```js
-if (!companyId) {
-  console.warn("[applicationSnapshot] skipped: companyId is missing for applicationId", applicationId);
-  return result;
+### Badge (ApplicationCompletenessBadgeComponent)
+
+**S1 — `level=null, loading=false` → unavailable state, no crash**  
+`*ngIf="!loading && level === null && score === null"` renders "Unavailable" span. Default `score = null` set in class. PASS.
+
+**S2 — `loading=true` → skeleton shown, not level text**  
+`.acb-skeleton` is `*ngIf="loading"`. Both content spans are gated on `!loading`. Mutual exclusion confirmed. PASS.
+
+---
+
+### Card (ApplicationCompletenessCardComponent)
+
+**S3 — `loading=true` → skeleton only**  
+`.acdc-skeleton` is `*ngIf="loading"`. All subsequent sections gated on `!loading`. PASS.
+
+**S4 — `error=true` → error block with retry button**  
+`*ngIf="!loading && error"` on `.acdc-error`. Button calls `onRetry()` which emits `retryClick`. PASS.
+
+**S5 — `snapshot=null` → "unavailable" text, no crash**  
+`*ngIf="!loading && !error && snapshot === null"` renders `.acdc-unavailable`. All deeper content inside `snapshot !== null` container. PASS.
+
+**S6 — `snapshot.hasSnapshot=false` → pre-deployment note**  
+`*ngIf="!snapshot.hasSnapshot"` renders `.acdc-predeployment`. Full snapshot view gated on `*ngIf="snapshot.hasSnapshot"`. PASS.
+
+**S7 — `hasSnapshot=true, missingRequired=[], missingRecommended=[]` → positive state**  
+`isComplete` getter returns true for empty arrays. `.acdc-positive` block renders. Both `.acdc-tips` blocks require `?.length > 0` — neither renders. PASS.
+
+**S8 — `snapshotCreatedAt` present → DatePipe "Captured <date>"**  
+`*ngIf="snapshot.snapshotCreatedAt"` guards the span. `| date:'mediumDate'` available via CommonModule (imported and exported by SharedModule). PASS.
+
+**S9 — `snapshotCreatedAt` absent (batch payload) → no crash, no empty element**  
+The `*ngIf` guard removes the span entirely when the field is falsy/absent. PASS.
+
+**S10 — `onCtaClick()` with empty `applicationId` → no analytics call**  
+```ts
+onCtaClick(label: string): void {
+  if (this.applicationId) {
+    this.analytics.trackApplicationCompletenessCtaClicked(this.applicationId, label);
+  }
 }
 ```
-
-- `null` / `undefined` / `""` / `0` companyId → returns `result` early before any `persistApplicationSnapshot`, `persistCompletenessSnapshot`, or `persistMatchSnapshot` call. No INSERT attempted. PASS.
-- Valid companyId → execution continues past the guard. PASS.
-
-This guard prevents silent failures from the NOT NULL constraint on `company_id` in all three snapshot tables. The early-return logs a clear warning instead of swallowing the error inside a fire-and-forget `.catch()`.
+Guard confirmed. Empty string is falsy; analytics call blocked. PASS.
 
 ---
 
-## 4. Backfill Script (`scripts/backfill_application_snapshots.js`)
+### Detail Component (ApplicantApplicationDetailComponent)
 
-### 4.1 --dry-run flag
-
-```js
-if (DRY_RUN) {
-  return { applicationId: row.job_application_id, status: "dry-run" };
+**S11 — `id` param missing → `error=true`, no crash**  
+```ts
+this.applicationId = this.route.snapshot.paramMap.get('id') ?? '';
+if (!this.applicationId) {
+  this.error = true;
+  this.loading = false;
+  return;
 }
 ```
+Early-return guard confirmed. `load()` never called when id is empty. Card renders error/retry state. PASS.
 
-When `--dry-run` is set, `createApplicationSnapshots` is never called. The only DB operation is the read-only `getUnsnapshotedApplications()` query. No rows written. PASS.
-
-### 4.2 Already-backfilled row exclusion
-
-```sql
-LEFT JOIN ${dbSchema}.application_snapshots aps
-  ON aps.application_id = ja.job_application_id
-  AND aps.source = 'backfill_current_data'
-WHERE aps.id IS NULL
+**S12 — Route order: `applications/:id` does not shadow list**  
+Route array order in `applicant-panel.module.ts`:
 ```
-
-Rows with an existing `backfill_current_data` snapshot are excluded. PASS.
-
-Note: the join condition is scoped to `source = 'backfill_current_data'`. Rows that only have an `application_submit` snapshot are still included in the candidate list — intentional, and the two sources do not conflict (different `source` value).
-
-### 4.3 Batch safety
-
-- `Promise.allSettled` — one row failure does not stop the batch. PASS.
-- `BATCH_SIZE = 10` with 500ms inter-batch delay. PASS.
-- `ON CONFLICT DO NOTHING` in all three INSERT statements — idempotent, safe to re-run. PASS.
+{ path: 'applications', component: ApplicantApplicationsComponent }   // declared first
+{ path: 'applications/:id', component: ApplicantApplicationDetailComponent }
+```
+Angular matches in declaration order. Exact `/user/applications` always resolves to list. `:id` route only matches when a segment follows. PASS.
 
 ---
 
-## 5. FE — Applicant Applications Component
+### List Component (ApplicantApplicationsComponent)
 
-### 5.1 Batch response shape consumption
-
-BE sends:
-```js
-successMessage.data = { snapshots };
-// wire shape: { success: true, data: { snapshots: { [id]: {...} } } }
-```
-
-FE consumes:
+**S13 — `expandedSnapshotId` toggles correctly**  
 ```ts
-map((res: any) => res?.data?.snapshots ?? {}),
+toggleSnapshot(applicationId: string): void {
+  if (this.expandedSnapshotId === applicationId) {
+    this.expandedSnapshotId = null;   // close
+  } else {
+    this.expandedSnapshotId = applicationId;  // open / switch
+    this.analytics.trackApplicationCompletenessViewed(applicationId);
+  }
+}
 ```
+Open → click same → null (close). Open → click different → switches. PASS.
 
-Path `res?.data?.snapshots` is correct. PASS.
-
-### 5.2 Empty snapshots object (200, all unowned or no rows)
-
-`Object.entries({})` iterates zero times. `snapshotsLoaded = true`. Every row renders the `#snapSilent` fallback ("Snapshot unavailable right now."). Graceful. PASS.
-
-### 5.3 Batch call throws
-
+**S14 — `onSnapshotRetry()` clears and reloads only snapshots, not apps**  
 ```ts
-catchError(() => of({})),
+onSnapshotRetry(): void {
+  this.snapshotsSub?.unsubscribe();
+  this.snapshotsMap.clear();
+  this.snapshotsLoaded = false;
+  this.snapshotsError = false;
+  this.loadSnapshots();    // NOT loadData()
+}
 ```
+`appsSub` untouched. `loadData()` not called. PASS.
 
-Error bypasses `map`. Subscribe receives `{}` directly. `Object.entries({})` = zero iterations. `snapshotsLoaded = true`. No crash. PASS.
-
-**Finding F-01 (low):** `catchError(() => of({}))` returns the raw `{}` to subscribe, not `{data:{snapshots:{}}}`. Because `catchError` sits after `map` in the pipe, `map` is not applied to the recovery value, so subscribe receives `{}` — which happens to be the same thing `map` would produce from `res?.data?.snapshots ?? {}` anyway. Safe now but fragile to pipe reordering. See Coverage Matrix row E-3.
-
-### 5.4 Subscription leak analysis
-
-`appsSub` tracks the `getMyApplications()` subscription. `ngOnDestroy` unsubscribes `appsSub`. PASS.
-
-`loadSnapshots()` uses an inline `.subscribe()` not stored in any property. For Angular `HttpClient` (completes on response), this is safe in practice — the observable self-completes. PASS for HTTP.
-
-**Finding F-02 (low):** If the data source behind `getApplicationSnapshots` ever changes to a non-completing observable (WebSocket, polling), the `loadSnapshots` subscription would leak silently. Defensive tracking recommended.
-
-### 5.5 retry() unsubscribes before reload
-
+**S15 — `retry()` clears both `appsSub` and `snapshotsSub`**  
 ```ts
 retry(): void {
-  this.appsSub?.unsubscribe();   // cleans up current sub before ...
+  this.appsSub?.unsubscribe();
+  this.snapshotsSub?.unsubscribe();
   ...
-  this.ngOnInit();               // ... reassigning appsSub
+  this.loadData();
 }
 ```
-
-No double subscription on `getMyApplications`. PASS.
-
----
-
-## 6. Findings Summary
-
-| ID | Severity | File | Description |
-|---|---|---|---|
-| F-01 | Low | applicant-applications.component.ts:56 | `catchError(() => of({}))` after `map` — recovery value bypasses map; safe now but fragile to pipe reordering |
-| F-02 | Low | applicant-applications.component.ts:55-61 | `loadSnapshots` subscribe not tracked; safe for HTTP but would leak if source changes to non-completing observable |
-| F-03 | Info | backfill_application_snapshots.js:52 | Backfill LEFT JOIN scoped to `source='backfill_current_data'`; rows with only `application_submit` snapshots are re-included (intentional, but worth noting in ops runbook) |
-| F-04 | Info | applicationController.js:175 | Empty-list and over-50 IDs share a single 400 error message; distinct messages would give better DX for API consumers |
-
-**Critical blockers: 0**  
-**High severity: 0**  
-**Low severity: 2** (F-01, F-02 — both safe in current usage)
+Both unsubscribed; state fully reset. PASS.
 
 ---
 
-## 7. Release Readiness
+## Minor Findings (non-blocking)
 
-**Verdict: SHIP**
+1. **Detail maps `data === null` as error**: When the single-snapshot endpoint returns `{ data: null }` (no snapshot found), the detail page shows error+retry instead of a softer "no snapshot available" state. This is a UX rough edge — the card's null-snapshot path (S5) would be the correct visual — but it does not crash. Low priority fix.
 
-All five release gates pass. No blocking issues. Deployment is safe to remain live.
+2. **Batch chunk failures silently swallowed**: Individual chunk errors in `loadSnapshots()` return `{}` via `catchError(() => of({}))`. Applications in failed chunks show "Unavailable" badge with no retry signal unless ALL chunks fail. Acceptable for MVP; consider per-chunk error tracking for observability.
+
+3. **Router state on hard-refresh**: Detail component reads metadata from `nav?.extras?.state ?? window.history.state`. On hard-refresh, `history.state` may be empty or stale. Component handles this gracefully via `jobTitle || companyName` fallback heading. Not a crash.
+
+4. **DatePipe availability**: `| date:'mediumDate'` relies on CommonModule being available via SharedModule's import chain. This is confirmed correct; no dedicated DatePipe import is needed in this Angular version.
+
+---
+
+## Build Output
+
+```
+Build at: 2026-06-24T13:55:04.831Z - Hash: c33deb2e223f80ac - Time: 18101ms
+Errors: 0
+Warnings: 3 (all pre-existing — autoprefixer flex-start x2, xlsx CommonJS x1)
+```
