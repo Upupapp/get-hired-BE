@@ -17,8 +17,6 @@ import env from '../env'
 
 const dbSchema = env.schema
 
-const now = new Date()
-
 // Confirms the authenticated caller actually belongs to companyId, rather
 // than trusting the client-supplied query param directly.
 // STITCH/security fix (GH-ACT-008 -- object-level authorization).
