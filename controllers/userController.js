@@ -75,11 +75,7 @@ const loginUser = async (req, res) => {
       const subs = await companySubscriptions(userCompany.companyId);
 
       if(subs && subs.length > 0) {
-        const endSubs = new Date(subs[0].endAt);
-        const nowMili = new Date(now)
-        console.log(endSubs);
-        console.log(nowMili);
-        isActive = endSubs > nowMili;
+        isActive = new Date(subs[0].endAt) > new Date();
       }
     }
 
@@ -214,7 +210,6 @@ const getVerificationLink = async (req, res) => {
 
   try {
     const verify = await sendEmailVerificationFirebase(email);
-    console.log(verify);
 
     if (!verify) {
       return res
@@ -525,7 +520,6 @@ const changePWinDB = async (email, password) => {
 
 const getVerification = async (email) => {
   const verify = await sendEmailVerificationFirebase(email);
-  console.log(verify);
   if (!verify) {
     throw Error("Failed Verification");
   }

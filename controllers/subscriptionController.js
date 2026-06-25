@@ -15,7 +15,6 @@ import { getUserCompany } from "./companiesController";
 import { createPaymongoLink } from "./paymentController";
 const dbSchema = env.schema;
 
-const now = new Date();
 
 const createPaymentIntent = async (req, res) => {
   const { subscriptionId, price } = req.body;
@@ -37,12 +36,11 @@ const createPaymentIntent = async (req, res) => {
     }
 
     const amnt = parseFloat(price * 55).toFixed(2);
-    console.log(amnt);
 
     const { rows } = await dbQuery.query(insertQuery, [
       cartId,
       companyId,
-      now,
+      new Date(),
       subscriptionId,
       amnt,
     ]);
@@ -91,9 +89,9 @@ const createCompanySubscription = async (companyId, subscriptionId) => {
     const { rows } = await dbQuery.query(insertQuery, [
       companyId,
       subscriptionId,
-      now,
+      new Date(),
       true,
-      now,
+      new Date(),
     ]);
 
     if (!rows || rows.length == 0) {

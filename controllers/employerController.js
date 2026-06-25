@@ -6,7 +6,6 @@ import { getUserCompany } from "./companiesController";
 import { getUserProfileById } from "../helpers/userDetails";
 
 const dbSchema = env.schema;
-const now = new Date();
 
 const getEmployerCompany = async (req, res) => {
   // Use the authenticated caller's own uid, never a client-supplied query

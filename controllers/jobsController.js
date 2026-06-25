@@ -33,7 +33,6 @@ import { companySubscriptions } from "../controllers/subscriptionController";
 
 
 const dbSchema = env.schema;
-const now = Date.now();
 
 const createJobs = async (req, res) => {
   let questions = [];

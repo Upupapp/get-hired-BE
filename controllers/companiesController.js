@@ -46,7 +46,6 @@ import dbQuery from "../db/dbQuery";
 import env from "../env";
 
 const dbSchema = env.schema;
-const now = new Date();
 
 const createInitialCompany = async (req, res) => {
   const { companyName, companyEmail } = req.body;
@@ -247,7 +246,7 @@ const createBasicCompany = async (companyName, companyEmail, userId) => {
       companyId,
       companyName,
       companyEmail,
-      now,
+      new Date(),
       userId,
     ]);
 
@@ -315,7 +314,7 @@ const createCompany = async (company, uid) => {
       companyContactNumber,
       companyCountry,
       companyAddress,
-      now,
+      new Date(),
       uid,
       companyState,
       companyTown,
