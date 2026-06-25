@@ -12,6 +12,6 @@ const status = {
 };
 
 const successResponse = (data) => ({ status: "success", data });
-const errorResponse = (error) => ({ status: "error", error });
+const errorResponse = (error) => ({ status: "error", error: error instanceof Error ? error.message : error });
 
 export { successMessage, errorMessage, status, successResponse, errorResponse };

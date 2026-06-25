@@ -70,7 +70,7 @@ const writeLimiter = rateLimit({
   message: { message: "Too many requests. Please try again later." },
   skip: (req) =>
     req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS" ||
-    req.path === "/payment/webhook",
+    req.path === "/payment/paymongowebhook",
 });
 
 // Tier 4 — Sensitive endpoints: password change, password reset link,

@@ -3,7 +3,6 @@ import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 
 const dbSchema = env.schema;
-const now = Date.now();
 
 const getLevelList = async (req, res) => {
   const searchQuery = `SELECT * FROM ${dbSchema}.job_level;`;

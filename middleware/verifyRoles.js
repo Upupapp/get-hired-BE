@@ -1,6 +1,6 @@
 import dbQuery from "../db/dbQuery";
 
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { errorResponse, status } from "../helpers/status";
 import env from '../env';
 import dotenv from 'dotenv';
 
@@ -31,8 +31,7 @@ const verifyRoles = (allowedRoles) => async(req, res, next) => {
         }
          
     } catch (error) {
-        errorMessage.error = 'Authentication Failed. Role not allowed';
-        return res.status(status.unauthorized).send(errorMessage);
+        return res.status(status.unauthorized).json(errorResponse('Authentication Failed. Role not allowed'));
     }
 }
 

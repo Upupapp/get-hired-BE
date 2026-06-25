@@ -138,14 +138,11 @@ const createJobs = async (req, res) => {
           companyId,
           uid
         );
-        const rawQuestions = Promise.all(
-          await interviewQuestions.map(
-            async (question) =>
-              await createQuestion(question, template.jobInterviewTemplateId)
+        questions = await Promise.all(
+          interviewQuestions.map((question) =>
+            createQuestion(question, template.jobInterviewTemplateId)
           )
         );
-
-        rawQuestions.then((ques) => (questions = ques));
       }
     }
 

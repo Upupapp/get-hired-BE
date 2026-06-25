@@ -4,7 +4,6 @@ import idGenerator from '../helpers/randomNumberForId'
 import env from '../env'
 
 const dbSchema = env.schema
-const now = new Date()
 
 import { groupList, contactList, checkContacts } from './contact.service'
 
@@ -27,7 +26,7 @@ const createQuestion = async (questionDetails, templateId) => {
       answerDuration,
       retakes,
       templateId,
-      now,
+      new Date(),
       sequence
     ])
 
@@ -53,7 +52,7 @@ const createInterviewTemplateQuestions = async (jobId, templateName, companyId =
     const { rows } = await dbQuery.query(insertQuery, [
       templateId,
       templateName,
-      now,
+      new Date(),
       jobId,
       companyId,
       createdBy
@@ -100,13 +99,13 @@ const updateQuestionById = async (interviewQuestion, companyId = null) => {
           WHERE company_id=$7
         )
       returning *;`
-    params = [question, answerDuration, retakes, now, sequence, questionId, companyId]
+    params = [question, answerDuration, retakes, new Date(), sequence, questionId, companyId]
   } else {
     updateQuery = `UPDATE ${dbSchema}.interview_template_question
       SET template_question=$1, template_answer_duration=$2,
         template_question_retakes=$3, updated_at=$4, sequence=$5
       WHERE template_question_id=$6 returning *;`
-    params = [question, answerDuration, retakes, now, sequence, questionId]
+    params = [question, answerDuration, retakes, new Date(), sequence, questionId]
   }
 
   try {
@@ -252,9 +251,9 @@ const createGroupInterview = async (groupInterview, userId) => {
       interviewTemplateQuestionId,
       jobId,
       groupIds,
-      now,
+      new Date(),
       userId,
-      now,
+      new Date(),
       recipients,
       companyId,
       externalJobLink

@@ -38,7 +38,6 @@ import {
 import env from "../env";
 
 const dbSchema = env.schema;
-const now = Date.now();
 
 const loginUser = async (req, res) => {
   let isActive = false;

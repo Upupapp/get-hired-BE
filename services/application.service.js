@@ -13,7 +13,6 @@ import {
 import { createApplicationSnapshots } from './applicationSnapshotService';
 
 const dbSchema = env.schema;
-const now = new Date();
 
 // GH-FOUND-B01 -- "active" means not archived. Checked before every
 // insert so the same applicant can't create a second row for the same
@@ -63,7 +62,7 @@ const jobApply = async (jobApplication, userId) => {
     const { rows } = await dbQuery.query(insertQuery, [
       jobApplicantionId,
       jobId,
-      now,
+      new Date(),
       candidateId,
       applicationStatusId,
     ]);
@@ -192,7 +191,7 @@ const saveInterviewAnswer = async (answer) => {
     const { rows } = await dbQuery.query(insertQuery, [
       questionId,
       rawUrl,
-      now,
+      new Date(),
       jobId,
       applicantId,
     ]);
@@ -227,7 +226,7 @@ const uploadApplicationAttachment = async (
 
   const { id, file, fileUrl, size, type, filename } = attachment;
 
-  const name = `${filename}-${now}`;
+  const name = `${filename}-${Date.now()}`;
 
   try {
     if (file && file != "") {

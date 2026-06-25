@@ -4,7 +4,6 @@ import { getCompanyPublishedJobsCount } from "./job.service";
 import idGenerator from "../helpers/randomNumberForId";
 
 const dbSchema = env.schema;
-const now = new Date();
 
 const companyList = async (isFeatured) => {
   // LEFT JOIN, not RIGHT JOIN -- a RIGHT JOIN against industry drops any
@@ -92,8 +91,8 @@ const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
       employeeId,
       companyId,
       uid,
-      now,
-      now,
+      new Date(),
+      new Date(),
       0, // TODO to change if position is available
       assignedBy,
     ]);

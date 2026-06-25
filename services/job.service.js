@@ -9,7 +9,6 @@ import {
 } from "./interview.service";
 
 const dbSchema = env.schema;
-const now = Date.now();
 
 const companyPublishedJobs = async (companyId) => {
   const searchQuery = `SELECT job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, updated_at, expiration_date, job_status_id, job_city, job_category_id, job_country

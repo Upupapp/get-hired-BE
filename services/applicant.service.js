@@ -7,7 +7,6 @@ import genericInsert from "../helpers/genericInsert";
 import { updateUserProfile } from "./user.service";
 
 const dbSchema = env.schema;
-const now = new Date();
 
 const candidateListByJobId = async (jobId) => {
   const searchQuery = `SELECT job_application_id, job_id, date_applied, updated_at, candidate_id, application_status_id, is_archived,
@@ -86,7 +85,7 @@ const createApplicationProfile = async (applicant) => {
       salaryMinimum,
       salaryMaximum,
       isProfileReady,
-      now,
+      new Date(),
       salaryCurrency,
     ]);
 
@@ -188,7 +187,7 @@ const createApplicationProfile = async (applicant) => {
 //       salaryMaximum,
 //       rawUrl,
 //       isProfileReady,
-//       now,
+//       new Date(),
 //       salaryCurrency,
 //     ]);
 
@@ -323,7 +322,7 @@ const updateProfileBasicInfo = async (applicant) => {
       workSetupId,
       salaryMinimum,
       salaryMaximum,
-      now,
+      new Date(),
       isProfileReady,
       salaryCurrency,
       userId,
@@ -432,7 +431,7 @@ const updateApplicationProfile = async (applicant) => {
       salaryMinimum,
       salaryMaximum,
       rawUrl,
-      now,
+      new Date(),
       isProfileReady,
       salaryCurrency,
       userId,
@@ -608,7 +607,7 @@ const saveApplicantWorkExperience = async (workExperience, applicantId) => {
       endYear,
       isCurrentJob,
       details,
-      now,
+      new Date(),
       applicantId,
     ]);
     const dbResponse = mappedWorkExperience(rows[0]);
@@ -660,7 +659,7 @@ const saveApplicantEducationalBackground = async (
   try {
     const { rows } = await dbQuery.query(insertQuery, [
       applicantId,
-      now,
+      new Date(),
       levelOfEducation,
       fieldOfStudy,
       school,
@@ -718,7 +717,7 @@ const saveCertifications = async (certifications, applicantId) => {
       endMonth,
       endYear,
       details,
-      now,
+      new Date(),
       applicantId,
     ]);
     const dbResponse = mappedCertifications(rows[0]);
