@@ -86,9 +86,7 @@ const sensitiveLimiter = rateLimit({
 
 const app = express();
 app.use(compression());
-// if(isProduction) { //bring back if fix
-app.use(cors());
-// }
+app.use(cors({ origin: env.app_url }));
 app.use(express.json({
   limit: "1mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
