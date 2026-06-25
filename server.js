@@ -146,13 +146,39 @@ app.use("/api", messageRoutes);
 // SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.
 // No auth required; only published (job_status_id=2) jobs are included.
 // Served from the BE because job IDs are dynamic.
+// In-memory cache: rebuild XML at most once per hour (3600 s) so the DB is
+// never hit on every bot crawl.  Cache-Control header additionally lets
+// reverse-proxies and CDN edge nodes cache the response client-side.
+let _sitemapCache = { xml: null, builtAt: 0 };
+// SEO-AUDIT-V3: reduced from 60min to 15min so newly published jobs appear in
+// Google's sitemap crawl sooner.  DB query is cheap (indexed job_status_id).
+const SITEMAP_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+// STITCH-V2 FIX: XML-encode a value so any special character in job_id
+// (job_id is a varchar with no server-enforced format constraint) cannot
+// produce malformed sitemap XML.  Encodes the five XML predefined entities.
+const xmlEscape = (str) =>
+  String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+
 app.get("/sitemap.xml", async (req, res) => {
   try {
+    const now = Date.now();
+    if (_sitemapCache.xml && (now - _sitemapCache.builtAt) < SITEMAP_TTL_MS) {
+      res.setHeader("Content-Type", "application/xml; charset=utf-8");
+      res.setHeader("Cache-Control", "public, max-age=900");
+      return res.send(_sitemapCache.xml);
+    }
+
     const { default: dbQuery } = await import("./db/dbQuery.js");
     const { default: envConfig } = await import("./env.js");
     const schema = envConfig.schema;
     const BASE_URL = "https://gethiredonline.app";
-    const now = new Date().toISOString().split("T")[0];
+    const today = new Date().toISOString().split("T")[0];
 
     const { rows } = await dbQuery.query(
       `SELECT job_id, updated_at FROM ${schema}.jobs WHERE job_status_id = 2 ORDER BY updated_at DESC;`,
@@ -169,22 +195,32 @@ app.get("/sitemap.xml", async (req, res) => {
     const jobUrls = rows.map(row => {
       const lastmod = row.updated_at
         ? new Date(row.updated_at).toISOString().split("T")[0]
-        : now;
-      return `  <url>\n    <loc>${BASE_URL}/jobs/details/${row.job_id}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>`;
+        : today;
+      // xmlEscape: job_id is a varchar with no server-enforced format,
+      // so a malformed value must not corrupt the XML document.
+      const safeJobId = xmlEscape(row.job_id);
+      return `  <url>\n    <loc>${BASE_URL}/jobs/details/${safeJobId}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>`;
     });
 
     const staticUrls = staticPages.map(p =>
-      `  <url>\n    <loc>${p.loc}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
+      `  <url>\n    <loc>${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
     );
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${staticUrls.join("\n")}\n${jobUrls.join("\n")}\n</urlset>`;
 
+    // Store in process-level cache for SITEMAP_TTL_MS
+    _sitemapCache = { xml, builtAt: Date.now() };
+
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
-    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("Cache-Control", "public, max-age=900");
     res.send(xml);
   } catch (err) {
     console.error("Sitemap generation error:", err);
-    res.status(500).send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
+    // Return 503 (not 500) so Google treats this as a temporary failure
+    // and retries rather than de-indexing existing sitemap entries.
+    // Retry-After: 3600 signals crawlers to retry in 1 hour.
+    res.setHeader("Retry-After", "3600");
+    res.status(503).send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
   }
 });
 
