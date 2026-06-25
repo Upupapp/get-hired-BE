@@ -93,6 +93,20 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.enable("trust proxy");
 
+// QA11 FIX-04 HEADERS: add baseline security headers.
+// Closes the long-open nosniff item (tracked across QA8-QA10 as SEC-03).
+// X-Frame-Options: DENY — prevents clickjacking.
+// X-Content-Type-Options: nosniff — prevents MIME sniffing (complements
+//   the magic-byte upload check in helpers/fileSignature.js).
+// X-XSS-Protection: 0 — disable legacy IE XSS filter (modern browsers
+//   rely on CSP instead; the old filter can be exploited in some cases).
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "0");
+  next();
+});
+
 // --- Rate-limit middleware (applied before route mounting) ---
 
 // Tier 1: global

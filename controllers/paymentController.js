@@ -124,9 +124,10 @@ const paymongoWebhook = async (req, res) => {
         return res.status(status.success).send(successMessage);
       }
     }  else if (webhookEvent == "payment.paid") {
-        console.log("I am payment.paid");
+        // QA11 FIX-03 LOGGING: removed console.log(webHookPaid) which wrote
+        // PII (billing name, email, phone) to be_out.log in plaintext.
         const webHookPaid = data.attributes.data;
-        console.log(webHookPaid);
+        console.log('[paymentController] payment.paid event received, id:', webHookPaid && webHookPaid.id);
         const { id, attributes } = webHookPaid;
         const {
             amount,

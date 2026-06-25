@@ -165,6 +165,19 @@ const getJobApplicantDetails = async (req, res) => {
   const { jobId, id } = req.query;
 
   try {
+    // QA11 FIX-02 BOLA: verify the caller's company owns the job before
+    // returning applicant details. Without this check, any authenticated
+    // employer from any company could read any applicant's details by
+    // supplying a jobId from a different company.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const jobCompanyId = await getJobCompanyId(jobId);
+    if (!jobCompanyId || jobCompanyId !== callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     const applicants = await applicationOfApplicant(jobId, id);
 
     successMessage.data = applicants;

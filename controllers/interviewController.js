@@ -98,7 +98,17 @@ const saveGroupInterview = async (req, res) => {
   const { uid } = req.user
 
   try {
-    const dbResponse = await createGroupInterview(req.body, uid)
+    // QA11 FIX-01 BOLA: derive companyId from JWT, never from req.body —
+    // any authenticated user could otherwise create a group interview
+    // attributed to a different company by supplying a spoofed companyId.
+    // Mirrors the pattern in saveQuestionTemplate() directly below.
+    const callerCompany = await getUserCompany(uid)
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." })
+    }
+    // Overwrite any client-supplied companyId with the JWT-derived one.
+    const safeBody = { ...req.body, companyId: callerCompany.companyId }
+    const dbResponse = await createGroupInterview(safeBody, uid)
     successMessage.data = dbResponse
     return res.status(status.success).send(successMessage)
   } catch (error) {
