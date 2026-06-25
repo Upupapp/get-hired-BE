@@ -28,7 +28,10 @@ import { evaluateProfileCompleteness } from "../services/applicantProfileQuality
 const dbSchema = env.schema;
 
 const createApplication = async (req, res) => {
-  const { jobId, candidateId, status } = req.body;
+  const { jobId, status } = req.body;
+  // QA9 FIX-1 BOLA: derive candidateId from JWT, never from req.body —
+  // any applicant could otherwise create an application attributed to another user.
+  const candidateId = req.user.uid;
 
   try {
     const insertQuery = `INSERT INTO ${dbSchema}.application
@@ -61,11 +64,14 @@ const createApplication = async (req, res) => {
 
 const deleteApplication = async (req, res) => {
   const { applicationId } = req.body;
+  // QA9 FIX-1 BOLA: derive candidateId from JWT (was undefined — runtime crash).
+  // Never use body-supplied candidateId as the ownership anchor.
+  const candidateId = req.user.uid;
   // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
   const deleteQuery = `DELETE FROM ${dbSchema}.application
-      WHERE application_id=$1`;
+      WHERE application_id=$1 AND candidate_id=$2`;
   try {
-    const { rows } = await dbQuery.query(deleteQuery, [applicationId]);
+    const { rows } = await dbQuery.query(deleteQuery, [applicationId, candidateId]);
     const applications = await getApplicationListCandidate(candidateId);
     successMessage.data = applications;
     return res.status(status.success).send(successMessage);
@@ -77,12 +83,16 @@ const deleteApplication = async (req, res) => {
 };
 
 const updateApplication = async (req, res) => {
-  const { jobId, candidateId, status, applicationId } = req.body;
+  const { jobId, status, applicationId } = req.body;
+  // QA10 FIX-3a BOLA: derive candidateId from JWT, never from req.body —
+  // any applicant could otherwise update another applicant's application
+  // by supplying a spoofed candidateId.
+  const candidateId = req.user.uid;
 
   try {
     const updateQuery = `UPDATE ${dbSchema}.application
-            SET jobId=$1, candidateId=$2, applicationdate=now(), status=$3
-            WHERE application_id =$4 returning *;`;
+            SET job_id=$1, candidate_id=$2, applicationdate=now(), status=$3
+            WHERE application_id=$4 AND candidate_id=$2 returning *;`;
 
     const { rows } = await dbQuery.query(updateQuery, [
       jobId,
@@ -129,14 +139,14 @@ const getApplicationListCandidate = async (candidateId) => {
 
 const getApplicationWithJobDetails = async (applicationId) => {
   // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
-  // Note: "c a.candidate_id" join condition looks malformed (pre-existing,
-  // not touched by this fix -- out of STITCH's narrow scope).
+  // QA10 FIX-3b: fixed malformed join condition "c a.candidate_id" —
+  // was missing alias separator; correct form is "c.candidate_id".
   const searchQuery = `
       select * from ${dbSchema}.jobs j
       inner join ${dbSchema}.application a
       on j.job_id = a.job_id
       inner join ${dbSchema}.candidate c
-      on a.candidate_id = c a.candidate_id
+      on a.candidate_id = c.candidate_id
       where a.application_id = $1
     `;
 
@@ -313,9 +323,12 @@ const saveWorkExp = async (req, res) => {
       );
 
       if (workExperience.length != 0) {
-        const work = workExperience.map(
-          async (exp) =>
+        // QA9 FIX-11: was bare .map(async) — insert failures were silently
+        // swallowed. await Promise.all ensures errors propagate to the catch.
+        await Promise.all(
+          workExperience.map(async (exp) =>
             await saveApplicantWorkExperience(exp, applicantProfileId)
+          )
         );
       }
     }
@@ -350,9 +363,11 @@ const saveEducBg = async (req, res) => {
       );
 
       if (educationalBackground.length != 0) {
-        const educBG = educationalBackground.map(
-          async (educ) =>
+        // QA9 FIX-11: was bare .map(async) — await Promise.all to propagate errors.
+        await Promise.all(
+          educationalBackground.map(async (educ) =>
             await saveApplicantEducationalBackground(educ, applicantProfileId)
+          )
         );
       }
     }
@@ -387,8 +402,11 @@ const saveCert = async (req, res) => {
       );
 
       if (certifications.length != 0) {
-        const cert = certifications.map(
-          async (cert) => await saveCertifications(cert, applicantProfileId)
+        // QA9 FIX-11: was bare .map(async) — await Promise.all to propagate errors.
+        await Promise.all(
+          certifications.map(async (cert) =>
+            await saveCertifications(cert, applicantProfileId)
+          )
         );
       }
     }
@@ -487,6 +505,19 @@ const saveVideoCV = async (req, res) => {
   const { video, applicantProfileId } = req.body;
   const { uid } = req.user;
   try {
+    // QA9 FIX-2 BOLA: verify the caller's JWT-derived uid owns this applicant
+    // profile before allowing a storage write keyed to applicantProfileId.
+    // The service enforces WHERE user_id=$3, but the storage bucket path uses
+    // applicantProfileId — verify ownership before the upload to prevent
+    // writing to another applicant's storage path.
+    const ownerCheck = await dbQuery.query(
+      `SELECT 1 FROM ${dbSchema}.applicants_profile WHERE applicant_profile_id=$1 AND user_id=$2`,
+      [applicantProfileId, uid]
+    );
+    if (!ownerCheck.rows || ownerCheck.rows.length === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
     const dbResponse = await updateProfileSaveVideoCV(
       video,
       applicantProfileId,

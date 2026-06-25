@@ -91,11 +91,14 @@ const editCandidate = async (candidate) => {
     address,
     jobId,
     candidateId,
+    companyId,
   } = candidate;
   try {
+    // QA10 FIX-6: company_id=$8 folds ownership into WHERE — zero rows =
+    // candidate not found OR company mismatch; both treated as failure.
     const updateQuery = `UPDATE ${dbSchema}.candidates
                             SET  first_name=$1, last_name=$2, email=$3, mobile_number=$4, address=$5, job_id=$6
-                            WHERE candidate_id=$7 returning *;`;
+                            WHERE candidate_id=$7 AND company_id=$8 returning *;`;
     const { rows } = await dbQuery.query(updateQuery, [
       firstName,
       lastName,
@@ -104,6 +107,7 @@ const editCandidate = async (candidate) => {
       address,
       jobId,
       candidateId,
+      companyId,
     ]);
     const dbResponse = rows[0];
     if (!dbResponse) {

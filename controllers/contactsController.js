@@ -153,13 +153,19 @@ const updateContact = async (req, res) => {
 };
 
 const list = async (req, res) => {
-
-    const { companyId } = req.query
     let contact = [];
     try {
-   
+        // QA9 FIX-12 BOLA: derive companyId from JWT, never from query param —
+        // any authenticated employer could read another company's contact list
+        // by supplying a different companyId.
+        const callerCompany = await getUserCompany(req.user.uid);
+        if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+            return res.status(403).json({ message: "You don't have permission to do that." });
+        }
+        const companyId = callerCompany.companyId;
+
         contact = await contactList(companyId);
-    
+
         if (!contact || contact.length == 0) {
             successMessage.data = [];
             return res.status(status.success).send(successMessage);
@@ -176,13 +182,18 @@ const list = async (req, res) => {
 };
 
 const grouplist = async (req, res) => {
-
-    const { companyId } = req.query
     let groups = [];
     try {
-   
+        // QA9 FIX-12 BOLA: derive companyId from JWT, never from query param —
+        // any authenticated employer could read another company's group list.
+        const callerCompany = await getUserCompany(req.user.uid);
+        if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+            return res.status(403).json({ message: "You don't have permission to do that." });
+        }
+        const companyId = callerCompany.companyId;
+
         groups = await listOfGroup(companyId);
-    
+
         if (!groups || groups.length == 0) {
             successMessage.data = [];
             return res.status(status.success).send(successMessage);
@@ -311,10 +322,18 @@ const updateGroup = async (req, res) => {
 
 const contactslist = async (req, res) => {
 
-    const { companyId, groupName } = req.query
+    const { groupName } = req.query
     let contacts = [];
     try {
-   
+        // QA10 FIX-2 BOLA: derive companyId from JWT, never from query param —
+        // any authenticated employer could read another company's contact list
+        // by supplying a different companyId.
+        const callerCompany = await getUserCompany(req.user.uid);
+        if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+            return res.status(403).json({ message: "You don't have permission to do that." });
+        }
+        const companyId = callerCompany.companyId;
+
         contacts = await listOfContacts(companyId, groupName);
     
         if (!contacts || contacts.length == 0) {
@@ -373,10 +392,17 @@ const deleteGroup = async (req, res) => {
 
 const list2 = async (req, res) => {
 
-    const { companyId } = req.query
     let contact = [];
     try {
-   
+        // QA10 FIX-2 BOLA: derive companyId from JWT, never from query param —
+        // any authenticated employer could read another company's group list
+        // by supplying a different companyId.
+        const callerCompany = await getUserCompany(req.user.uid);
+        if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+            return res.status(403).json({ message: "You don't have permission to do that." });
+        }
+        const companyId = callerCompany.companyId;
+
         contact = await groupList(companyId);
     
         if (!contact || contact.length == 0) {

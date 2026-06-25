@@ -561,7 +561,10 @@ const updateProfileSaveVideoCV = async (video, applicantProfileId, userId) => {
     const { rows } = await dbQuery.query(updateQuery, [rawUrl, now, userId]);
 
     if (!rows || rows.length == 0) {
-      throw error;
+      // QA9 FIX-2b: was `throw error` — `error` is not defined inside the try
+      // block; would cause a ReferenceError on the error path. Use a safe static
+      // message instead.
+      throw new Error('Failed to save video CV');
     }
     const dbResponse = rows.map((row) => {
       return {

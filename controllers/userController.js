@@ -307,7 +307,9 @@ const updateUserProfile = async(req, res) => {
   const profile = req.body;
 
   try {
-  const user = await updateProfile({...profile});
+  // QA10 FIX-8 BOLA: override any uid in req.body with JWT-derived identity —
+  // a caller cannot update another user's profile by supplying a different uid.
+  const user = await updateProfile({ ...profile, uid: req.user.uid });
 
   successMessage.data = user;
   return res.status(status.success).send(successMessage);

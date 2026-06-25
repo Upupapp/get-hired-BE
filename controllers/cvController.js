@@ -6,7 +6,6 @@ const dbSchema = env.schema;
 
 const createCV = async (req, res) => {
   const {
-    userId,
     name,
     title,
     contactNumber,
@@ -18,6 +17,10 @@ const createCV = async (req, res) => {
     experience,
     education,
   } = req.body;
+  // QA10 FIX-7 BOLA: derive userId from JWT, never from req.body —
+  // any applicant could otherwise create a CV attributed to another user
+  // by supplying a spoofed userId.
+  const userId = req.user.uid;
 
   try {
     const insertQuery = `INSERT INTO ${dbSchema}.cv

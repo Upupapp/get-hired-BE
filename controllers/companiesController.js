@@ -452,9 +452,12 @@ const removeCompanyUser = async (req, res) => {
     // SECURE fix (BOLA): this route previously had no auth middleware at
     // all -- anyone could remove any user from any company. Confirm the
     // authenticated caller belongs to the company they're modifying.
+    // QA9 FIX-9: added Array.isArray guard — getUserCompany returns [] (not null)
+    // when no company row exists, so the prior !callerCompany check alone would
+    // have passed for a caller with no company ([] is truthy).
     const callerCompany = await getUserCompany(req.user.uid);
-    if (!callerCompany || callerCompany.companyId !== companyId) {
-      return res.status(403).send("Forbidden");
+    if (Array.isArray(callerCompany) || !callerCompany || callerCompany.companyId !== companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
     }
 
     const { rows } = await dbQuery.query(deleteQuery, [userId, companyId]);
@@ -483,10 +486,19 @@ const getAllCompanyUser = async (req, res) => {
 };
 
 const addCompanyUser = async (req, res) => {
-  const { emails, companyId } = req.body;
+  const { emails } = req.body;
   const { uid } = req.user;
 
   try {
+    // QA9 FIX-3 BOLA: derive companyId from JWT, never from req.body —
+    // any employer could otherwise add users to a different company by
+    // supplying a spoofed companyId.
+    const callerCompany = await getUserCompany(uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
     const userStatus = await Promise.all(
       await emails.map(async (item) => {
         const adding = await addCompanyUserByEmail(item.email, companyId, uid);
@@ -639,8 +651,16 @@ const getCompanyShareableLink = async (req, res) => {
 };
 
 const getSubscriptionRestrictions = async (req, res) => {
-  const { companyId } = req.query;
   try {
+    // QA10 FIX-11 BOLA: derive companyId from JWT, never from query param —
+    // any authenticated employer could read another company's subscription
+    // metadata by supplying a different companyId.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
     const dbResponse = await companySubscriptions(companyId);
 
     if (dbResponse.length == 0) {

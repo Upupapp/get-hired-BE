@@ -680,7 +680,8 @@ const getJobApplicantFitSignals = async (req, res) => {
     return res.status(status.success).send(successMessage);
   } catch (error) {
     if (error.message === "FORBIDDEN") {
-      return res.status(403).send("Forbidden");
+      // QA9 FIX-10: consistent JSON 403 shape instead of bare string.
+      return res.status(403).json({ message: "You don't have permission to do that." });
     }
     console.error('[jobsController] error:', error);
     errorMessage.error = "Operation not successful. Please try again.";
@@ -690,14 +691,36 @@ const getJobApplicantFitSignals = async (req, res) => {
 
 const deleteInterviewQuestion = async (req, res) => {
   const { questionId, jobId } = req.query;
-  const deleteQuery = `DELETE FROM ${dbSchema}.interview_template_question WHERE template_question_id = $1 returning *`;
   try {
-    await dbQuery.query(deleteQuery, [questionId]);
+    // QA9 FIX-6 BOLA: verify the question belongs to the caller's company
+    // before deleting. Join through job_interview_template for company_id.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    // OPT-QA9-1: fold ownership check into the DELETE WHERE via subquery —
+    // eliminates the separate SELECT round-trip (was 3 calls, now 2).
+    // Zero rowCount = question not found OR company mismatch → 403.
+    const { rowCount } = await dbQuery.query(
+      `DELETE FROM ${dbSchema}.interview_template_question
+       WHERE template_question_id=$1
+         AND job_interview_template_id IN (
+               SELECT job_interview_template_id
+               FROM ${dbSchema}.job_interview_template
+               WHERE company_id=$2
+             )`,
+      [questionId, callerCompany.companyId]
+    );
+    if (rowCount === 0) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
     const rawQuestions = await getJobInterviewQuestions(jobId, "default");
 
-    const dbResponse = rawQuestions.map(async (question, index) => {
+    // QA10 FIX-13: was bare .map(async) without Promise.all — sequence
+    // updates were fire-and-forget and errors were silently swallowed.
+    const dbResponse = await Promise.all(rawQuestions.map(async (question, index) => {
       return await changeQuestionSequence(question.questionId, index + 1);
-    });
+    }));
     successMessage.data = dbResponse;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -708,8 +731,16 @@ const deleteInterviewQuestion = async (req, res) => {
 };
 
 const getSubscriptionRestrictions = async (req, res) => {
-  const { companyId } = req.query;
   try {
+    // QA10 FIX-11 BOLA: derive companyId from JWT, never from query param —
+    // any authenticated employer could read another company's subscription
+    // metadata by supplying a different companyId.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
     const dbResponse = await companySubscriptions(companyId);
 
     if (dbResponse.length == 0) {

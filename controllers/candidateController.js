@@ -1,6 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import env from "../env";
+import { getUserCompany } from "./companiesController";
 
 import {
   addCandidates,
@@ -10,10 +11,21 @@ import {
   listOfAppliedJobsById
 } from "../services/candidate.service";
 
+const dbSchema = env.schema;
+
 const createCandidate = async (req, res) => {
   const candidate = req.body;
   try {
-    const add = await addCandidates(candidate);
+    // QA10 FIX-5 BOLA: derive companyId from JWT, never from req.body —
+    // any employer could otherwise create a candidate attributed to a
+    // different company by supplying a spoofed companyId.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
+    const add = await addCandidates({ ...candidate, companyId });
     if (!add) {
       errorMessage.error = "Failed to Add Candidate";
       return res.status(status.error).send(errorMessage);
@@ -31,10 +43,18 @@ const multipleCandidate = async (req, res) => {
   const { candidate } = req.body;
   let thisIsContacts = [];
   try {
+    // QA10 FIX-5 BOLA: derive companyId from JWT; override any companyId
+    // in individual candidate objects so callers can't spoof company ownership.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
     if (candidate.length > 0) {
       let multiple = new Promise((resolve, reject) => {
         candidate.forEach(async (option) => {
-          const add = await addCandidates(option);
+          const add = await addCandidates({ ...option, companyId });
           if (!add) {
             successMessage.data = "Failed to Add Candidates " + option.email;
             return res.status(status.error).send(errorMessage);
@@ -59,15 +79,31 @@ const multipleCandidate = async (req, res) => {
 };
 const deleteCandidate = async (req, res) => {
   const { candidateId } = req.query;
-  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
-  const deleteQuery = `DELETE FROM ${dbSchema}.candidates
-                        WHERE candidate_id=$1;`;
+  // QA9 FIX-7: employer-facing endpoint (candidates table has company_id set
+  // at import time). Fold ownership check into DELETE WHERE company_id=$2 so
+  // an employer can only delete candidates belonging to their own company.
   const checkInDb = await checkCandidateIfExist(candidateId);
   try {
     if (!candidateId || !checkInDb) {
       return res.status(status.error).send("Candidate does not Exist");
     }
-    const { rows } = await dbQuery.query(deleteQuery, [candidateId]);
+
+    // Derive company from JWT — never trust caller-supplied companyId.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
+    // Parameterized, not string-interpolated. company_id=$2 folds ownership
+    // into the DELETE WHERE (zero rowCount = not found or company mismatch).
+    const { rowCount } = await dbQuery.query(
+      `DELETE FROM ${dbSchema}.candidates WHERE candidate_id=$1 AND company_id=$2`,
+      [candidateId, callerCompany.companyId]
+    );
+    if (rowCount === 0) {
+      return res.status(403).json({ message: "You don't have permission to delete this candidate." });
+    }
+
     const message = "Candidate Successfully Deleted";
     successMessage.data = message;
     return res.status(status.success).send(successMessage);
@@ -80,7 +116,13 @@ const deleteCandidate = async (req, res) => {
 const updateCandidate = async (req, res) => {
   const candidate = req.body;
   try {
-    const candidateUpdate = await editCandidate(candidate);
+    // QA10 FIX-6 BOLA: derive companyId from JWT and fold into the UPDATE WHERE
+    // so an employer can only update candidates belonging to their own company.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const candidateUpdate = await editCandidate({ ...candidate, companyId: callerCompany.companyId });
     if (!candidateUpdate) {
       errorMessage.error = "Failed to Update Candidate";
       return res.status(status.error).send(errorMessage);
@@ -97,9 +139,17 @@ const updateCandidate = async (req, res) => {
 };
 
 const list = async (req, res) => {
-  const { companyId } = req.query;
   let candidate = [];
   try {
+    // QA10 FIX-4 BOLA: derive companyId from JWT, never from query param —
+    // any authenticated employer could read another company's candidate list
+    // by supplying a different companyId.
+    const callerCompany = await getUserCompany(req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const companyId = callerCompany.companyId;
+
     candidate = await candidateList(companyId);
 
     if (!candidate || candidate.length == 0) {
