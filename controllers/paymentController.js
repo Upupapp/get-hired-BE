@@ -4,7 +4,6 @@ import dbQuery from "../db/dbQuery";
 import env from "../env";
 
 const dbSchema = env.schema;
-const now = new Date();
 
 import { createCompanySubscription } from "./subscriptionController";
 
@@ -108,7 +107,7 @@ const paymongoWebhook = async (req, res) => {
           name,
           phone,
           type,
-          now,
+          new Date(),
           external_reference_number,
         ]);
         const output = {
@@ -160,7 +159,7 @@ const paymongoWebhook = async (req, res) => {
             name,
             phone,
             type,
-            now,
+            new Date(),
             external_reference_number,
         ]);
 
