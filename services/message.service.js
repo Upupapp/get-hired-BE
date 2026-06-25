@@ -215,7 +215,8 @@ const listRecruiterThreads = async (callerUid) => {
        LIMIT  1
      ) last_msg ON true
      WHERE mt.company_id = $1
-     ORDER BY mt.updated_at DESC;`,
+     ORDER BY mt.updated_at DESC
+     LIMIT 200;`,
     [callerCompany.companyId]
   );
 

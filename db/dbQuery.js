@@ -4,7 +4,7 @@ import env from "../env";
 const Pool = pg.Pool;
 
 const pool = new Pool({
-  max: 1,
+  max: 10,
   user: env.user,
   host: env.host,
   database: env.database,
