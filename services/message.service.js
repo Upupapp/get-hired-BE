@@ -192,10 +192,16 @@ const listRecruiterThreads = async (callerUid) => {
        mt.updated_at    AS "lastMessageAt",
        j.job_title      AS "jobTitle",
        last_msg.body    AS "lastMessageSnippet",
-       last_msg.sender_role AS "lastSenderRole"
+       last_msg.sender_role AS "lastSenderRole",
+       u.first_name     AS "applicantFirstName",
+       u.last_name      AS "applicantLastName",
+       u.email          AS "applicantEmail",
+       u.photo_url      AS "applicantPhotoUrl"
      FROM ${dbSchema}.message_threads mt
      LEFT JOIN ${dbSchema}.jobs j
        ON j.job_id = mt.job_id
+     LEFT JOIN ${dbSchema}.users u
+       ON u.uid = mt.applicant_uid
      LEFT JOIN LATERAL (
        SELECT body, sender_role
        FROM   ${dbSchema}.messages
@@ -211,6 +217,10 @@ const listRecruiterThreads = async (callerUid) => {
   return rows.map((row) => ({
     threadId: row.threadId,
     applicantUid: row.applicantUid,
+    applicantName: row.applicantFirstName && row.applicantLastName
+      ? `${row.applicantFirstName} ${row.applicantLastName}`.trim()
+      : (row.applicantEmail || null),
+    applicantPhotoUrl: row.applicantPhotoUrl || null,
     jobId: row.jobId,
     jobTitle: row.jobTitle || null,
     lastMessageSnippet: row.lastMessageSnippet
@@ -218,7 +228,6 @@ const listRecruiterThreads = async (callerUid) => {
       : null,
     lastSenderRole: row.lastSenderRole || null,
     lastMessageAt: row.lastMessageAt,
-    // needsReply: true when last message was from the applicant (not the employer)
     needsReply: row.lastSenderRole === "applicant",
   }));
 };
