@@ -16,7 +16,12 @@ const dbSchema = env.schema;
  */
 
 const verifyRoles = (allowedRoles) => async(req, res, next) => {
-    const uid = req.body.uid || req.query.uid;
+    // SEC-07 FIX: derive uid from verified Firebase JWT, never from caller-supplied body/query.
+    // verifyAuth middleware must run before verifyRoles on any route that uses both.
+    const uid = req.user?.uid;
+    if (!uid) {
+        return res.status(status.unauthorized).json(errorResponse('Authentication required'));
+    }
 
     try {
         const searchQuery = `SELECT uid, role
@@ -24,12 +29,12 @@ const verifyRoles = (allowedRoles) => async(req, res, next) => {
 
         const { rows } = await dbQuery.query(searchQuery, [uid]);
 
-        if(allowedRoles.includes(rows[0].role)) {
+        if(rows.length && allowedRoles.includes(rows[0].role)) {
             next();
         } else {
-            res.status(401).send({ message: 'User not allowed to access this API' });
+            res.status(401).json({ message: 'User not allowed to access this API' });
         }
-         
+
     } catch (error) {
         return res.status(status.unauthorized).json(errorResponse('Authentication Failed. Role not allowed'));
     }

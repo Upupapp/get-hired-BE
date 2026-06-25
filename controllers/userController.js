@@ -154,7 +154,9 @@ const registerUser = async (req, res) => {
 };
 
 const logout = async (req, res) => {
-  const { uid } = req.query;
+  // SEC-07 FIX: uid from verified Firebase JWT only — never from caller-supplied query param.
+  // verifyAuth middleware is now required on this route (userRoute.js).
+  const uid = req.user.uid;
 
   try {
     const revoke = await revokeTokenInFirebase(uid);
