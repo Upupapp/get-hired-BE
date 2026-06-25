@@ -68,6 +68,11 @@ if (isStaging == "false") {
         measurementId: process.env.MEASUREMENT_ID_DEV,
         schema: process.env.SCHEMA_DEV,
         paymongo_sk: process.env.PAYMONGO_SK_DEV,
+        // SECURE-FIX P2: staging branch was missing paymongo_webhook_secret —
+        // verifyPaymongoSignature() already fails-closed when secret is falsy,
+        // but explicitly mapping the env var makes the gap visible and ensures
+        // a staging PayMongo webhook secret can be set independently.
+        paymongo_webhook_secret: process.env.PAYMONGO_WEBHOOK_SECRET_DEV,
         mailerTemplate: process.env.MAILER_TEMPLATE_DEV
       };
       break;
@@ -97,6 +102,8 @@ if (isStaging == "false") {
         measurementId: process.env.MEASUREMENT_ID_EUCANNAJOBS,
         schema: process.env.SCHEMA_EUCANNAJOBS,
         paymongo_sk: process.env.PAYMONGO_SK_EUCANNAJOBS,
+        // SECURE-FIX P2: eucannajobs staging branch also missing webhook secret.
+        paymongo_webhook_secret: process.env.PAYMONGO_WEBHOOK_SECRET_EUCANNAJOBS,
         mailerTemplate: process.env.MAILER_TEMPLATE_EUCANNAJOBS
       };
       break;
