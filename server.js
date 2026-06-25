@@ -143,6 +143,51 @@ app.use("/api", cvBuilderRoutes);
 app.use("/api", messageRoutes);
 
 
+// SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.
+// No auth required; only published (job_status_id=2) jobs are included.
+// Served from the BE because job IDs are dynamic.
+app.get("/sitemap.xml", async (req, res) => {
+  try {
+    const { default: dbQuery } = await import("./db/dbQuery.js");
+    const { default: envConfig } = await import("./env.js");
+    const schema = envConfig.schema;
+    const BASE_URL = "https://gethiredonline.app";
+    const now = new Date().toISOString().split("T")[0];
+
+    const { rows } = await dbQuery.query(
+      `SELECT job_id, updated_at FROM ${schema}.jobs WHERE job_status_id = 2 ORDER BY updated_at DESC;`,
+      []
+    );
+
+    const staticPages = [
+      { loc: `${BASE_URL}/home`, changefreq: "weekly", priority: "1.0" },
+      { loc: `${BASE_URL}/jobs`, changefreq: "daily", priority: "0.9" },
+      { loc: `${BASE_URL}/job-seekers`, changefreq: "monthly", priority: "0.7" },
+      { loc: `${BASE_URL}/employers`, changefreq: "monthly", priority: "0.7" },
+    ];
+
+    const jobUrls = rows.map(row => {
+      const lastmod = row.updated_at
+        ? new Date(row.updated_at).toISOString().split("T")[0]
+        : now;
+      return `  <url>\n    <loc>${BASE_URL}/jobs/details/${row.job_id}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>`;
+    });
+
+    const staticUrls = staticPages.map(p =>
+      `  <url>\n    <loc>${p.loc}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
+    );
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${staticUrls.join("\n")}\n${jobUrls.join("\n")}\n</urlset>`;
+
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.send(xml);
+  } catch (err) {
+    console.error("Sitemap generation error:", err);
+    res.status(500).send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
+  }
+});
+
 app.get("/", (req, res) => res.send(`Welcome to ${env.projectName} API`));
 
 app.listen(env.port).on("listening", () => {
