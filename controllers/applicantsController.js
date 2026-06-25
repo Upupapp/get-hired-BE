@@ -235,15 +235,43 @@ const getApplicantProfileById = async (req, res) => {
   }
 };
 
+// SEC-01 FIX: BOLA / IDOR on GET /applicant/userprofile
+// Previously this trusted req.query.id (frontend sent ?id=<userId>), allowing
+// any authenticated applicant to read any other applicant's user profile by
+// changing the query param. Identity is now derived exclusively from the
+// verified Firebase JWT set on req.user.uid by the verifyAuth middleware.
+//
+// Case 1/2 (no token / invalid token): handled upstream by verifyAuth → 403
+// Case 3: valid token, no query → uses token uid ✓
+// Case 4: valid token, matching query → uses token uid (query ignored) ✓
+// Case 5: valid token, MISMATCHED query → 403 + security event logged ✓
+// Case 6: no profile found → propagates 404-equivalent via error path ✓
 const getUserProfile = async (req, res) => {
-  const { id } = req.query;
+  const tokenUid = req.user.uid;
+
+  // Case 5: caller supplied an id query param that DIFFERS from the token uid.
+  // This is the IDOR attempt path — block it and log a security event.
+  // We deliberately do NOT reveal whether the supplied id exists.
+  if (req.query.id && req.query.id !== tokenUid) {
+    const ts = new Date().toISOString();
+    const redactUid = (u) => (typeof u === 'string' && u.length > 6)
+      ? u.slice(0, 3) + '***' + u.slice(-3)
+      : '***';
+    console.warn(
+      `[SEC_01_APPLICANT_USERPROFILE_UID_MISMATCH] ${ts} ` +
+      `endpoint=GET /applicant/userprofile ` +
+      `authenticatedUid=${redactUid(tokenUid)} ` +
+      `suppliedId=${redactUid(req.query.id)} ` +
+      `action=blocked`
+    );
+    return res.status(403).json({ message: 'Unable to load profile for this session.' });
+  }
 
   try {
-    const creds = await getUserProfileById(id);
-
+    const creds = await getUserProfileById(tokenUid);
     return res.status(status.success).json(successResponse(creds));
   } catch (error) {
-    console.error('[applicantsController] error:', error);
+    console.error('[applicantsController] getUserProfile error:', error.message || error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
