@@ -24,7 +24,13 @@ import verifyAuth from "../middleware/verifyAuth";
 
 const router = express.Router();
 
-// router.delete("/jobs/delete", deleteJob);
+// P2 FIX: route un-commented and registered with verifyAuth.
+// The previous comment-out left the deleteJob controller dead code — no
+// HTTP endpoint existed, meaning the FE fell back to archiving (status 4)
+// rather than a true delete. Now registered as DELETE /job/delete with
+// mandatory auth middleware; controller enforces ownership via
+// getUserCompany(req.user.uid) + AND company_id=$2 in the WHERE clause.
+router.delete("/job/delete", verifyAuth, deleteJob);
 
 // job
 router.post("/job/create", verifyAuth, createJobs);

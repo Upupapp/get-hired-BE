@@ -216,26 +216,41 @@ const getExpiredJobListOfCompany = async (req, res) => {
 };
 
 const deleteJob = async (req, res) => {
-  const { jobId, companyId } = req.body;
+  // P2 FIX: companyId is no longer read from req.body — it was previously
+  // destructured but only used in a post-delete getJobList() call that could
+  // leak another company's job list to an attacker who supplied a spoofed
+  // companyId. companyId is now derived exclusively from the authenticated
+  // caller's JWT via getUserCompany(), same as all other job mutations.
+  const { jobId } = req.body;
   try {
-    // F-07 BOLA fix: verify the authenticated caller's company owns this job
-    // before deleting. getUserCompany() is token-derived, not caller-supplied.
-    // OPT-01: company_id check folded into DELETE WHERE clause — eliminates
-    // a separate ownership SELECT round-trip (was 3 DB calls, now 2).
+    // Caller identity: derive company from the authenticated Firebase JWT.
+    // Never trust req.body.companyId, req.query.companyId, or any other
+    // caller-supplied scope claim.
     const callerCompany = await getUserCompany(req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
-      return res.status(403).json({ message: "You don't have permission to delete this job." });
+      return res.status(403).json({ message: "Job not found or you do not have access." });
     }
 
-    // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
-    // company_id=$2 constraint enforces ownership without a separate SELECT.
+    // Ownership-scoped DELETE: company_id=$2 in the WHERE clause ensures the
+    // row is only deleted if it belongs to the authenticated caller's company.
+    // RETURNING job_id lets us distinguish "not found / wrong company" (0 rows)
+    // from a successful delete without a separate SELECT round-trip.
     const deleteQuery = `DELETE FROM ${dbSchema}.jobs
-      WHERE job_id=$1 AND company_id=$2`;
-    const { rows, rowCount } = await dbQuery.query(deleteQuery, [jobId, callerCompany.companyId]);
-    if (rowCount === 0) {
-      return res.status(403).json({ message: "You don't have permission to delete this job." });
+      WHERE job_id=$1 AND company_id=$2
+      RETURNING job_id`;
+    const { rowCount } = await dbQuery.query(deleteQuery, [jobId, callerCompany.companyId]);
+
+    // 0 rows affected = job_id doesn't exist OR it belongs to a different
+    // company. Return 404 (not 403) to avoid revealing whether the job exists.
+    if (!rowCount || rowCount === 0) {
+      const notFoundMsg = { error: "Job not found or you do not have access." };
+      return res.status(status.notfound).send(notFoundMsg);
     }
-    const jobs = await getJobList(companyId);
+
+    // Refresh the caller's own job list — scoped to callerCompany.companyId,
+    // never to any caller-supplied ID. Empty array is a valid success response
+    // (all jobs deleted).
+    const jobs = await getBasicJobList(callerCompany.companyId, 0);
     successMessage.data = jobs;
     return res.status(status.success).send(successMessage);
   } catch (error) {
