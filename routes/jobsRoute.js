@@ -60,7 +60,7 @@ router.get("/job/published", getAllPublishedJobs);
 // req.user=null for anonymous callers, and returns 401 for invalid tokens.
 // Controller derives viewerContext from req.user.uid only — never from uid query.
 router.get("/job/details", optionalVerifyAuth, getJobDetails);
-router.get("/job/sharelink", getJobShareableLink);
+router.get("/job/sharelink", optionalVerifyAuth, getJobShareableLink);
 
 
 
