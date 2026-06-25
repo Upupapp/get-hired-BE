@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { successMessage, errorMessage, status } from "../helpers/status";
 import idGenerator from "../helpers/randomNumberForId";
 import dbQuery from "../db/dbQuery";
@@ -56,7 +57,50 @@ const paymongoPaymentLink = async (req, res) => {
   }
 };
 
+const verifyPaymongoSignature = (req) => {
+  const secret = env.paymongo_webhook_secret;
+  if (!secret) return false;
+
+  const sigHeader = req.headers["paymongo-signature"];
+  if (!sigHeader) return false;
+
+  const parts = {};
+  sigHeader.split(",").forEach((part) => {
+    const eq = part.indexOf("=");
+    if (eq > -1) parts[part.slice(0, eq)] = part.slice(eq + 1);
+  });
+
+  const timestamp = parts.t;
+  if (!timestamp) return false;
+
+  // Reject replayed requests older than 5 minutes
+  if (Math.abs(Math.floor(Date.now() / 1000) - parseInt(timestamp, 10)) > 300) return false;
+
+  const rawBody = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(req.body);
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${timestamp}.${rawBody}`, "utf8")
+    .digest("hex");
+
+  const sig = parts.li || parts.te; // live sig preferred; fall back to test
+  if (!sig) return false;
+
+  try {
+    const a = Buffer.from(sig.padEnd(expected.length, "0"), "hex");
+    const b = Buffer.from(expected, "hex");
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+};
+
 const paymongoWebhook = async (req, res) => {
+  if (!verifyPaymongoSignature(req)) {
+    console.warn("[paymentController] Webhook signature verification failed — request rejected");
+    return res.status(400).json({ message: "Invalid webhook signature" });
+  }
+
   const { data } = req.body;
   const webhookEvent = data.attributes.type;
 

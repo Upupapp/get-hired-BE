@@ -33,6 +33,7 @@ if (isStaging == "false") {
     measurementId: process.env.MEASUREMENT_ID,
     schema: process.env.SCHEMA,
     paymongo_sk: process.env.PAYMONGO_SK,
+    paymongo_webhook_secret: process.env.PAYMONGO_WEBHOOK_SECRET,
     mailerTemplate: process.env.MAILER_TEMPLATE
   };
 } else {
