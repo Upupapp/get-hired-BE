@@ -596,12 +596,36 @@ const getAllPublishedJobs = async (req, res) => {
 };
 
 const getJobDetails = async (req, res) => {
-  const { id, uid } = req.query;
+  const { id } = req.query;
   let isApplied = false;
 
+  // SEC-02 FIX: viewer identity comes only from the verified Firebase token
+  // attached by optionalVerifyAuth — never from req.query.uid or any other
+  // caller-supplied parameter.
+  const viewerUid = req.user?.uid ?? null;
+
+  // SEC-02 FIX: if caller supplied a uid/userId/applicantId query param,
+  // enforce mismatch policy:
+  //   - Authenticated + uid matches token: backward compat, safe to proceed.
+  //   - Authenticated + uid differs from token: BOLA probe — reject with 403.
+  //   - Unauthenticated + uid supplied: ignore; return public-only response.
+  const suppliedUid = req.query.uid || req.query.userId || req.query.applicantId
+    || req.query.candidateId || req.query.profileId;
+
+  if (suppliedUid && viewerUid && suppliedUid !== viewerUid) {
+    console.warn('[SEC_02_JOB_DETAILS_UID_PARAM_PROBE_BLOCKED]', {
+      endpoint: 'GET /job/details',
+      jobId: id,
+      suppliedParam: Object.keys(req.query).find(k =>
+        ['uid','userId','applicantId','candidateId','profileId'].includes(k)),
+      action: 'blocked_403',
+    });
+    return res.status(403).json({ message: "Unable to load this job for the current session." });
+  }
+
   try {
-    if (uid) {
-      const applied = await listOfJobAppliedByApplicant(uid);
+    if (viewerUid) {
+      const applied = await listOfJobAppliedByApplicant(viewerUid);
       const filtered = applied.filter((item) => item.jobId == id);
       isApplied = filtered.length != 0;
     }
@@ -614,7 +638,7 @@ const getJobDetails = async (req, res) => {
     }));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+    return res.status(status.error).json(errorResponse("Unable to load this job. Please try again."));
   }
 };
 

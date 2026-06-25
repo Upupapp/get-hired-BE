@@ -21,6 +21,7 @@ import {
 } from "../controllers/jobsController";
 
 import verifyAuth from "../middleware/verifyAuth";
+import optionalVerifyAuth from "../middleware/optionalVerifyAuth";
 
 const router = express.Router();
 
@@ -55,7 +56,10 @@ router.get("/job/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestri
 
 // public api
 router.get("/job/published", getAllPublishedJobs);
-router.get("/job/details", getJobDetails);
+// SEC-02 FIX: optionalVerifyAuth verifies the token if present, passes
+// req.user=null for anonymous callers, and returns 401 for invalid tokens.
+// Controller derives viewerContext from req.user.uid only — never from uid query.
+router.get("/job/details", optionalVerifyAuth, getJobDetails);
 router.get("/job/sharelink", getJobShareableLink);
 
 
