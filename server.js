@@ -193,9 +193,15 @@ app.get("/sitemap.xml", async (req, res) => {
     ];
 
     const jobUrls = rows.map(row => {
-      const lastmod = row.updated_at
-        ? new Date(row.updated_at).toISOString().split("T")[0]
-        : today;
+      // SECURE-V3 S3 FIX: apply xmlEscape to lastmod as defensive belt-and-
+      // suspenders. In practice new Date().toISOString() always produces a
+      // safe YYYY-MM-DD string; xmlEscape ensures no edge-case DB value can
+      // corrupt the XML even if toISOString() somehow returns an odd string.
+      const lastmod = xmlEscape(
+        row.updated_at
+          ? new Date(row.updated_at).toISOString().split("T")[0]
+          : today
+      );
       // xmlEscape: job_id is a varchar with no server-enforced format,
       // so a malformed value must not corrupt the XML document.
       const safeJobId = xmlEscape(row.job_id);
