@@ -7,7 +7,8 @@ import {
     saveGroupInterview,
     saveQuestionTemplate,
     updateJobInterviewQuestion,
-    getListByUser
+    getListByUser,
+    getInterviewHub,
 } from "../controllers/interviewController";
 
 import verifyAuth from '../middleware/verifyAuth';
@@ -24,5 +25,8 @@ router.get("/interview/gettemplatequestions", verifyAuth, getInterviewTemplateQu
 router.post("/interview/savegroupinterview", verifyAuth, saveGroupInterview);
 router.post("/interview/savequestiontemplate", verifyAuth, saveQuestionTemplate);
 router.put("/interview/updatejobinterview", verifyAuth, updateJobInterviewQuestion);
+// B03: RecruiterInterviewHub — company-scoped interview activity feed.
+// Company derived from JWT; never trusts caller-supplied IDs.
+router.get("/interview/hub", verifyAuth, getInterviewHub);
 
 export default router;

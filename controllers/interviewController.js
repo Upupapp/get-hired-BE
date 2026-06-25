@@ -234,6 +234,93 @@ const getListByUser = async (req, res) => {
   }
 }
 
+/**
+ * GET /api/interview/hub
+ * Returns company-scoped applications that have video answers or are in an
+ * interview-related status. No scheduling, no AI claims, no fake counts.
+ * Authorization: JWT-derived company only — never caller-supplied.
+ * B03: RecruiterInterviewHub unstub.
+ */
+const getInterviewHub = async (req, res) => {
+  try {
+    const callerCompany = await getUserCompany(req.user.uid)
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." })
+    }
+    const companyId = callerCompany.companyId
+
+    // Fetch applications for this company's jobs, joining:
+    //   - jobs for company scoping (the authorization pivot)
+    //   - users for applicant display name
+    //   - job_applicant_status for status label
+    //   - interview_answers subquery for video answer count
+    //
+    // interview_answers.applicant_id is a FK to applicants_profile.applicant_profile_id
+    // and the profile's user_id matches job_applicants.candidate_id — so we join
+    // through applicants_profile to correlate answers to this application's candidate.
+    //
+    // Status filter: include ALL statuses so recruiters can see the full picture.
+    // The FE filter chips let them narrow to video-answer or interview-stage items.
+    const { rows } = await dbQuery.query(
+      `SELECT
+         ja.job_application_id,
+         ja.candidate_id,
+         ja.application_status_id,
+         ja.date_applied,
+         ja.updated_at,
+         j.job_id,
+         j.job_title,
+         s.job_applicant_status_name,
+         u.first_name,
+         u.last_name,
+         u.email,
+         u.photo_url,
+         COALESCE(va.video_answer_count, 0) AS video_answer_count
+       FROM ${dbSchema}.job_applicants ja
+       JOIN ${dbSchema}.jobs j ON j.job_id = ja.job_id
+       LEFT JOIN ${dbSchema}.job_applicant_status s
+         ON s.job_applicant_status_id = ja.application_status_id
+       LEFT JOIN ${dbSchema}.applicants_profile ap
+         ON ap.user_id = ja.candidate_id
+       LEFT JOIN ${dbSchema}.users u
+         ON u.uid = ja.candidate_id
+       LEFT JOIN (
+         SELECT ia.applicant_id, COUNT(*) AS video_answer_count
+         FROM ${dbSchema}.interview_answers ia
+         GROUP BY ia.applicant_id
+       ) va ON va.applicant_id = ap.applicant_profile_id
+       WHERE j.company_id = $1
+         AND ja.is_archived IS DISTINCT FROM true
+       ORDER BY COALESCE(ja.updated_at, ja.date_applied) DESC
+       LIMIT 200`,
+      [companyId]
+    )
+
+    const items = rows.map(r => ({
+      applicationId: r.job_application_id,
+      applicantId: r.candidate_id,
+      applicantName: r.first_name && r.last_name
+        ? `${r.first_name} ${r.last_name}`.trim()
+        : (r.email || null),
+      applicantEmail: r.email || null,
+      applicantPhotoUrl: r.photo_url || null,
+      applicationStatusId: r.application_status_id,
+      applicationStatus: r.job_applicant_status_name || 'Unknown',
+      dateApplied: r.date_applied,
+      lastActivity: r.updated_at || r.date_applied,
+      jobId: r.job_id,
+      jobTitle: r.job_title,
+      videoAnswerCount: parseInt(r.video_answer_count, 10) || 0,
+      hasVideoAnswers: parseInt(r.video_answer_count, 10) > 0,
+    }))
+
+    return res.json({ items, total: items.length })
+  } catch (err) {
+    console.error('[getInterviewHub] error:', err)
+    return res.status(500).json({ message: 'Something went wrong. Please try again.' })
+  }
+}
+
 export {
   getAllInterviewsOfCompanies,
   getAllInterviewsTemplatesOfCompanies,
@@ -242,5 +329,6 @@ export {
   saveGroupInterview,
   saveQuestionTemplate,
   updateJobInterviewQuestion,
-  getListByUser
+  getListByUser,
+  getInterviewHub,
 }
