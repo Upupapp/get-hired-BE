@@ -23,19 +23,20 @@ const addContact = async (contact) => {
 
     if (ifExistContact) {
       if (groupName == "" && groupId == "") {
+        // NOTIFY-P2: pure duplicate — no new contact added, no group action taken.
         message = "Contact aleady exist";
-        return { message };
+        return { message, status: 'DUPLICATE_CONTACT' };
       } else if (groupName == "") {
         const check = await checkIfExistInGroup(email, groupId);
         if (check) {
           message = "Contact aleady exist in your list and in group";
-          return { message };
+          return { message, status: 'DUPLICATE_CONTACT' };
         }
 
         const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
         const addToGroupList = await addInGroupList(groupId, email);
         message = "Contact aleady exist, but has been added to group";
-        return { message };
+        return { message, status: 'ADDED' };
       } else {
         const check = await checkGroupNameIfExist(groupName);
         if (check) {
@@ -50,17 +51,17 @@ const addContact = async (contact) => {
           const addToGroupList = await addInGroupList(response.group_id, email);
           message =
             "Contact aleady exist, but has been added to the existing group";
-          return { message };
+          return { message, status: 'ADDED' };
         }
         const addToGroup = await addGroup(groupName, companyId);
         const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
         const addToGroupList = await addInGroupList(addToGroup.group_id, email);
         message = "Contact aleady exist, but has been added to the new group";
-        return { message };
+        return { message, status: 'ADDED' };
       }
     }
     const insertQuery = `INSERT INTO ${dbSchema}.contact
-                          (user_id, first_name, last_name, email, mobile_number, address, 
+                          (user_id, first_name, last_name, email, mobile_number, address,
                                created_at, company_id)
                             VALUES($1, $2, $3, $4, $5, $6, current_timestamp, $7) returning *;`;
 
@@ -82,12 +83,12 @@ const addContact = async (contact) => {
     if (groupName == "" && groupId == "") {
       const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
       message = "Successfully add contact";
-      return { ...dbResponse, message };
+      return { ...dbResponse, message, status: 'ADDED' };
     } else if (groupName == "") {
       const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
       const addToGroupList = await addInGroupList(groupId, email);
       message = "Successfully add contact";
-      return { ...dbResponse, message };
+      return { ...dbResponse, message, status: 'ADDED' };
     } else {
       const check = await checkGroupNameIfExist(groupName);
       if (check) {
@@ -97,13 +98,13 @@ const addContact = async (contact) => {
         const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
         const addToGroupList = await addInGroupList(response.group_id, email);
         message = "Successfully add contact";
-        return { ...dbResponse, message };
+        return { ...dbResponse, message, status: 'ADDED' };
       }
       const addToGroup = await addGroup(groupName, companyId);
       const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
       const addToGroupList = await addInGroupList(addToGroup.group_id, email);
       message = "Successfully add contact";
-      return { ...dbResponse, message };
+      return { ...dbResponse, message, status: 'ADDED' };
     }
   } catch (error) {
     throw Error(error);
@@ -127,16 +128,16 @@ const addMultipleContact = async (contact, groupName, groupId) => {
     if (ifExistContact) {
       if (groupName == "" && groupId == "") {
         message = "Contact aleady exist";
-        return { message };
+        return { message, status: 'DUPLICATE_CONTACT' };
       } else if (groupName == "") {
         const check = await checkIfExistInGroup(email, groupId);
         if (check) {
           message = "Contact aleady exist in your list and in group";
-          return { message };
+          return { message, status: 'DUPLICATE_CONTACT' };
         }
         const addToGroupList = await addInGroupList(groupId, email);
         message = "Contact aleady exist, but has been added to group";
-        return { message };
+        return { message, status: 'ADDED' };
       } else {
         const check = await checkGroupNameIfExist(groupName);
         if (check) {
@@ -146,16 +147,16 @@ const addMultipleContact = async (contact, groupName, groupId) => {
           const addToGroupList = await addInGroupList(response.group_id, email);
           message =
             "Contact aleady exist, but has been added to the existing group";
-          return { message };
+          return { message, status: 'ADDED' };
         }
         const addToGroup = await addGroup(groupName, companyId);
         const addToGroupList = await addInGroupList(addToGroup.group_id, email);
         message = "Contact aleady exist, but has been added to the new group";
-        return { message };
+        return { message, status: 'ADDED' };
       }
     }
     const insertQuery = `INSERT INTO ${dbSchema}.contact
-                          (user_id, first_name, last_name, email, mobile_number, address, 
+                          (user_id, first_name, last_name, email, mobile_number, address,
                                created_at, company_id)
                             VALUES($1, $2, $3, $4, $5, $6, current_timestamp, $7) returning *;`;
 
@@ -176,11 +177,11 @@ const addMultipleContact = async (contact, groupName, groupId) => {
 
     if (groupName == "" && groupId == "") {
       message = "Successfully add contact";
-      return { ...dbResponse, message };
+      return { ...dbResponse, message, status: 'ADDED' };
     } else if (groupName == "") {
       const addToGroupList = await addInGroupList(groupId, email);
       message = "Successfully add contact";
-      return { ...dbResponse, message };
+      return { ...dbResponse, message, status: 'ADDED' };
     } else {
       const check = await checkGroupNameIfExist(groupName);
       if (check) {
@@ -189,12 +190,12 @@ const addMultipleContact = async (contact, groupName, groupId) => {
         const response = rows[0];
         const addToGroupList = await addInGroupList(response.group_id, email);
         message = "Successfully add contact";
-        return { ...dbResponse, message };
+        return { ...dbResponse, message, status: 'ADDED' };
       }
       const addToGroup = await addGroup(groupName, companyId);
       const addToGroupList = await addInGroupList(addToGroup.group_id, email);
       message = "Successfully add contact";
-      return { ...dbResponse, message };
+      return { ...dbResponse, message, status: 'ADDED' };
     }
   } catch (error) {
     throw Error(error);

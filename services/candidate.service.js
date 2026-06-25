@@ -21,11 +21,12 @@ const addCandidates = async (candidate) => {
     const ifExistCandidate = await checkEmailIfExistInCandidate(email);
     //const ifRegistered = await checkEmailIfExistInContactAndRegistered(email, userId)
     if (ifExistCandidate) {
+      // NOTIFY-P2: pure duplicate — no new candidate added.
       message = "Candidate Already Exist";
-      return { message };
+      return { message, status: 'DUPLICATE_CANDIDATE' };
     }
     const insertQuery = `INSERT INTO ${dbSchema}.candidates
-                          (user_id, first_name, last_name, email, mobile_number, address, 
+                          (user_id, first_name, last_name, email, mobile_number, address,
                                created_at, job_id, company_id, status)
                             VALUES($1, $2, $3, $4, $5, $6, current_timestamp, $7, $8, 'imported') returning *;`;
     const { rows } = await dbQuery.query(insertQuery, [
@@ -47,7 +48,7 @@ const addCandidates = async (candidate) => {
     const jobName = await getJobName(jobId);
     const sendEmail = await sendEmailInvite(email, firstName, jobName);
     message = "Successfully add candidate";
-    return { ...dbResponse, message };
+    return { ...dbResponse, message, status: 'ADDED' };
   } catch (error) {
     throw Error(error);
   }

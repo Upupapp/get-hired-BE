@@ -37,7 +37,6 @@ const createContact = async (req, res) => {
 
 const multipleContact = async (req, res) => {
     const { groupName, groupId, contacts } = req.body;
-    let thisIsContacts = [];
     try {
         // QA8 FIX-7 BOLA: derive companyId from JWT; override any companyId
         // in individual contact objects so callers can't spoof company ownership.
@@ -47,27 +46,34 @@ const multipleContact = async (req, res) => {
         }
         const companyId = callerCompany.companyId;
 
-        if (contacts.length > 0) {
-
-            let multiple = new Promise((resolve, reject) => {
-                contacts.forEach(async option => {
-                    const add = await addMultipleContact({ ...option, companyId }, groupName, groupId)
-                    if (!add) {
-                        return res.status(status.error).json(errorResponse('Failed to Add Contact ' + option.email));
-                    }
-                    thisIsContacts.push(add);
-                    if (thisIsContacts.length == contacts.length) resolve();
-                });
-            });
-            multiple.then(() => {
-                // const addMultiple = {
-                //     contacts: thisIsContacts
-                // };
-
-                return res.status(status.success).json(successResponse(thisIsContacts));
-            });
-
+        if (!contacts || contacts.length === 0) {
+            return res.status(status.error).json(errorResponse('No contacts provided.'));
         }
+
+        // NOTIFY-P2: replaced broken forEach(async) pattern with Promise.allSettled
+        // so that one failure does not silently skip remaining contacts or cause
+        // double-response "headers already sent" errors in Express.
+        const settled = await Promise.allSettled(
+            contacts.map(option => addMultipleContact({ ...option, companyId }, groupName, groupId))
+        );
+
+        const addedItems = settled
+            .filter(r => r.status === 'fulfilled' && r.value?.status === 'ADDED')
+            .map(r => r.value);
+        const duplicateCount = settled.filter(r => r.status === 'fulfilled' && r.value?.status === 'DUPLICATE_CONTACT').length;
+        const failureCount = settled.filter(r => r.status === 'rejected').length;
+        const successCount = addedItems.length;
+        const totalRequested = contacts.length;
+
+        const outcome = successCount > 0
+            ? (failureCount > 0 ? 'partial_success' : 'all_success')
+            : (duplicateCount > 0 ? 'duplicate_only' : 'all_failed');
+
+        const summary = { totalRequested, successCount, failureCount, duplicateCount, outcome };
+        console.info('[NOTIFY_P2_CONTACT_INVITE_MULTIPLE]', { endpoint: 'POST /contacts/multiplecontact', ...summary });
+
+        return res.status(status.success).json(successResponse({ contacts: addedItems, summary }));
+
     } catch (error) {
         console.error('[contactsController] error:', error);
         return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));

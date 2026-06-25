@@ -38,7 +38,6 @@ const createCandidate = async (req, res) => {
 };
 const multipleCandidate = async (req, res) => {
   const { candidate } = req.body;
-  let thisIsContacts = [];
   try {
     // QA10 FIX-5 BOLA: derive companyId from JWT; override any companyId
     // in individual candidate objects so callers can't spoof company ownership.
@@ -48,24 +47,32 @@ const multipleCandidate = async (req, res) => {
     }
     const companyId = callerCompany.companyId;
 
-    if (candidate.length > 0) {
-      let multiple = new Promise((resolve, reject) => {
-        candidate.forEach(async (option) => {
-          const add = await addCandidates({ ...option, companyId });
-          if (!add) {
-            return res.status(status.error).json(errorResponse("Failed to Add Candidates " + option.email));
-          }
-          thisIsContacts.push(add);
-          if (thisIsContacts.length == candidate.length) resolve();
-        });
-      });
-      multiple.then(() => {
-        // const addMultiple = {
-        //     contacts: thisIsContacts
-        // };
-        return res.status(status.success).json(successResponse(thisIsContacts));
-      });
+    if (!candidate || candidate.length === 0) {
+      return res.status(status.error).json(errorResponse('No candidates provided.'));
     }
+
+    // NOTIFY-P2: replaced broken forEach(async) pattern with Promise.allSettled.
+    const settled = await Promise.allSettled(
+      candidate.map(option => addCandidates({ ...option, companyId }))
+    );
+
+    const addedItems = settled
+      .filter(r => r.status === 'fulfilled' && r.value?.status === 'ADDED')
+      .map(r => r.value);
+    const duplicateCount = settled.filter(r => r.status === 'fulfilled' && r.value?.status === 'DUPLICATE_CANDIDATE').length;
+    const failureCount = settled.filter(r => r.status === 'rejected').length;
+    const successCount = addedItems.length;
+    const totalRequested = candidate.length;
+
+    const outcome = successCount > 0
+      ? (failureCount > 0 ? 'partial_success' : 'all_success')
+      : (duplicateCount > 0 ? 'duplicate_only' : 'all_failed');
+
+    const summary = { totalRequested, successCount, failureCount, duplicateCount, outcome };
+    console.info('[NOTIFY_P2_CANDIDATE_INVITE_MULTIPLE]', { endpoint: 'POST /candidates/multiplecandidate', ...summary });
+
+    return res.status(status.success).json(successResponse({ candidates: addedItems, summary }));
+
   } catch (error) {
     console.error('[candidateController] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
