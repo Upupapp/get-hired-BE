@@ -212,8 +212,10 @@ const paymongoWebhook = async (req, res) => {
         successMessage.data = dbResponse;
         return res.status(status.success).send(successMessage);
     } else if (webhookEvent == "payment.failed") {
-        console.log("Payment Failed");
-        console.log(data);
+        // NOTIFY-FIX-01: removed console.log(data) which wrote the full
+        // PayMongo webhook payload — including billing name, email, phone — to
+        // be_out.log in plaintext. Log only the event type and payment id.
+        console.log('[paymentController] payment.failed event received, id:', data && data.id);
         const dbResponse = webhookEvent;
         successMessage.data = dbResponse;
         return res.status(status.success).send(successMessage);

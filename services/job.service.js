@@ -39,10 +39,18 @@ const getCompanyPublishedJobsCount = async (companyId) => {
 };
 
 const getPublishedJobs = async (companyId) => {
-  const filter = companyId ? `and j.company_id = '${companyId}'` : "";
+  // SECURE-FIX P0 SQLi: previously built a raw string filter with string
+  // interpolation (`and j.company_id = '${companyId}'`), allowing a caller to
+  // inject arbitrary SQL via the ?id query param on the public /job/published
+  // endpoint (no auth required). Fixed by parameterising the optional
+  // company_id filter: when a companyId is supplied, include a $1 placeholder
+  // and pass the value as a parameter; when absent, query all published jobs.
+  let searchQuery;
+  let params;
 
-  const searchQuery = `SELECT 
-        j.job_id, j.job_banner, j.job_title, 
+  if (companyId) {
+    searchQuery = `SELECT
+        j.job_id, j.job_banner, j.job_title,
         j.company_id, j.job_type_id, j.work_setup_id,
         j.job_country, j.job_city, j.salary_minimum, j.salary_maximum, j.salary_currency,
         c.company_name, t.job_type_name, w.work_setup_name
@@ -53,11 +61,29 @@ const getPublishedJobs = async (companyId) => {
     ON j.job_type_id = t.job_type_id
     LEFT JOIN ${dbSchema}.work_setup w
     ON j.work_setup_id = w.work_setup_id
-    WHERE j.job_status_id = 2 ${filter}
+    WHERE j.job_status_id = 2 AND j.company_id = $1
     ORDER BY j.updated_at DESC;`;
+    params = [companyId];
+  } else {
+    searchQuery = `SELECT
+        j.job_id, j.job_banner, j.job_title,
+        j.company_id, j.job_type_id, j.work_setup_id,
+        j.job_country, j.job_city, j.salary_minimum, j.salary_maximum, j.salary_currency,
+        c.company_name, t.job_type_name, w.work_setup_name
+    FROM ${dbSchema}.jobs j
+    LEFT JOIN ${dbSchema}.companies c
+    ON j.company_id = c.company_id
+    LEFT JOIN ${dbSchema}.job_type t
+    ON j.job_type_id = t.job_type_id
+    LEFT JOIN ${dbSchema}.work_setup w
+    ON j.work_setup_id = w.work_setup_id
+    WHERE j.job_status_id = 2
+    ORDER BY j.updated_at DESC;`;
+    params = [];
+  }
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, params);
     if (rows && rows.length != 0) {
       return await Promise.all(rows.map(async (row) => mappedBasicJob(row)));
     } else {
@@ -680,7 +706,9 @@ const mappedBasicJob = async (raw) => {
     jobTypeName: raw.job_type_name,
     workSetupName: raw.work_setup_name,
     badges: await getJobBadges(raw.job_id),
-    tags: await getJobArrayDetails(raw.jobId, "job_tags", "tags"),
+    // OPTIMIZE FIX: was raw.jobId (always undefined — mapped prop not raw col).
+    // Tags were silently returning [] for every row in the public job list.
+    tags: await getJobArrayDetails(raw.job_id, "job_tags", "tags"),
   };
 };
 
