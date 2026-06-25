@@ -1,4 +1,4 @@
-import { successMessage, errorMessage, status } from '../helpers/status'
+import { successResponse, errorResponse, status } from '../helpers/status'
 import {
   getAllInterviews,
   getAllInterviewTemplates,
@@ -33,12 +33,10 @@ const getAllInterviewsOfCompanies = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
     const dbResponse = await getAllInterviews(companyId)
-    successMessage.data = dbResponse
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(dbResponse))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -50,12 +48,10 @@ const getAllInterviewsTemplatesOfCompanies = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
     const dbResponse = await getAllInterviewTemplates(companyId)
-    successMessage.data = dbResponse
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(dbResponse))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -67,12 +63,10 @@ const getAllInterviewRecipientsByCompanyId = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
     const dbResponse = await getInterviewRecipients(companyId)
-    successMessage.data = dbResponse
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(dbResponse))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -85,12 +79,10 @@ const getInterviewTemplateQuestions = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
     const dbResponse = await getTemplateQuestions(templateId)
-    successMessage.data = dbResponse
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(dbResponse))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -109,12 +101,10 @@ const saveGroupInterview = async (req, res) => {
     // Overwrite any client-supplied companyId with the JWT-derived one.
     const safeBody = { ...req.body, companyId: callerCompany.companyId }
     const dbResponse = await createGroupInterview(safeBody, uid)
-    successMessage.data = dbResponse
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(dbResponse))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -159,12 +149,10 @@ const saveQuestionTemplate = async (req, res) => {
       }
     }
 
-    successMessage.data = questionTemplate
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(questionTemplate))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -220,12 +208,10 @@ const updateJobInterviewQuestion = async (req, res) => {
       templateId: raw.job_interview_template_id,
       sequence: raw.sequence,
     }
-    successMessage.data = question
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(question))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 
@@ -233,12 +219,10 @@ const getListByUser = async (req, res) => {
   const { uid } = req.user
   try {
     // const dbResponse = await getInterviewsOfUser(uid)
-    successMessage.data = null
-    return res.status(status.success).send(successMessage)
+    return res.status(status.success).json(successResponse(null))
   } catch (error) {
     console.error('[interviewController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again."
-    return res.status(status.error).send(errorMessage)
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
   }
 }
 

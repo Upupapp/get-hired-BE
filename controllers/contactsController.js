@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact, addMultipleContact, listOfGroup, listOfContacts, checkGroupIfExist, editGroup, checkEmailIfExistInContact, groupList } from "../services/contact.service";
 import { checkEmailIfExist } from "../helpers/userDetails";
@@ -22,19 +22,16 @@ const createContact = async (req, res) => {
         const add = await addContact({ ...contact, companyId })
 
         if (!add) {
-            errorMessage.error = 'Failed to Add Contact';
-            return res.status(status.error).send(errorMessage);
+            return res.status(status.error).json(errorResponse('Failed to Add Contact'));
         }
         //to add list of emlpoyees
 
-        successMessage.data = add
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(add));
 
     }
     catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -56,8 +53,7 @@ const multipleContact = async (req, res) => {
                 contacts.forEach(async option => {
                     const add = await addMultipleContact({ ...option, companyId }, groupName, groupId)
                     if (!add) {
-                        successMessage.data = 'Failed to Add Contact ' + option.email;
-                        return res.status(status.error).send(errorMessage);
+                        return res.status(status.error).json(errorResponse('Failed to Add Contact ' + option.email));
                     }
                     thisIsContacts.push(add);
                     if (thisIsContacts.length == contacts.length) resolve();
@@ -68,15 +64,13 @@ const multipleContact = async (req, res) => {
                 //     contacts: thisIsContacts
                 // };
 
-                successMessage.data = thisIsContacts
-                return res.status(status.success).send(successMessage);
+                return res.status(status.success).json(successResponse(thisIsContacts));
             });
 
         }
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 
 };
@@ -110,13 +104,11 @@ const deleteContact = async (req, res) => {
         }
 
         const message = "Contact Successfully Deleted"
-        successMessage.data = message;
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(message));
 
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -135,20 +127,17 @@ const updateContact = async (req, res) => {
         const contactUpdate = await editContact({ ...contact, companyId: callerCompany.companyId })
 
         if (!contactUpdate) {
-            errorMessage.error = 'Failed to Update Contact';
-            return res.status(status.error).send(errorMessage);
+            return res.status(status.error).json(errorResponse('Failed to Update Contact'));
         }
 
-        successMessage.data = contactUpdate
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(contactUpdate));
     }
     catch (error) {
         if (error && error.message === 'FORBIDDEN') {
             return res.status(403).json({ message: "You don't have permission to update this contact." });
         }
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -167,17 +156,14 @@ const list = async (req, res) => {
         contact = await contactList(companyId);
 
         if (!contact || contact.length == 0) {
-            successMessage.data = [];
-            return res.status(status.success).send(successMessage);
+            return res.status(status.success).json(successResponse([]));
         }
 
-        successMessage.data = contact
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(contact));
 
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -195,17 +181,14 @@ const grouplist = async (req, res) => {
         groups = await listOfGroup(companyId);
 
         if (!groups || groups.length == 0) {
-            successMessage.data = [];
-            return res.status(status.success).send(successMessage);
+            return res.status(status.success).json(successResponse([]));
         }
 
-        successMessage.data = groups
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(groups));
 
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -225,8 +208,7 @@ const createGroup = async (req, res) => {
         const add = await addGroup(groupName, companyId)
 
         if (!add) {
-            errorMessage.error = 'Failed to Create Group';
-            return res.status(status.error).send(errorMessage);
+            return res.status(status.error).json(errorResponse('Failed to Create Group'));
         }
         if (emails.length > 0) {
 
@@ -234,8 +216,7 @@ const createGroup = async (req, res) => {
                 emails.forEach(async option => {
                     const create = await addInGroupList(add.group_id, option.email)
                     if (!create) {
-                        successMessage.data = 'Failed to Add In Group ' + option.email;
-                        return res.status(status.error).send(errorMessage);
+                        return res.status(status.error).json(errorResponse('Failed to Add In Group ' + option.email));
                     }
 
                     thisIsContacts.push(create);
@@ -248,8 +229,7 @@ const createGroup = async (req, res) => {
                     contacts: thisIsContacts
                 };
 
-                successMessage.data = addMultiple
-                return res.status(status.success).send(successMessage);
+                return res.status(status.success).json(successResponse(addMultiple));
             });
 
         }
@@ -257,8 +237,7 @@ const createGroup = async (req, res) => {
     }
     catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -278,8 +257,7 @@ const updateGroup = async (req, res) => {
         const groupUpdate = await editGroup(groupId, groupName, callerCompany.companyId)
 
         if (!groupUpdate) {
-            errorMessage.error = 'Failed to Update Group';
-            return res.status(status.error).send(errorMessage);
+            return res.status(status.error).json(errorResponse('Failed to Update Group'));
         }
 
         if (emails.length > 0) {
@@ -288,10 +266,9 @@ const updateGroup = async (req, res) => {
                 emails.forEach(async option => {
                     const create = await addInGroupList(groupId, option.email)
                     if (!create) {
-                        successMessage.data = 'Failed to Add In Group ' + option.email;
-                        return res.status(status.error).send(errorMessage);
+                        return res.status(status.error).json(errorResponse('Failed to Add In Group ' + option.email));
                     }
-                  
+
                     thisIsContacts.push(create);
                     if (thisIsContacts.length == emails.length) resolve();
                 });
@@ -302,8 +279,7 @@ const updateGroup = async (req, res) => {
                     contacts: thisIsContacts
                 };
 
-                successMessage.data = addMultiple
-                return res.status(status.success).send(successMessage);
+                return res.status(status.success).json(successResponse(addMultiple));
             });
 
         } else {
@@ -315,8 +291,7 @@ const updateGroup = async (req, res) => {
             return res.status(403).json({ message: "You don't have permission to update this group." });
         }
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -337,17 +312,14 @@ const contactslist = async (req, res) => {
         contacts = await listOfContacts(companyId, groupName);
     
         if (!contacts || contacts.length == 0) {
-            successMessage.data = [];
-            return res.status(status.success).send(successMessage);
+            return res.status(status.success).json(successResponse([]));
         }
 
-        successMessage.data = contacts
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(contacts));
 
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -380,13 +352,11 @@ const deleteGroup = async (req, res) => {
         }
 
         const message = "Group Successfully Deleted"
-        successMessage.data = message;
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(message));
 
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 
@@ -406,17 +376,14 @@ const list2 = async (req, res) => {
         contact = await groupList(companyId);
     
         if (!contact || contact.length == 0) {
-            successMessage.data = [];
-            return res.status(status.success).send(successMessage);
+            return res.status(status.success).json(successResponse([]));
         }
 
-        successMessage.data = contact
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(contact));
 
     } catch (error) {
         console.error('[contactsController] error:', error);
-        errorMessage.error = "Operation not successful. Please try again.";
-        return res.status(status.error).send(errorMessage);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
 };
 

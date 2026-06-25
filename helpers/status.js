@@ -11,4 +11,7 @@ const status = {
   nocontent: 204,
 };
 
-export { successMessage, errorMessage, status };
+const successResponse = (data) => ({ status: "success", data });
+const errorResponse = (error) => ({ status: "error", error });
+
+export { successMessage, errorMessage, status, successResponse, errorResponse };

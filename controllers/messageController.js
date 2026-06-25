@@ -1,5 +1,5 @@
 import { findOrCreateThread, listMessages, sendMessage, listRecruiterThreads } from "../services/message.service";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 
 const ERROR_STATUS_BY_CODE = {
   FORBIDDEN: 403,
@@ -37,13 +37,11 @@ const openThread = async (req, res) => {
 
   try {
     const thread = await findOrCreateThread(jobId, applicantUid, uid);
-    successMessage.data = thread;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(thread));
   } catch (error) {
     if (handleKnownError(error, res)) return;
     console.error('[messageController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -53,13 +51,11 @@ const getThreadMessages = async (req, res) => {
 
   try {
     const messages = await listMessages(threadId, uid);
-    successMessage.data = messages;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(messages));
   } catch (error) {
     if (handleKnownError(error, res)) return;
     console.error('[messageController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -69,13 +65,11 @@ const postMessage = async (req, res) => {
 
   try {
     const message = await sendMessage(threadId, uid, body);
-    successMessage.data = message;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(message));
   } catch (error) {
     if (handleKnownError(error, res)) return;
     console.error('[messageController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -87,13 +81,11 @@ const getRecruiterThreads = async (req, res) => {
 
   try {
     const threads = await listRecruiterThreads(uid);
-    successMessage.data = threads;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(threads));
   } catch (error) {
     if (handleKnownError(error, res)) return;
     console.error('[messageController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

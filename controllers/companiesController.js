@@ -1,4 +1,4 @@
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import uploadInStorage from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
@@ -64,12 +64,10 @@ const createInitialCompany = async (req, res) => {
       throw "Failed to assign Creator as Employee";
     }
 
-    successMessage.data = company;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(company));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -90,12 +88,10 @@ const createCompanyFull = async (req, res) => {
       throw "Failed to assign Creator as Employee";
     }
 
-    successMessage.data = company;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(company));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -176,12 +172,10 @@ const updateCompany = async (req, res) => {
     }
 
     const dbResponse = mappedCompany(rows[0]);
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -226,12 +220,10 @@ const getSpecificCompany = async (req, res) => {
       company = await companyDetailsById(id);
     }
 
-    successMessage.data = company;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(company));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -354,12 +346,10 @@ const getDashboard = async (req, res) => {
       totalContacts: contact.length,
     };
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -382,24 +372,20 @@ const getDashboardPipelineOverview = async (req, res) => {
     }
 
     const overview = await pipelineOverview(userCompany.companyId);
-    successMessage.data = overview;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(overview));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
 const getIndustryListCompany = async (req, res) => {
   try {
     const industries = await industryList();
-    successMessage.data = industries;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(industries));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -461,12 +447,10 @@ const removeCompanyUser = async (req, res) => {
 
     const { rows } = await dbQuery.query(deleteQuery, [userId, companyId]);
 
-    successMessage.data = "Company user has been removed";
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse("Company user has been removed"));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -475,12 +459,10 @@ const getAllCompanyUser = async (req, res) => {
 
   try {
     const users = await companyUsers(id);
-    successMessage.data = users;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(users));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -509,15 +491,13 @@ const addCompanyUser = async (req, res) => {
       })
     );
 
-    successMessage.data = {
+    return res.status(status.success).json(successResponse({
       companyId,
       emails: userStatus,
-    };
-    return res.status(status.success).send(successMessage);
+    }));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -596,17 +576,14 @@ const addCompanyUserByEmail = async (email, companyId, uid) => {
       email,
     });
 
-    successMessage.data = {
-      ...assigned,
-      ...dbRegister,
-    };
     return {
       msg: "Successfully added",
       status: "success",
     };
   } catch (error) {
+    console.error('[companiesController] addCompanyUserByEmail error:', error);
     return {
-      msg: `Failed: ${error}`,
+      msg: "Failed to add user",
       status: "failed",
     };
   }
@@ -619,12 +596,10 @@ const getFeaturedCompanies = async (req, res) => {
     const featured = await companyList(isFeatured);
     const latest = await companyList(!isFeatured);
 
-    successMessage.data = featured.length != 0 ? featured : latest;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(featured.length != 0 ? featured : latest));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -640,12 +615,10 @@ const getCompanyShareableLink = async (req, res) => {
       company.companyLogoUrl,
       postLink
     );
-    successMessage.data = link;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(link));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -666,12 +639,10 @@ const getSubscriptionRestrictions = async (req, res) => {
       throw "Company is not subscribed to any plan";
     }
 
-    successMessage.data = dbResponse[0];
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse[0]));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -685,12 +656,10 @@ const getAllCompanies = async (req, res) => {
         companyName: row.companyName,
       };
     });
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[companiesController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

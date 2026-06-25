@@ -1,5 +1,5 @@
 import { jobApply } from "../services/application.service";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import {
   getApplicationSnapshot,
   getCompletenessSnapshot,
@@ -33,8 +33,7 @@ const submitApplication = async (req, res) => {
 
   try {
     const apply = await jobApply(application, uid);
-    successMessage.data = apply;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(apply));
   } catch (error) {
     // GH-FOUND-B01: duplicate application is a normal, expected user
     // state, not a server error -- give it its own safe response instead
@@ -46,8 +45,7 @@ const submitApplication = async (req, res) => {
         code: error.code,
       });
     }
-    errorMessage.error = "Something went wrong. Please try again later.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Something went wrong. Please try again later."));
   }
 };
 
@@ -61,8 +59,7 @@ const getApplicantApplicationSnapshot = async (req, res) => {
   const { applicationId } = req.query;
 
   if (!applicationId) {
-    errorMessage.error = "applicationId is required.";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("applicationId is required."));
   }
 
   try {
@@ -83,7 +80,7 @@ const getApplicantApplicationSnapshot = async (req, res) => {
       getCompletenessSnapshot(applicationId),
     ]);
 
-    successMessage.data = {
+    return res.status(status.success).json(successResponse({
       applicationId,
       hasSnapshot: !!snap,
       snapshotCreatedAt: snap ? snap.created_at : null,
@@ -94,12 +91,10 @@ const getApplicantApplicationSnapshot = async (req, res) => {
       missingRecommended: comp ? comp.missing_recommended : null,
       disclaimerNote: "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions.",
       privacyNote: "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring.",
-    };
-    return res.status(status.success).send(successMessage);
+    }));
   } catch (error) {
     console.error("[getApplicantApplicationSnapshot]", error);
-    errorMessage.error = "Unable to retrieve your application snapshot. Please try again later.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Unable to retrieve your application snapshot. Please try again later."));
   }
 };
 
@@ -113,8 +108,7 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
   const { applicationId } = req.query;
 
   if (!applicationId) {
-    errorMessage.error = "applicationId is required.";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("applicationId is required."));
   }
 
   try {
@@ -147,12 +141,10 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
     }
 
     const summary = await getApplicationSnapshotSummaryForEmployer(applicationId);
-    successMessage.data = summary;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(summary));
   } catch (error) {
     console.error("[getEmployerApplicantSnapshotSummary]", error);
-    errorMessage.error = "Unable to retrieve application summary. Please try again later.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Unable to retrieve application summary. Please try again later."));
   }
 };
 
@@ -167,8 +159,7 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
   const { applicationIds: raw } = req.query;
 
   if (!raw) {
-    errorMessage.error = "applicationIds is required.";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("applicationIds is required."));
   }
 
   // Explicit type guard: Express parses repeated params (?x=a&x=b) as Array and
@@ -178,8 +169,7 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
   const rawStr = Array.isArray(raw) ? raw.join(',') : (typeof raw === 'string' ? raw : '');
   const applicationIds = rawStr.split(",").map(s => s.trim()).filter(Boolean);
   if (applicationIds.length === 0 || applicationIds.length > 50) {
-    errorMessage.error = "applicationIds must be a non-empty comma-separated list of up to 50 IDs.";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("applicationIds must be a non-empty comma-separated list of up to 50 IDs."));
   }
 
   try {
@@ -196,8 +186,7 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
       .map(row => row.job_application_id);
 
     if (verifiedIds.length === 0) {
-      successMessage.data = { snapshots: {} };
-      return res.status(status.success).send(successMessage);
+      return res.status(status.success).json(successResponse({ snapshots: {} }));
     }
 
     // Two batch queries — N*3 individual queries reduced to 3 regardless of list size.
@@ -243,12 +232,10 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
       };
     });
 
-    successMessage.data = { snapshots };
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse({ snapshots }));
   } catch (error) {
     console.error("[getApplicantApplicationSnapshotsBatch]", error);
-    errorMessage.error = "Unable to retrieve your application snapshots. Please try again later.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Unable to retrieve your application snapshots. Please try again later."));
   }
 };
 

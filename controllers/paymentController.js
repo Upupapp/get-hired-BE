@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import idGenerator from "../helpers/randomNumberForId";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
@@ -48,12 +48,10 @@ const paymongoPaymentLink = async (req, res) => {
 
   try {
     const link = await createPaymongoLink(cartId, itemDesc, amount);
-    successMessage.data = link;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(link));
   } catch (error) {
     console.error('[paymentController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -164,8 +162,7 @@ const paymongoWebhook = async (req, res) => {
 
         const subs = await createCompanySubscription(companyId, subscriptionId);
 
-        successMessage.data = output;
-        return res.status(status.success).send(successMessage);
+        return res.status(200).json(successResponse(output));
       }
     }  else if (webhookEvent == "payment.paid") {
         // QA11 FIX-03 LOGGING: removed console.log(webHookPaid) which wrote
@@ -209,23 +206,20 @@ const paymongoWebhook = async (req, res) => {
         ]);
 
         const dbResponse = webhookEvent;
-        successMessage.data = dbResponse;
-        return res.status(status.success).send(successMessage);
+        return res.status(200).json(successResponse(dbResponse));
     } else if (webhookEvent == "payment.failed") {
         // NOTIFY-FIX-01: removed console.log(data) which wrote the full
         // PayMongo webhook payload — including billing name, email, phone — to
         // be_out.log in plaintext. Log only the event type and payment id.
         console.log('[paymentController] payment.failed event received, id:', data && data.id);
         const dbResponse = webhookEvent;
-        successMessage.data = dbResponse;
-        return res.status(status.success).send(successMessage);
+        return res.status(200).json(successResponse(dbResponse));
     }
 
-    
+
   } catch (error) {
     console.error('[paymentController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

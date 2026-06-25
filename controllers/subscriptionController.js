@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
 
@@ -71,12 +71,10 @@ const createPaymentIntent = async (req, res) => {
       throw "Failed to create payment link";
     }
 
-    successMessage.data = link.attributes.checkout_url;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(link.attributes.checkout_url));
   } catch (error) {
     console.error('[subscriptionController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -114,12 +112,10 @@ const getAllSubscription = async (req, res) => {
       !rows || rows.length == 0
         ? []
         : rows.map((row) => mappedSubscription(row));
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[subscriptionController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -134,12 +130,10 @@ const getCompanySubscriptions = async (req, res) => {
     }
     const subList = await companySubscriptions(companyId);
 
-    successMessage.data = subList;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(subList));
   } catch (error) {
     console.error('[subscriptionController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

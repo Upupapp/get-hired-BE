@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
 import { getUserCompany } from "./companiesController";
@@ -17,12 +17,10 @@ const getEmployerCompany = async (req, res) => {
   try {
     const userCompany = await getUserCompany(uid);
 
-    successMessage.data = userCompany;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(userCompany));
   } catch (error) {
     console.error('[getEmployerCompany] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -38,13 +36,10 @@ const getEmployerProfile = async (req, res) => {
       ...user,
       companyName: userCompany.companyName ? userCompany.companyName: null
     };
-    successMessage.data = dbResponse;
-
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[employerController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

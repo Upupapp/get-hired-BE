@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 
 const dbSchema = env.schema;
@@ -44,8 +44,7 @@ const createCV = async (req, res) => {
     const dbResponse = rows[0];
 
     if (!dbResponse) {
-      errorMessage.error = "Failed to Create CV";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Failed to Create CV"));
     }
 
     const cv = {
@@ -62,12 +61,10 @@ const createCV = async (req, res) => {
       experience: dbResponse.experience,
       education: dbResponse.education,
     };
-    successMessage.data = cv;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(cv));
   } catch (error) {
     console.error('[cvController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -120,12 +117,10 @@ const updateCV = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to update this CV." });
     }
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[cvController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -145,12 +140,10 @@ const deleteCV = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to delete this CV." });
     }
 
-    successMessage.data = "CV has been Deleted";
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse("CV has been Deleted"));
   } catch (error) {
     console.error('[cvController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -167,12 +160,10 @@ const getUserCVlist = async (req, res) => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [userId]);
 
-    successMessage.data = rows;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(rows));
   } catch (error) {
     console.error('[cvController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -191,12 +182,10 @@ const getCvById = async (req, res) => {
     if (!dbResponse) {
       return res.status(403).json({ message: "You don't have permission to view this CV." });
     }
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[cvController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

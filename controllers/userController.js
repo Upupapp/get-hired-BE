@@ -1,4 +1,4 @@
-import { status, errorMessage, successMessage } from "../helpers/status";
+import { status, successResponse, errorResponse } from "../helpers/status";
 import {
   hashPassword,
   comparePassword,
@@ -45,26 +45,21 @@ const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   if (isEmpty(email) || isEmpty(password)) {
-    errorMessage.error = "Email or Password can not be empty";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("Email or Password can not be empty"));
   }
 
   if (!isValidEmail(email) || !validatePassword(password)) {
-    errorMessage.error = "Please enter a valid Email or Password";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("Please enter a valid Email or Password"));
   }
 
   try {
     const firebaseAuthentication = await checkUserIfExistInFirebase(email);
     if (firebaseAuthentication.length === 0) {
-      errorMessage.error = "User does not exist. Please Register.";
-      return res.status(status.notfound).send(errorMessage);
+      return res.status(status.notfound).json(errorResponse("User does not exist. Please Register."));
     }
 
     if (!firebaseAuthentication.emailVerified) {
-      errorMessage.error =
-        "Please Verify Email with the link sent to your registered email address.";
-      return res.status(status.unauthorized).send(errorMessage);
+      return res.status(status.unauthorized).json(errorResponse("Please Verify Email with the link sent to your registered email address."));
     }
 
     // user logged in new DB
@@ -79,18 +74,16 @@ const loginUser = async (req, res) => {
       }
     }
 
-    successMessage.data = {
+    return res.status(status.success).json(successResponse({
       ...credentials,
       withCompany: userCompany && userCompany.length != 0,
       companyName: userCompany.companyName || "",
       companyId: userCompany.companyId || null,
       withActiveSubscription: userCompany.withActiveSubscription
-    };
-    return res.status(status.success).send(successMessage);
+    }));
   } catch (err) {
     console.error('[loginUser] error:', err);
-    errorMessage.error = "Login failed. Please check your credentials and try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Login failed. Please check your credentials and try again."));
   }
 };
 
@@ -98,21 +91,18 @@ const registerUser = async (req, res) => {
   const { email, password, firstName, lastName, role } = req.body;
 
   if (isEmpty(email) || isEmpty(password)) {
-    errorMessage.error = "Email or Password can not be empty";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("Email or Password can not be empty"));
   }
 
   if (!isValidEmail(email) || !validatePassword(password)) {
-    errorMessage.error = "Please enter a valid Email or Password";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("Please enter a valid Email or Password"));
   }
 
   // Only job seekers (3) and employers (2) may self-register.
   // Role 1 (admin) must never be grantable via the public signup endpoint.
   const ALLOWED_ROLES = [2, 3];
   if (!ALLOWED_ROLES.includes(Number(role))) {
-    errorMessage.error = "Invalid role.";
-    return res.status(status.bad).send(errorMessage);
+    return res.status(status.bad).json(errorResponse("Invalid role."));
   }
 
   const user = {
@@ -127,8 +117,7 @@ const registerUser = async (req, res) => {
     const userInFirebase = await checkUserIfExistInFirebase(email);
 
     if (userInFirebase && userInFirebase.length !== 0) {
-      errorMessage.error = "User is already Registered. Please login instead.";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("User is already Registered. Please login instead."));
     }
 
     // Use this if we have different mailer
@@ -149,8 +138,7 @@ const registerUser = async (req, res) => {
     const dbRegister = await registerUserInDB(dbData);
 
     if (!userData || !dbRegister) {
-      errorMessage.error = "Operation not Successful.";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Operation not Successful."));
     }
     const isVerified = await getVerification(email, user.firstName);
     if (!isVerified) {
@@ -159,12 +147,10 @@ const registerUser = async (req, res) => {
         .send("Failed to generate Verification link");
     }
 
-    successMessage.data = dbRegister;
-    return res.status(status.created).send(successMessage);
+    return res.status(status.created).json(successResponse(dbRegister));
   } catch (err) {
     console.error('[registerUser] error:', err);
-    errorMessage.error = "Registration failed. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Registration failed. Please try again."));
   }
 };
 
@@ -174,12 +160,10 @@ const logout = async (req, res) => {
   try {
     const revoke = await revokeTokenInFirebase(uid);
 
-    successMessage.data = "User has been logout";
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse("User has been logout"));
   } catch (error) {
     console.error('[logout] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -196,12 +180,10 @@ const resendVerification = async (req, res) => {
         .send("Failed to generate Verification link");
     }
 
-    successMessage.data = isVerified;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(isVerified));
   } catch (error) {
     console.error('[resendVerification] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -217,12 +199,10 @@ const getVerificationLink = async (req, res) => {
         .send("Failed to generate Verification link");
     }
 
-    successMessage.data = verify;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(verify));
   } catch (error) {
     console.error('[getVerificationLink] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -242,24 +222,20 @@ const verifyEmail = async (req, res) => {
 
   try {
     const verify = await verifyEmailInFirebase(oobCode);
-    successMessage.data = "Email Successfully verified. You may login.";
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse("Email Successfully verified. You may login."));
   } catch (err) {
     console.error('[verifyEmail] error:', err);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
 const getRefreshToken = async (req, res) => {
   try {
     const auth = await getRefreshTokenFirebase();
-    successMessage.data = auth;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(auth));
   } catch (error) {
     console.error('[getRefreshToken] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -276,12 +252,10 @@ const passwordResetLink = async (req, res) => {
       email,
     });
 
-    successMessage.data = "Link Send to your provided Email";
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse("Link Send to your provided Email"));
   } catch (error) {
     console.error('[passwordResetLink] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -289,12 +263,10 @@ const getUserProfile = async (req, res) => {
   const { uid } = req.user;
   try {
     const user = await getUserProfileById(uid);
-    successMessage.data = user;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(user));
   } catch (error) {
     console.error('[getUserProfile] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -306,12 +278,10 @@ const updateUserProfile = async(req, res) => {
   // a caller cannot update another user's profile by supplying a different uid.
   const user = await updateProfile({ ...profile, uid: req.user.uid });
 
-  successMessage.data = user;
-  return res.status(status.success).send(successMessage);
+  return res.status(status.success).json(successResponse(user));
   } catch(error) {
   console.error('[updateUserProfile] error:', error);
-  errorMessage.error = "Operation not successful. Please try again.";
-  return res.status(status.error).send(errorMessage);
+  return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -328,12 +298,10 @@ const changePw = async (req, res) => {
       throw Error("Failed to change password in Database");
     }
 
-    successMessage.data = "Password Successfuly Change";
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse("Password Successfuly Change"));
   } catch (error) {
     console.error('[changePw] error:', error);
-    errorMessage.error = "Your password reset link may have expired. Please request a new one.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Your password reset link may have expired. Please request a new one."));
   }
 };
 
@@ -360,12 +328,10 @@ const getUserCredentials = async (req, res) => {
       refreshToken: getToken.refreshToken,
     };
 
-    successMessage.data = credentials;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(credentials));
   } catch (error) {
     console.error('[getUserCredentials] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -545,12 +511,10 @@ const deleteAccountById = async (req, res) => {
 
   try {
     const account = await deleteUserAccount(userId);
-    successMessage.data = account;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(account));
   } catch (error) {
     console.error('[deleteAccountById] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

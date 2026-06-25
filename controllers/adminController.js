@@ -1,5 +1,5 @@
 import { getUserProfileById, getUserRoleById } from "../helpers/userDetails";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 
 // Role 1 = admin (see signin.component.ts's role switch / admin.guard.ts on the FE).
 const ADMIN_ROLE = 1;
@@ -19,12 +19,10 @@ const getUserProfile = async (req, res) => {
 
       const creds = await getUserProfileById(id);
 
-      successMessage.data = creds;
-      return res.status(status.success).send(successMessage);
+      return res.status(status.success).json(successResponse(creds));
     } catch (error) {
       console.error('[adminController] error:', error);
-      errorMessage.error = "Operation not successful. Please try again.";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
     }
   };
 

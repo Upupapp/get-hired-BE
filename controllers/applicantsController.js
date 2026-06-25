@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import idGenerator from "../helpers/randomNumberForId";
 import env from "../env";
 import {
@@ -47,18 +47,15 @@ const createApplication = async (req, res) => {
     const dbResponse = rows[0];
 
     if (!dbResponse) {
-      errorMessage.error = "Failed to Create Application";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Failed to Create Application"));
     }
 
     const applicationList = await getApplicationListCandidate(candidateId);
 
-    successMessage.data = applicationList;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(applicationList));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -73,12 +70,10 @@ const deleteApplication = async (req, res) => {
   try {
     const { rows } = await dbQuery.query(deleteQuery, [applicationId, candidateId]);
     const applications = await getApplicationListCandidate(candidateId);
-    successMessage.data = applications;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(applications));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -104,16 +99,13 @@ const updateApplication = async (req, res) => {
     const dbResponse = await getApplicationWithJobDetails(applicationId);
 
     if (!dbResponse) {
-      errorMessage.error = "Failed to Update Appplication";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Failed to Update Appplication"));
     }
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -173,12 +165,10 @@ const createProfile = async (req, res) => {
     // QA8 FIX-6 BOLA: replace body-supplied userId with JWT-derived uid so a caller
     // cannot create a profile attributed to another user by supplying a different userId.
     const profile = await createApplicationProfile({ ...req.body, userId: req.user.uid });
-    successMessage.data = profile;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(profile));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -188,12 +178,10 @@ const updateBasicProfileInfo = async (req, res) => {
     // cannot overwrite another applicant's profile by supplying a different
     // userId in the request body. The service uses userId in its WHERE clause.
     const profile = await updateProfileBasicInfo({ ...req.body, userId: req.user.uid });
-    successMessage.data = profile;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(profile));
   } catch (error) {
     console.error('[updateBasicProfileInfo] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -203,12 +191,10 @@ const updateProfile = async (req, res) => {
     // cannot overwrite another applicant's profile by supplying a different
     // userId in the request body. The service uses userId in its WHERE clause.
     const profile = await updateApplicationProfile({ ...req.body, userId: req.user.uid });
-    successMessage.data = profile;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(profile));
   } catch (error) {
     console.error('[updateProfile] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -222,12 +208,10 @@ const getApplicantProfileCompleteness = async (req, res) => {
   try {
     const profile = await appplicantProfile(uid);
     const result = evaluateProfileCompleteness(profile);
-    successMessage.data = result;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(result));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -244,12 +228,10 @@ const getApplicantProfileById = async (req, res) => {
   try {
     const profile = await appplicantProfile(uid);
     const click = await insertLogs("Profile View", "", uid);
-    successMessage.data = profile;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(profile));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -259,12 +241,10 @@ const getUserProfile = async (req, res) => {
   try {
     const creds = await getUserProfileById(id);
 
-    successMessage.data = creds;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(creds));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -292,12 +272,10 @@ const getDashboard = async (req, res) => {
       },
     };
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -333,12 +311,10 @@ const saveWorkExp = async (req, res) => {
       }
     }
 
-    successMessage.data = workExperience;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(workExperience));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -372,12 +348,10 @@ const saveEducBg = async (req, res) => {
       }
     }
 
-    successMessage.data = educationalBackground;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(educationalBackground));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -411,12 +385,10 @@ const saveCert = async (req, res) => {
       }
     }
 
-    successMessage.data = certifications;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(certifications));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -449,12 +421,10 @@ const saveSkillsArray = async (req, res) => {
       }
     }
 
-    successMessage.data = skills;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(skills));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -492,12 +462,10 @@ const saveDocuments = async (req, res) => {
         );
       }
     }
-    successMessage.data = documents;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(documents));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -523,12 +491,10 @@ const saveVideoCV = async (req, res) => {
       applicantProfileId,
       uid
     );
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[applicantsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

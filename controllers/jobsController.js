@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
 import uploadInStorage from "../helpers/uploader";
@@ -117,8 +117,7 @@ const createJobs = async (req, res) => {
     ]);
 
     if (!rows || rows.length == 0) {
-      errorMessage.error = "Failed to create Jobs";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Failed to create Jobs"));
     }
 
     if (rows[0].job_id) {
@@ -151,12 +150,10 @@ const createJobs = async (req, res) => {
     }
 
     const dbResponse = await mappedJob(rows[0]);
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[createJobs] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -179,12 +176,10 @@ const getJobApplicantDetails = async (req, res) => {
 
     const applicants = await applicationOfApplicant(jobId, id);
 
-    successMessage.data = applicants;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(applicants));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -192,12 +187,10 @@ const getJobBasicListOfCompany = async (req, res) => {
   try {
     const callerCompany = await getUserCompany(req.user.uid);
     const list = await getBasicJobList(callerCompany.companyId, 0);
-    successMessage.data = list;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(list));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -205,12 +198,10 @@ const getExpiredJobListOfCompany = async (req, res) => {
   try {
     const callerCompany = await getUserCompany(req.user.uid);
     const list = await getBasicJobList(callerCompany.companyId, 10);
-    successMessage.data = list;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(list));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -250,12 +241,10 @@ const deleteJob = async (req, res) => {
     // never to any caller-supplied ID. Empty array is a valid success response
     // (all jobs deleted).
     const jobs = await getBasicJobList(callerCompany.companyId, 0);
-    successMessage.data = jobs;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(jobs));
   } catch (error) {
     console.error('[deleteJob] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -380,12 +369,10 @@ const updateJob = async (req, res) => {
 
     const dbResponse = await mappedJob(rows[0]);
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[updateJob] error:', error);
-    errorMessage.data = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -407,15 +394,13 @@ const updateStatusOfJob = async (req, res) => {
 
     const updateJob = await updateJobStatus(statusId, jobId, callerCompany.companyId);
 
-    successMessage.data = updateJob;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(updateJob));
   } catch (error) {
     if (error === "FORBIDDEN") {
       return res.status(403).json({ message: "You don't have permission to update this job." });
     }
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -460,12 +445,10 @@ const getIndustryList = async (req, res) => {
   try {
     const dbResponse = await industryList();
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -482,12 +465,10 @@ const getBadgeList = async (req, res) => {
       };
     });
 
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -502,12 +483,10 @@ const getJobRoleList = async (req, res) => {
         name: list.job_role_name,
       };
     });
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -522,12 +501,10 @@ const getCategoryList = async (req, res) => {
         name: list.job_category_name,
       };
     });
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -614,12 +591,10 @@ const getAllPublishedJobs = async (req, res) => {
 
   try {
     const published = await getPublishedJobs(id);
-    successMessage.data = published;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(published));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -636,15 +611,13 @@ const getJobDetails = async (req, res) => {
 
     const details = await jobDetails(id);
     const click = await insertLogs("Job View", "", id);
-    successMessage.data = {
+    return res.status(status.success).json(successResponse({
       ...details,
       isApplied,
-    };
-    return res.status(status.success).send(successMessage);
+    }));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -660,12 +633,10 @@ const getJobShareableLink = async (req, res) => {
       job.jobBanner,
       postLink
     );
-    successMessage.data = link;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(link));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -685,12 +656,10 @@ const getAllApplicantOfJob = async (req, res) => {
     }
 
     const list = await jobApplicants(id);
-    successMessage.data = list;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(list));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -705,16 +674,14 @@ const getJobApplicantFitSignals = async (req, res) => {
 
   try {
     const list = await getJobApplicantsWithFitSignals(req.user.uid, id);
-    successMessage.data = list;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(list));
   } catch (error) {
     if (error.message === "FORBIDDEN") {
       // QA9 FIX-10: consistent JSON 403 shape instead of bare string.
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -750,12 +717,10 @@ const deleteInterviewQuestion = async (req, res) => {
     const dbResponse = await Promise.all(rawQuestions.map(async (question, index) => {
       return await changeQuestionSequence(question.questionId, index + 1);
     }));
-    successMessage.data = dbResponse;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -776,12 +741,10 @@ const getSubscriptionRestrictions = async (req, res) => {
       throw "Company is not subscribed to any plan";
     }
 
-    successMessage.data = dbResponse[0];
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(dbResponse[0]));
   } catch (error) {
     console.error('[jobsController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

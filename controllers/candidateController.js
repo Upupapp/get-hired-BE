@@ -1,5 +1,5 @@
 import dbQuery from "../db/dbQuery";
-import { successMessage, errorMessage, status } from "../helpers/status";
+import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import { getUserCompany } from "./companiesController";
 
@@ -27,16 +27,13 @@ const createCandidate = async (req, res) => {
 
     const add = await addCandidates({ ...candidate, companyId });
     if (!add) {
-      errorMessage.error = "Failed to Add Candidate";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Failed to Add Candidate"));
     }
     //to add list of emlpoyees
-    successMessage.data = add;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(add));
   } catch (error) {
     console.error('[candidateController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 const multipleCandidate = async (req, res) => {
@@ -56,8 +53,7 @@ const multipleCandidate = async (req, res) => {
         candidate.forEach(async (option) => {
           const add = await addCandidates({ ...option, companyId });
           if (!add) {
-            successMessage.data = "Failed to Add Candidates " + option.email;
-            return res.status(status.error).send(errorMessage);
+            return res.status(status.error).json(errorResponse("Failed to Add Candidates " + option.email));
           }
           thisIsContacts.push(add);
           if (thisIsContacts.length == candidate.length) resolve();
@@ -67,14 +63,12 @@ const multipleCandidate = async (req, res) => {
         // const addMultiple = {
         //     contacts: thisIsContacts
         // };
-        successMessage.data = thisIsContacts;
-        return res.status(status.success).send(successMessage);
+        return res.status(status.success).json(successResponse(thisIsContacts));
       });
     }
   } catch (error) {
     console.error('[candidateController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 const deleteCandidate = async (req, res) => {
@@ -105,12 +99,10 @@ const deleteCandidate = async (req, res) => {
     }
 
     const message = "Candidate Successfully Deleted";
-    successMessage.data = message;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(message));
   } catch (error) {
     console.error('[candidateController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 const updateCandidate = async (req, res) => {
@@ -124,17 +116,14 @@ const updateCandidate = async (req, res) => {
     }
     const candidateUpdate = await editCandidate({ ...candidate, companyId: callerCompany.companyId });
     if (!candidateUpdate) {
-      errorMessage.error = "Failed to Update Candidate";
-      return res.status(status.error).send(errorMessage);
+      return res.status(status.error).json(errorResponse("Failed to Update Candidate"));
     }
     // const notify = await notifyCreateEventForMember(eventUpdate.eventid, eventUpdate.learninghubid)
     //to add list of emlpoyees
-    successMessage.data = candidateUpdate;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(candidateUpdate));
   } catch (error) {
     console.error('[candidateController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -153,15 +142,12 @@ const list = async (req, res) => {
     candidate = await candidateList(companyId);
 
     if (!candidate || candidate.length == 0) {
-      successMessage.data = [];
-      return res.status(status.success).send(successMessage);
+      return res.status(status.success).json(successResponse([]));
     }
-    successMessage.data = candidate;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(candidate));
   } catch (error) {
     console.error('[candidateController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
@@ -175,12 +161,10 @@ const getJobAppliedList = async (req, res) => {
   const { uid } = req.user;
   try {
     const listOfJob = await listOfAppliedJobsById(uid);
-    successMessage.data = listOfJob;
-    return res.status(status.success).send(successMessage);
+    return res.status(status.success).json(successResponse(listOfJob));
   } catch (error) {
     console.error('[candidateController] error:', error);
-    errorMessage.error = "Operation not successful. Please try again.";
-    return res.status(status.error).send(errorMessage);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
