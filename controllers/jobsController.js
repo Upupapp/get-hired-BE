@@ -190,10 +190,9 @@ const getJobApplicantDetails = async (req, res) => {
 };
 
 const getJobBasicListOfCompany = async (req, res) => {
-  const { id } = req.query;
-
   try {
-    const list = await getBasicJobList(id, 0);
+    const callerCompany = await getUserCompany(req.user.uid);
+    const list = await getBasicJobList(callerCompany.companyId, 0);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
@@ -204,10 +203,9 @@ const getJobBasicListOfCompany = async (req, res) => {
 };
 
 const getExpiredJobListOfCompany = async (req, res) => {
-  const { id } = req.query;
-
   try {
-    const list = await getBasicJobList(id, 10);
+    const callerCompany = await getUserCompany(req.user.uid);
+    const list = await getBasicJobList(callerCompany.companyId, 10);
     successMessage.data = list;
     return res.status(status.success).send(successMessage);
   } catch (error) {
