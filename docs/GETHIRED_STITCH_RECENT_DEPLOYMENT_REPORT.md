@@ -1,198 +1,198 @@
-# GETHIRED STITCH — Recent Deployment Report
-_Scoped to FE HEAD 5ab9a05 / BE applicationController.js snapshot+batch endpoints_
-_Generated: 2026-06-24_
+# GETHIRED STITCH — Recent Deployment Report (NOTIFY-P2)
+_Scoped to BE 2ff6358 / FE 1863842 (NOTIFY-P2 deployment)_
+_Generated: 2026-06-26_
 
 ---
 
-## Scope
+## Exec Summary
 
-Two new API call patterns deployed:
+NOTIFY-P2 introduced two categories of response shape change:
 
-| Pattern | FE Method | Endpoint | FE Read Path |
+- **Additive (non-breaking):** `status` field added to single-add responses for contacts and candidates.
+- **Breaking:** Bulk import endpoints changed from returning a flat array to returning `{ contacts/candidates: [...], summary: {...} }`.
+
+All three patched FE components handle the new shapes correctly. The two reducers pass the raw payload through unchanged — this is correct behavior because the components perform shape-specific logic in the subscriber. No reducer changes were needed.
+
+No other FE components read `contactRes` or `candidateRes` from the NgRx store. The breaking shape change has no unpatched consumers.
+
+One pre-existing non-blocking issue was found in `import-add-candidate.component.ts`: the component dispatches both a `SAVE_CANDIDATE` action and a `SAVE_CONTACT` action for a single-candidate add. This sets `contactRes` in the store even when no contact dialog is open. It has no visible user impact today but is a latent cross-contamination risk.
+
+---
+
+## Contract Changes Documented
+
+### 1. POST /contacts/addcontact — Single contact add
+
+| Field | Before | After | Breaking? |
 |---|---|---|---|
-| Batch (list) | `getApplicationSnapshots(ids[])` | `GET /applicant/application/snapshots?applicationIds=…` | `res?.data?.snapshots ?? {}` |
-| Single (detail) | `getApplicationSnapshot(applicationId)` | `GET /applicant/application/snapshot?applicationId=…` | `res?.data ?? null` |
+| `status` | absent | `'ADDED'` or `'DUPLICATE_CONTACT'` | No (additive) |
+| `message` | present | present | No change |
+| `...dbResponse` (db row fields) | present on success | present on success | No change |
+
+**FE extraction path:** `ContactService.AddContact()` maps `res.data` → dispatched as `contactRes`.
+The `{ status, message }` or `{ ...dbRow, status, message }` shape lands in `state.contact.contactRes`.
+
+**Consumer:** `import-add-contact.component.ts` reads `res.status === 'DUPLICATE_CONTACT'` in the `else` branch (when `hasSummary` is false). Correct.
 
 ---
 
-## Seam-by-Seam Findings
+### 2. POST /contacts/multiplecontact — Bulk contact import
 
-### Seam 1 — Single endpoint response shape vs FE consumption (Gate B)
+| Field | Before | After | Breaking? |
+|---|---|---|---|
+| Root shape | `[...contacts]` (flat array) | `{ contacts: [...], summary: {...} }` | **YES** |
+| `summary.totalRequested` | absent | number | new |
+| `summary.successCount` | absent | number | new |
+| `summary.failureCount` | absent | number | new |
+| `summary.duplicateCount` | absent | number | new |
+| `summary.outcome` | absent | `'all_success'` \| `'partial_success'` \| `'duplicate_only'` \| `'all_failed'` | new |
 
-**BE sends (applicationController.js line 86–98):**
-```js
-successMessage.data = {
-  applicationId,
-  hasSnapshot: !!snap,
-  snapshotCreatedAt: snap ? snap.created_at : null,
-  completenessScore: comp ? comp.completeness_score : null,
-  completenessLevel: comp ? comp.completeness_level : null,
-  completedSections: comp ? comp.completed_sections : null,
-  missingRequired: comp ? comp.missing_required : null,
-  missingRecommended: comp ? comp.missing_recommended : null,
-  disclaimerNote: "...",
-  privacyNote: "...",
-};
-return res.status(200).send(successMessage);
-// => { status: "success", data: { applicationId, hasSnapshot, snapshotCreatedAt, ... } }
-```
+**FE extraction path:** `ContactService.AddMultipleContact()` maps `res.data` → `{ contacts: [...], summary: {...} }` dispatched as `contactRes`.
 
-`successMessage` is the shared singleton `{ status: "success" }` from `helpers/status.js`. After mutation: `{ status: "success", data: { ... } }`.
-
-**FE reads (applicant-application-detail.component.ts line 54):**
-```ts
-map((res: any) => res?.data ?? null)
-```
-`res.data` resolves to the full inner object `{ applicationId, hasSnapshot, snapshotCreatedAt, ... }`.
-
-**Result: MATCH.** FE correctly unwraps the single level of wrapping. `this.snapshot` receives the flat data object.
+**Consumer:** `import-add-contact.component.ts` reads `res.summary` via `hasSummary` branch. Correct.
 
 ---
 
-### Seam 2 — `snapshotCreatedAt` path in card template (Gate B continued)
+### 3. POST /candidates/addcandidate — Single candidate add
 
-**Card template (application-completeness-card.component.html line 39):**
-```html
-<span class="acdc-timestamp" *ngIf="snapshot.snapshotCreatedAt">
-  Captured {{ snapshot.snapshotCreatedAt | date:'mediumDate' }}
-</span>
-```
+| Field | Before | After | Breaking? |
+|---|---|---|---|
+| `status` | absent | `'ADDED'` or `'DUPLICATE_CANDIDATE'` | No (additive) |
+| `message` | present | present | No change |
+| `...dbResponse` (db row fields) | present on success | present on success | No change |
 
-`this.snapshot` = `res.data` = `{ snapshotCreatedAt: snap?.created_at, ... }`. So `snapshot.snapshotCreatedAt` is at depth 1 — correct.
+**FE extraction path:** `CandidateService.AddCandidate()` maps `res.data` → dispatched as `candidateRes`.
 
-**Result: CORRECT.** The `snapshotCreatedAt` field is present at the right level. The batch endpoint does NOT include `snapshotCreatedAt` (by design — list card shows badge only, not timestamp). The detail view is the only consumer of this field, and it uses the single endpoint which includes it. No mismatch.
-
----
-
-### Seam 3 — `null?.length > 0` guard in Angular template (Gate C)
-
-**Card template (line 83):**
-```html
-*ngIf="snapshot.missingRequired?.length > 0"
-```
-
-**Batch BE response (applicationController.js line 239):**
-```js
-missingRequired: comp ? comp.missing_required : null,
-```
-When no completeness row exists: `comp = null` → `missingRequired = null`.
-When rows exist but field is empty: `comp.missing_required` may be `null` or `[]`.
-
-**Angular evaluation chain:**
-- `null?.length` → `undefined` (optional chain short-circuits)
-- `undefined > 0` → `false` (JS coerces undefined to NaN; NaN > 0 is false)
-- Result: `*ngIf` is `false` → section hidden. Correct behavior.
-
-Same chain applies to `missingRecommended?.length > 0`.
-
-The `isComplete` getter in the TS component (line 79) uses `!this.snapshot.missingRequired?.length` which is `!undefined` = `true` when null — also correct.
-
-**Result: SAFE.** Null is handled correctly by optional chaining in both the template and the component getter.
+**Consumer:** `import-add-candidate.component.ts` reads `res.status === 'DUPLICATE_CANDIDATE'` in `else` branch. Correct.
 
 ---
 
-### Seam 4 — Route order: `applications` before `applications/:id` (Gate D)
+### 4. POST /candidates/multiplecandidate — Bulk candidate import
 
-**applicant-panel.module.ts lines 52–58:**
-```ts
-{
-  path: 'applications',
-  component: ApplicantApplicationsComponent,
-},
-{
-  path: 'applications/:id',
-  component: ApplicantApplicationDetailComponent,
-},
-```
+| Field | Before | After | Breaking? |
+|---|---|---|---|
+| Root shape | `[...candidates]` (flat array) | `{ candidates: [...], summary: {...} }` | **YES** |
+| `summary.totalRequested` | absent | number | new |
+| `summary.successCount` | absent | number | new |
+| `summary.failureCount` | absent | number | new |
+| `summary.duplicateCount` | absent | number | new |
+| `summary.outcome` | absent | string | new |
 
-Angular's router uses first-match wins within a `children` array. However, `applications` (exact match) and `applications/:id` (parameterized) are not in conflict for any actual URL:
+**FE extraction path:** `CandidateService.AddMultipleCandidate()` maps `res.data` → `{ candidates: [...], summary: {...} }` dispatched as `candidateRes`.
 
-- `/user/applications` → matches `applications` (no trailing segment) → correct
-- `/user/applications/some-uuid` → does NOT match `applications` (different segment count); matches `applications/:id` → correct
-
-Angular does not shadow parameterized routes with exact siblings because it matches path segments independently. The default `pathMatch` is `'prefix'` but `applications` only matches when there is no further segment (the child router strips the parent prefix). No shadow exists.
-
-**Result: SAFE.** Route order is not a concern here. Both routes resolve independently regardless of declaration order.
+**Consumer:** `import-add-candidate.component.ts` reads `res.summary` via `hasSummary` branch. Correct.
 
 ---
 
-### Seam 5 — `applicationId` flow to card analytics in both contexts (Gate E)
+## Data Flow Trace — How the Bulk Shape Reaches the Component
 
-**List context (applicant-applications.component.html line 54):**
-```html
-[applicationId]="app.jobApplicationId"
 ```
-Source: `app.jobApplicationId` from the `getMyApplications()` response array.
+POST /contacts/multiplecontact
+  BE: successResponse({ contacts: addedItems, summary })
+  => HTTP body: { status: "success", data: { contacts: [...], summary: {...} } }
 
-**Detail context (applicant-application-detail.component.html line 23):**
-```html
-[applicationId]="applicationId"
+FE ContactService.AddMultipleContact():
+  .pipe(map((res: any) => <any>res.data))
+  => returns { contacts: [...], summary: {...} }
+
+contact.effect.ts saveContactMultiple:
+  payload: result
+  => dispatches { type: SAVE_CONTACT_MULTIPLE_SUCCESS, payload: { contacts: [...], summary: {...} } }
+
+contact.reducer.ts case SAVE_CONTACT_MULTIPLE_SUCCESS:
+  return { ...state, contactRes: action.payload, pending: false }
+  => state.contact.contactRes = { contacts: [...], summary: {...} }
+
+import-add-contact.component.ts subscriber:
+  const res = onboard.contactRes;
+  const hasSummary = res && res.summary;   // truthy: enters summary branch
+  const { successCount, duplicateCount, failureCount } = res.summary;  // correct
 ```
-Source: `this.applicationId` set from `this.route.snapshot.paramMap.get('id')` (line 34 of detail component TS).
 
-The route param `:id` is populated from `[routerLink]="['/user/applications', app.jobApplicationId]"` in the list template (line 59 of list HTML). So both paths originate from the same `app.jobApplicationId` value.
-
-**Card component (application-completeness-card.component.ts lines 55–58):**
-```ts
-onCtaClick(label: string): void {
-  if (this.applicationId) {
-    this.analytics.trackApplicationCompletenessCtaClicked(this.applicationId, label);
-  }
-}
-```
-Guard `if (this.applicationId)` prevents analytics call with empty string (safe for both contexts before data loads).
-
-**Result: CORRECT.** Both contexts deliver the same UUID to the card's `applicationId` input. Analytics fires with a valid, consistent ID in both list and detail views.
+Identical flow for candidates. Both reducers pass the payload through unchanged — this is correct. The reducer is shape-agnostic by design; shape interpretation is done in the component subscriber.
 
 ---
 
-## Batch Response Shape Verification (Gate A)
+## Consumer Impact Analysis
 
-**BE sends (applicationController.js line 246):**
-```js
-successMessage.data = { snapshots };
-// => { status: "success", data: { snapshots: { [applicationId]: { hasSnapshot, completenessScore, ... } } } }
-```
+### consumers of `state.contact.contactRes`
 
-**FE reads (applicant-applications.component.ts line 77):**
-```ts
-map((res: any) => res?.data?.snapshots ?? {})
-```
+Grep result across all FE TypeScript files: **2 files** read `contactRes`.
 
-`res.data.snapshots` resolves to the keyed map. The fallback `{}` is used if the batch returns an empty result (BE returns `{ snapshots: {} }` which also resolves cleanly).
-
-**Result: MATCH.**
-
----
-
-## Notable Non-Blocking Observations
-
-### OBS-1: `successMessage` is a shared mutable singleton
-`helpers/status.js` exports `successMessage = { status: "success" }` as a module-level singleton. All controllers in `applicationController.js` mutate `.data` directly on it. Under concurrent async operations (two requests racing), the second `successMessage.data =` assignment could overwrite the first before the first `res.send()` completes.
-
-**Risk level: LOW-MEDIUM.** Node.js is single-threaded (no true race on a CPU tick), and `res.send()` is called synchronously after the assignment. Under normal single-instance Node operation this is safe. Under high concurrency with event-loop interleaving at await points this is theoretically unsafe. The pattern is widespread across the codebase (not introduced by this deployment) and is not fixed here — tracked for a future SECURE pass.
-
-### OBS-2: Batch endpoint — `forkJoin` error handling
-If all chunks fail, `forkJoin` emits to the `error` handler and `snapshotsError = true`. The UI shows a retry button. If some chunks succeed and some fail, the individual `catchError(() => of({}))` per chunk means partial results are merged — failed chunk IDs get no entry in `snapshotsMap`, so `snapshotFor(id)` returns `null`, rendering the "unavailable" state. Behavior is acceptable.
-
-### OBS-3: `snapshotCreatedAt` absent from batch response (by design)
-The batch endpoint does not include `snapshotCreatedAt`. The list view (which uses the batch) does not display it. The detail view (which uses the single endpoint) does display it via `snapshot.snapshotCreatedAt | date:'mediumDate'`. This division is intentional and correct.
-
-### OBS-4: Detail component — `getCurrentNavigation()` timing
-`this.router.getCurrentNavigation()` on line 37 of the detail component returns `null` when `ngOnInit` fires after navigation has completed (which is common). The fallback `window.history.state ?? {}` handles this correctly, as Angular populates `history.state` with navigation extras. No functional gap.
-
----
-
-## Summary
-
-| Gate | Status | Evidence |
+| File | Reads contactRes? | Handles new shape? |
 |---|---|---|
-| A | PASS | Batch: BE sends `{data:{snapshots:{...}}}`, FE reads `res?.data?.snapshots` — exact match |
-| B | PASS | Single: BE sends `{data:{applicationId, snapshotCreatedAt, ...}}`, FE reads `res?.data` → `snapshot.snapshotCreatedAt` correct |
-| C | PASS | `null?.length > 0` evaluates to `false` via optional chain → undefined → NaN > 0 → false; section hidden correctly |
-| D | PASS | No route shadow: `applications` and `applications/:id` have different segment counts, Angular resolves independently |
-| E | PASS | Both list (`app.jobApplicationId`) and detail (route param from same UUID) deliver identical ID to card `[applicationId]` input |
+| `contact.reducer.ts` | stores it | n/a — pass-through |
+| `import-add-contact.component.ts` | yes | YES — patched with `hasSummary` branch |
 
-**Seams verified: 5**
-**Issues found: 0 blocking, 1 low-medium non-blocking (OBS-1 singleton mutation), 3 informational**
-**Fixes applied: 0**
+No other component in the codebase subscribes to `state.contact.contactRes`.
+
+### consumers of `state.candidate.candidateRes`
+
+Grep result across all FE TypeScript files: **2 files** read `candidateRes`.
+
+| File | Reads candidateRes? | Handles new shape? |
+|---|---|---|
+| `candidate.reducer.ts` | stores it | n/a — pass-through |
+| `import-add-candidate.component.ts` | yes | YES — patched with `hasSummary` branch |
+
+No other component in the codebase subscribes to `state.candidate.candidateRes`.
+
+---
+
+## Integration Gaps Found
+
+### GAP-1 (Non-blocking, Low severity): Spurious SAVE_CONTACT dispatch in candidate add flow
+
+**File:** `C:\Users\paulg\OneDrive\Desktop\Gethired\get-hired-FE\src\app\employer-panel\employer-contacts\candidate-list\dialogs\import-add-candidate\import-add-candidate.component.ts`
+
+**Lines 237–244:**
+```ts
+this.candidateState.dispatch({
+  type: CandidateActionTypes.SAVE_CANDIDATE,
+  payload: data
+});
+this.contactState.dispatch({
+  type: ContactActionTypes.SAVE_CONTACT,   // <-- spurious
+  payload: data
+});
+```
+
+When a single candidate is added, the component dispatches `SAVE_CONTACT` in addition to `SAVE_CANDIDATE`. This triggers `ContactService.AddContact()` via the contact effect, which will:
+1. Make an additional HTTP POST to `/contacts/addcontact` with the candidate's data.
+2. Set `state.contact.contactRes` to the result of that contact add.
+
+Impact today: the contact dialog (`import-add-contact.component.ts`) is not open when `import-add-candidate.component.ts` runs, so the spurious `contactRes` write has no visible UI effect. However:
+- An extra `/contacts/addcontact` request is sent on every single candidate add (double write to DB).
+- The candidate is silently added to the contact table as well.
+- If the contact already exists, `contactRes` is set to `{ message, status: 'DUPLICATE_CONTACT' }` — harmless today but could cause unexpected behavior if a contact dialog is open concurrently.
+
+This is a pre-existing issue, not introduced by NOTIFY-P2. It is not fixed in this pass (no consumer is broken by it); tracked for a future cleanup sprint.
+
+### GAP-2 (Informational): `importCandidateForm` initialized lazily in `uploadListener` — bulk candidate path partially untested
+
+**File:** `import-add-candidate.component.ts`
+
+`importCandidateForm` is `undefined` on init (the `formBuilder.group` call is commented out at lines 77–80). It is only initialized inside `uploadListener()` at lines 286–289 when a CSV file is uploaded. If `saveOnboardMultiple()` is called before a CSV upload (which would require a bug in the template flow), it would throw `Cannot read property 'value' of undefined`.
+
+The template guards this via the `importCandidate` flag so it cannot happen in normal flow. This is a latent fragility, not an active bug. No fix applied.
+
+### GAP-3 (Informational): Bulk candidate import uses field `candidate` (singular) in request body
+
+**File:** `import-add-candidate.component.ts` line 360–361 vs `candidateController.js` line 40.
+
+FE sends: `{ ...importCandidateForm.value, candidate: [...this.records] }` — field name `candidate` (singular).
+BE destructures: `const { candidate } = req.body` — also expects `candidate` (singular).
+
+This matches. Noted because the bulk contact import uses `contacts` (plural) in both FE and BE, so the asymmetry could cause confusion in future maintenance.
+
+---
+
+## Verification Matrix
+
+| Endpoint | BE shape change | FE service maps `res.data` | Reducer pass-through | Component handles shape | Integration status |
+|---|---|---|---|---|---|
+| POST /contacts/addcontact | additive (status field) | yes, `res.data` | yes | yes (else branch) | SOUND |
+| POST /contacts/multiplecontact | BREAKING (wrapped object) | yes, `res.data` | yes | yes (summary branch) | SOUND |
+| POST /candidates/addcandidate | additive (status field) | yes, `res.data` | yes | yes (else branch) | SOUND |
+| POST /candidates/multiplecandidate | BREAKING (wrapped object) | yes, `res.data` | yes | yes (summary branch) | SOUND |
+| POST /company-users (invite) | unchanged BE shape | yes | yes | yes (email status loop) | SOUND |

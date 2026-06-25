@@ -1,228 +1,181 @@
 # GETHIRED — Launch Checklist
-## Applicant Completeness UI — Badge + Card + Detail Route Cycle
-**Generated:** 2026-06-24
-**Deployment:** FE 5ab9a05 / BE 422d340 (BE unchanged from prior cycle)
-**Supersedes:** Previous launch checklist (FE 20a44c5 / BE 422d340)
+## NOTIFY-P2: Contact/Candidate Invite False-Positive Toast Fix
+**Generated:** 2026-06-26
+**Deployment:** BE 2ff6358 / FE 1863842
+**Supersedes:** Previous launch checklist (Applicant Completeness UI — FE 5ab9a05 / BE 422d340)
 
 ---
 
-## Instructions
+## Gate Overview
 
-Work through each item in order. Do not mark an item complete without direct verification. Items marked BLOCKED must be resolved before the deployment is considered production-ready. Sections 1 and 2 are hard prerequisites — complete them before any other section.
-
-Section 6 (Backfill) must be completed after section 1 but can be done separately from the rest.
-
----
-
-## 1. DB Migration Applied to Production
-
-> Hard prerequisite for ALL snapshot functionality. If the tables are missing: the batch endpoint returns 500s silenced by catchError (every applicant sees "not available"); the detail page single endpoint also returns null; the backfill script crashes immediately. This check was on the previous checklist and has not been confirmed closed — it remains the single most important action.
-
-- [ ] **1.1** Connect to the production database with read access.
-- [ ] **1.2** Run: `SELECT to_regclass('gethired.application_snapshots');` — result must NOT be null.
-- [ ] **1.3** Run: `SELECT to_regclass('gethired.application_completeness_snapshots');` — result must NOT be null.
-- [ ] **1.4** Run: `SELECT to_regclass('gethired.match_snapshots');` — result must NOT be null.
-- [ ] **1.5** Run: `SELECT COUNT(*) FROM gethired.application_snapshots;` — must return without error.
-- [ ] **1.6** Verify the partial unique index: `SELECT indexname FROM pg_indexes WHERE tablename = 'application_snapshots' AND indexname = 'application_snapshots_application_id_source_unique';` — must return one row.
-- [ ] **1.7** Record the timestamp the migration was applied and the person who applied it.
-
-**Status:** [ ] PASS / [ ] BLOCKED — apply `db/application_snapshots_ddl.sql` to production before proceeding
+| Gate | Status | Hard blockers remaining |
+|------|--------|------------------------|
+| Internal demo | **SAFE — no blockers** | None |
+| Invite-only beta | **SAFE — no blockers** | None |
+| Public launch | **BLOCKED** | EA-02 (Firebase key history purge + rotation) |
 
 ---
 
-## 2. Both Repos Deployed in Sync (FE 5ab9a05 + BE 422d340)
+## GATE 1 — Internal Demo
 
-> BE is unchanged from the prior cycle. The FE-only changes in this cycle add a new route and component. Confirm the FE is at the correct commit.
+> Current state: SAFE. No items block an internal demo. All P0 and P1 auth/security issues that affect demo stability are closed.
 
-- [ ] **2.1** Confirm the FE deployment at 5ab9a05 includes:
-  - `ApplicantApplicationDetailComponent` in `src/app/applicant-panel/applicant-application-detail/`
-  - Route declared in `applicant-panel.module.ts` (path: `applications/:id`, component: `ApplicantApplicationDetailComponent`)
-  - `ApplicationCompletenessCardComponent` updated with `@Input() applicationId` and `onCtaClick()` analytics handler
-  - `applicant-applications.component.html` includes "View full details →" link passing router state
-  - `PublicPortalAnalyticsService` includes `trackApplicationCompletenessDetailViewed` (if added this cycle) or `trackApplicationCompletenessCtaClicked` (wired to CTA clicks)
-- [ ] **2.2** Confirm BE deployment at 422d340 is unchanged from prior cycle — no new endpoints or schema changes needed for this FE-only release.
-- [ ] **2.3** Check git HEAD on production for both repos — confirm FE at 5ab9a05, BE at 422d340.
-- [ ] **2.4** Confirm no pending BE restarts or migrations needed.
+### 1.1 — Smoke test NOTIFY-P2 fixes (required before demoing employer flows)
+
+- [ ] Log in as an employer. Navigate to Contacts → Import/Add.
+- [ ] Invite a company user with an email that will fail (invalid domain). Verify: NO green success toast. Error toast appears instead.
+- [ ] Add a contact that already exists. Verify: info toast ("already exists" or similar). No "Successfully added" green toast.
+- [ ] Add a new contact. Verify: green success toast appears correctly.
+- [ ] Bulk import contacts (CSV or list) with a mix of valid and duplicate emails. Verify: partial-success warning toast with counts. No green success toast if all are duplicates.
+
+### 1.2 — Confirm both repos deployed in sync
+
+- [ ] BE HEAD on Linode: `ssh root@139.162.11.242 "cd /var/www/_work/get-hired-BE && git log --oneline -1"` — must show `2ff6358`.
+- [ ] FE HEAD on Linode (via GitHub Actions): confirm FE deploy workflow ran for commit `1863842`.
+- [ ] Verify BE PM2 is online: `ssh root@139.162.11.242 "pm2 list"` — status must be `online`.
+
+**Gate 1 status:** [ ] PASS / [ ] BLOCKED
+
+---
+
+## GATE 2 — Invite-Only Beta
+
+> Current state: SAFE. No items block beta. The remaining open items (Firebase key, OG image, expired PAT) do not affect beta functionality or data security in the beta context. PayMongo HMAC is confirmed closed (commit 97cd657).
+
+### 2.1 — All Gate 1 items pass
+
+- [ ] Gate 1 is fully PASS before proceeding.
+
+### 2.2 — PayMongo webhook env var confirmed on production
+
+- [ ] `ssh root@139.162.11.242 "grep PAYMONGO_WEBHOOK_SECRET /var/www/_work/get-hired-BE/.env | head -3"` — confirm `PAYMONGO_WEBHOOK_SECRET=<value>` is present and non-empty.
+- [ ] If missing: add to `.env` on Linode and `pm2 restart all`. The code is already shipped; only the env var is needed.
+- [ ] Smoke test: trigger a test PayMongo webhook event from the PayMongo dashboard. Confirm BE returns 200 (not 400). Check PM2 logs for `[paymentController]` output.
+
+### 2.3 — GitHub PAT renewed (deploy convenience, not security blocker)
+
+- [ ] Renew GitHub Personal Access Token at github.com/settings/tokens (classic, repo scope).
+- [ ] Update token on Linode: `ssh root@139.162.11.242 "cd /var/www/_work/get-hired-BE && git remote set-url origin https://<PAT>@github.com/<org>/get-hired-BE.git"`.
+- [ ] Verify: `ssh root@139.162.11.242 "cd /var/www/_work/get-hired-BE && git pull"` succeeds.
+- [ ] Note: this is a developer convenience fix, not a user-facing or security item. Beta can proceed without it (SCP workaround is functional).
+
+### 2.4 — Regression check: employer invite flows intact
+
+- [ ] Create a new contact group. Add members. Verify no Express crash in BE logs.
+- [ ] Update an existing contact group (add/remove members). Verify no "headers already sent" error in PM2 logs.
+- [ ] Send an interview invite to a list of recipients. Verify all emails send or fail gracefully (no hung Promise, no crash).
+
+### 2.5 — Core hire flow regression (not touched by NOTIFY-P2, but verify before beta)
+
+- [ ] Public job listing loads (`/jobs`).
+- [ ] Job detail page loads (`/jobs/:id`).
+- [ ] Applicant can submit an application.
+- [ ] Recruiter can view applicant pipeline.
+- [ ] Auth: login, logout, token refresh all work.
+
+**Gate 2 status:** [ ] PASS / [ ] BLOCKED
+
+---
+
+## GATE 3 — Public Launch
+
+> Current state: **BLOCKED**. Two items must be resolved before public launch.
+
+### 3.1 — BLOCKER: Firebase service account key history purge (EA-02)
+
+**This is the only hard P0 blocker for public launch.**
+
+The file `jobhunt-serviceAccountKey.json` was committed to the BE repo and exists in git history. The current live credential gives Firebase admin access (read/write to Firestore, Firebase Auth, etc.).
+
+Steps — coordinate with all team members who have cloned the repo:
+
+- [ ] **Step 1 (Firebase Console):** Go to Firebase Console → Project Settings → Service Accounts → Generate new private key. Download the new key. Save it securely (not to the repo).
+- [ ] **Step 2 (Revoke old key):** In Firebase Console, revoke/delete the old service account key that was committed. This invalidates the exposed credential immediately.
+- [ ] **Step 3 (Update production):** Replace `jobhunt-serviceAccountKey.json` on Linode at `/var/www/_work/get-hired-BE/` with the new key file. Restart PM2.
+- [ ] **Step 4 (Git history purge):** Using BFG Repo Cleaner or `git filter-repo`, remove `jobhunt-serviceAccountKey.json` from all commits in BE repo history.
+
+  ```bash
+  # BFG approach (run from a fresh clone):
+  bfg --delete-files "jobhunt-serviceAccountKey.json" get-hired-BE.git
+  cd get-hired-BE
+  git reflog expire --expire=now --all
+  git gc --prune=now --aggressive
+  git push --force --all
+  git push --force --tags
+  ```
+
+- [ ] **Step 5 (Team re-clone):** All team members must delete their local clone and re-clone. Do not merge/pull — the rewrite changes commit hashes.
+- [ ] **Step 6 (Verify):** `git log --all --full-history -- "*serviceAccountKey*"` — must return no results.
+- [ ] **Step 7 (Gitignore):** Confirm `*serviceAccountKey*.json` is in `.gitignore`. Add if missing.
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
----
+### 3.2 — BLOCKER: OG image asset created
 
-## 3. New Detail Route: /user/applications/:id
+Before public launch, every page shared on social media should show a branded preview.
 
-> Verifies the dedicated application detail page is accessible and functional.
-
-### 3a. Normal navigation from list
-
-- [ ] **3a.1** Log in as an applicant with at least one application.
-- [ ] **3a.2** Navigate to `/user/applications`. Verify the list loads.
-- [ ] **3a.3** Expand a badge by clicking the toggle button. Verify the card reveals within the list row.
-- [ ] **3a.4** Click "View full details →" in the expanded section. Verify navigation to `/user/applications/<id>`.
-- [ ] **3a.5** Verify the detail page header shows the correct job title, company name, and status (populated from router state).
-- [ ] **3a.6** Verify the "Application completeness" section shows the `ApplicationCompletenessCardComponent` in its correct state (loading → resolved).
-- [ ] **3a.7** For an application with a real snapshot, verify `snapshotCreatedAt` is displayed as "Captured <date>" below the score.
-- [ ] **3a.8** Verify the "My Applications" back button navigates to `/user/applications`.
-
-### 3b. Cold navigation (direct URL)
-
-- [ ] **3b.1** Paste `/user/applications/<id>` directly in the address bar (or open in a new tab without prior list navigation).
-- [ ] **3b.2** Verify the page loads without error.
-- [ ] **3b.3** Verify completeness data loads correctly (the single endpoint is called regardless of router state).
-- [ ] **3b.4** Verify the heading falls back gracefully to "Application Details" when jobTitle and companyName are absent from router state (this is the expected fallback for cold navigation — DETAIL-P2-001).
-- [ ] **3b.5** Verify no broken layout, no 404, no infinite loading.
-
-### 3c. Non-existent application ID
-
-- [ ] **3c.1** Navigate to `/user/applications/nonexistent-id`.
-- [ ] **3c.2** Verify error state is shown: the card component renders the error block.
-- [ ] **3c.3** Verify no unhandled exception or blank white screen.
-
-### 3d. Error and retry on detail page
-
-- [ ] **3d.1** In dev/staging: block `GET /applicant/application/snapshot?applicationId=<id>`.
-- [ ] **3d.2** Navigate to `/user/applications/<id>`.
-- [ ] **3d.3** Verify error state renders in the card with a "Try again" button.
-- [ ] **3d.4** Restore the endpoint. Click "Try again". Verify data loads.
-- [ ] **3d.5** Verify `retry()` clears `loading`, `error`, and `snapshot` before re-calling `load()`.
+- [ ] Design and export a 1200×630px PNG as `gethired-og-default.png`.
+- [ ] Add it to `get-hired-FE/src/assets/brand/gethired-og-default.png`.
+- [ ] Verify `angular.json` assets config includes `src/assets/brand/`.
+- [ ] Verify `SeoService` constant points to this path.
+- [ ] Deploy FE. Test by pasting `https://gethiredonline.app` into the LinkedIn Post Inspector (`https://www.linkedin.com/post-inspector/`) — verify preview image appears.
+- [ ] Test on Facebook Sharing Debugger (`developers.facebook.com/tools/debug`).
 
 **Status:** [ ] PASS / [ ] BLOCKED
 
----
+### 3.3 — All Gate 1 and Gate 2 items pass
 
-## 4. CTA Analytics — Verify Click Events Fire
+- [ ] Gate 1: PASS
+- [ ] Gate 2: PASS
 
-> Verifies that the CTA analytics wiring in ApplicationCompletenessCardComponent works correctly.
+### 3.4 — Fix async race conditions before high-traffic launch
 
-- [ ] **4.1** Open browser DevTools console.
-- [ ] **4.2** Navigate to `/user/applications` as an applicant with a non-complete application (has missingRequired or missingRecommended items).
-- [ ] **4.3** Expand the completeness card for that application.
-- [ ] **4.4** Click "Update your profile →" in the amber required-tips block. Verify:
-  - Console shows `[Analytics] applicationCompletenessCtaClicked { applicationId: '...', ctaLabel: 'Update your profile' }` (or equivalent debug output).
-  - Navigation to `/user/profile/edit` occurs.
-- [ ] **4.5** Navigate back. Expand the card for an application with only recommended tips.
-- [ ] **4.6** Click "Add to your profile →" in the blue recommended-tips block. Verify:
-  - Console shows `[Analytics] applicationCompletenessCtaClicked { applicationId: '...', ctaLabel: 'Add to your profile' }` (or equivalent).
-  - Navigation to `/user/profile/edit` occurs.
-- [ ] **4.7** Click "View full details →" to navigate to the detail page. Verify the card CTAs also fire analytics on the detail page (same component reused with `[applicationId]` input set).
-- [ ] **4.8** Verify `applicationId` in the analytics payload matches the actual application being viewed (not null, not a different ID).
+Not a hard blocker, but should be fixed before significant traffic on employer invite/interview flows:
 
-**Status:** [ ] PASS / [ ] BLOCKED
+- [ ] `createGroup`/`updateGroup` in `contactsController.js` (lines 222, 272): replace `forEach(async)` with `Promise.allSettled`. (NOTIFY-P2-DEFERRED-01)
+- [ ] `interview.service.js` line 278: same fix for interview invite email-sending. (NEW-FINDING-01)
+- [ ] Deploy BE after both fixes. Verify no PM2 errors on group create/update and interview invite flows.
 
----
+### 3.5 — WCAG AA compliance check
 
-## 5. snapshotCreatedAt Display Verified
+- [ ] Verify `warning-snackbar` contrast meets WCAG AA. If `#f59e0b` is still in use, update to `#b45309` in `styles.scss`. Deploy FE.
+- [ ] Confirm `danger-snackbar` aria-live behavior is acceptable (or ship custom component with `assertive`).
 
-> Verifies the "Captured on..." timestamp appears on the detail page and is absent (gracefully) on the list.
-
-- [ ] **5.1** Log in as an applicant with an application that has a real snapshot (`source = 'application_submit'` row in `application_completeness_snapshots`).
-- [ ] **5.2** Navigate to `/user/applications/<id>` (detail page, direct or via "View full details" link).
-- [ ] **5.3** Verify "Captured <date>" is displayed in the completeness card, using the `snapshotCreatedAt` value from the single endpoint.
-- [ ] **5.4** Navigate back to `/user/applications`. Expand the same application's card.
-- [ ] **5.5** Verify the in-list card does NOT show "Captured <date>" (batch endpoint does not return `snapshotCreatedAt`). This is expected behavior (DETAIL-P3-001 tracks the future fix). No error, no blank field — the timestamp section is simply absent.
-
-**Status:** [ ] PASS / [ ] BLOCKED
-
----
-
-## 6. Batch Snapshot Endpoint (From Prior Cycle — Carry-Forward)
-
-> These items were on the prior checklist. If they were previously verified, confirm they still pass. If not yet verified, complete them now.
-
-- [ ] **6.1** Log in as an applicant with at least two applications. Call `GET /applicant/application/snapshots?applicationIds=<id1>,<id2>` with a valid Bearer token. Expect HTTP 200.
-- [ ] **6.2** Verify response contains `data.snapshots` as a map keyed by application ID with all required fields.
-- [ ] **6.3** Mix in an unowned application ID — verify it is silently omitted from the response.
-- [ ] **6.4** Call with >50 IDs — expect HTTP 400.
-- [ ] **6.5** Call unauthenticated — expect HTTP 401.
-- [ ] **6.6** On `/user/applications`, verify exactly ONE request to `/applicant/application/snapshots` in the network tab (not N requests).
-
-**Status:** [ ] PASS / [ ] BLOCKED / [ ] CARRY-FORWARD (already verified in FE 20a44c5 cycle)
-
----
-
-## 7. Backfill Script — Pre-Flight Verification
-
-> Section 1 (DDL check) must be PASS before this section. Do NOT run the live backfill until all items here are PASS.
-
-- [ ] **7.1** Section 1 must be PASS. Do not proceed if any snapshot table is missing.
-- [ ] **7.2** Run dry-run against production: `node scripts/backfill_application_snapshots.js --dry-run`. Verify it prints the count of un-snapshotted applications and exits cleanly.
-- [ ] **7.3** Run with `--limit=5` against staging (real schema). Verify 5 rows in `application_completeness_snapshots` with `source = 'backfill_current_data'`.
-- [ ] **7.4** Rerun `--limit=5` against same staging env. Verify no duplicates (idempotent).
-- [ ] **7.5** Note: BACKFILL-P0-001 is still open — the script has no programmatic DDL pre-flight check. Rely on section 1 of this checklist as the gate. Do not skip section 1.
-- [ ] **7.6** Schedule live prod backfill during a low-traffic window. Monitor logs in real time.
-- [ ] **7.7** After live run: `SELECT COUNT(*) FROM gethired.application_completeness_snapshots WHERE source = 'backfill_current_data';` — count must equal the dry-run count.
-
-**Status:** [ ] PASS / [ ] BLOCKED / [ ] NOT YET STARTED
-
----
-
-## 8. Regression Verification — Prior Features Still Work
-
-> Confirms this FE-only cycle did not break prior functionality.
-
-- [ ] **8.1** `/user/applications` list loads without errors. Applications list is intact.
-- [ ] **8.2** Empty state renders for applicant with no applications.
-- [ ] **8.3** Error state and "Try again" button work for a failed applications list request.
-- [ ] **8.4** In-list badge toggle still works: click opens card, click again closes it.
-- [ ] **8.5** "Update your profile" CTA in the list-view card still routes to `/user/profile/edit`.
-- [ ] **8.6** Message thread toggle (`toggleMessages`) still works alongside badge toggle (both can be open independently).
-- [ ] **8.7** Employer side: `GET /job/applicant/snapshot-summary` endpoint still returns correct employer-scoped snapshot data (no regression from FE-only change).
-- [ ] **8.8** Reduced-motion simulation (DevTools → Rendering → Prefer reduced motion): badge shimmer and card fade-in are suppressed.
-- [ ] **8.9** Keyboard navigation: toggle button for badge is reachable and activatable via Enter/Space. Detail page back button is reachable via Tab + Enter.
-- [ ] **8.10** `ng build --configuration production` — confirm zero new errors (was PASS in the release gate for 5ab9a05).
-
-**Status:** [ ] PASS / [ ] BLOCKED
-
----
-
-## 9. Ownership and Auth Guards — Detail Route
-
-> Verifies the new detail route and single endpoint enforce ownership correctly.
-
-- [ ] **9.1** Applicant A navigates to `/user/applications/<applicant-A-app-id>` — expect completeness data for that application.
-- [ ] **9.2** Applicant A navigates to `/user/applications/<applicant-B-app-id>` — the single endpoint should return HTTP 403. The detail page should render the error state (not a 500).
-- [ ] **9.3** Unauthenticated user navigates to `/user/applications/<id>` — expect redirect to login (Angular auth guard fires before the route is activated).
-- [ ] **9.4** Verify the single endpoint ownership check: `getApplicantApplicationSnapshot` must verify `candidate_id = uid` before returning data.
-
-**Status:** [ ] PASS / [ ] BLOCKED
-
----
-
-## 10. Known Open Items at Launch (Non-Blocking for FE 5ab9a05)
-
-These items must be tracked in the backlog but do not block deployment:
-
-- **SNAP-P0-001** — DDL must be confirmed applied to production. Hard blocker for ALL snapshot functionality, but tracked separately from this FE release. Treat as an infrastructure ticket that must be closed ASAP.
-- **BACKFILL-P0-001** — Backfill script has no programmatic pre-flight DDL check.
-- **DETAIL-P2-001** — Direct URL navigation to `/user/applications/:id` loses job metadata; heading falls back to "Application Details".
-- **DETAIL-P2-002** — No badge impression or detail page view analytics event.
-- **COMP-TEST-P2-001** — No Angular unit tests for badge, card, or detail components.
-- **BATCH-P2-001** — Backfilled applications still show "not available" in the list (source filter gap).
-- **BACKFILL-P2-001** — Backfill script has no resume-from-crash capability.
-- **BACKFILL-P2-002** — Backfill completeness data not visually distinguished from real submission data.
-- **COMP-P2-007** — CTA deep-links go to top of `/user/profile/edit`, not to the relevant section.
-- **COMP-P2-008** — All skeletons reveal simultaneously on batch call completion.
-- **DETAIL-P3-001** — `snapshotCreatedAt` not returned by batch endpoint; timestamp only visible on detail page.
-- **COMP-P3-010** — Disclaimer does not state score is frozen at submission time.
-- **SNAP-P2-001** — `snapshot_hash` column always NULL.
-- **SNAP-P2-002** — Match score formula duplicated between snapshot and signals services.
-- **SNAP-P1-003** — No completeness distribution endpoint for employers.
+**Gate 3 status:** [ ] PASS / [ ] BLOCKED
 
 ---
 
 ## Checklist Sign-Off
 
-| Section | Status | Verified by | Date |
-|---------|--------|-------------|------|
-| 1. DB Migration Applied | | | |
-| 2. Both Repos In Sync | | | |
-| 3. New Detail Route /user/applications/:id | | | |
-| 4. CTA Analytics Wiring | | | |
-| 5. snapshotCreatedAt Display | | | |
-| 6. Batch Endpoint (carry-forward) | | | |
-| 7. Backfill Script Pre-Flight | | | |
-| 8. Regression Verification | | | |
-| 9. Ownership and Auth Guards — Detail Route | | | |
+| Gate | Status | Verified by | Date |
+|------|--------|-------------|------|
+| Gate 1 — Internal demo | | | |
+| Gate 2 — Invite-only beta | | | |
+| Gate 3A — Firebase key purge | | | |
+| Gate 3B — OG image | | | |
+| Gate 3C — Async race fixes | | | |
+| Gate 3 — Public launch | | | |
 
-**Sections 1 and 2 are hard prerequisites — complete them before any other section.**
-**Section 1 is also a prerequisite for section 7.**
-**Sections 3–9 (excluding 7) can be completed in parallel once 1 and 2 pass.**
+---
+
+## Quick Reference: Deploy Commands
+
+**BE deploy (current workaround while PAT expired):**
+```powershell
+# From local PowerShell — deploy a specific file
+scp "C:\Users\paulg\OneDrive\Desktop\Gethired\get-hired-BE\<path\to\file>" root@139.162.11.242:/var/www/_work/get-hired-BE/<path/to/file>
+ssh root@139.162.11.242 "pm2 restart all"
+```
+
+**FE deploy:**
+Push to GitHub master — GitHub Actions auto-deploys.
+
+**Check BE logs:**
+```powershell
+ssh root@139.162.11.242 "pm2 logs --lines 50"
+```
+
+**Check BE PM2 status:**
+```powershell
+ssh root@139.162.11.242 "pm2 list"
+```

@@ -1,135 +1,83 @@
-# GetHired NOTIFY — Fix Log: Recent Deployment
-**Scope:** FE HEAD 5ab9a05 (completeness badge, card, detail page, applications list)
-**Date:** 2026-06-24
-**Rule:** Small/safe copy and aria-label fixes only — no logic changes, no business rule changes, no schema changes. No emails sent.
+# GetHired NOTIFY — Fix Log: Recent Deployment Audit
+## NOTIFY-P2 — BE 2ff6358 / FE 1863842
+
+**Audit date:** 2026-06-26
 
 ---
 
-## Fixes Applied: 4
+## Changes Applied This Audit Pass
 
----
-
-### Fix 1 — Badge null-state aria-label: "unavailable" → "Snapshot unavailable"
-
-**File:** `get-hired-FE/src/app/shared/components/application-completeness-badge/application-completeness-badge.component.ts`
-**Method:** `get accessibleLabel()`
+### FIX-1: Wrong noun in company-user all-failed toast copy
+**File:** `src/app/company/company-users/dialogs/import-add-user.component/import-add-user.component.ts`
+**Line:** 80
+**Change type:** Copy fix
 
 **Before:**
-```ts
-if (!this.level && this.score === null) return 'Application completeness: unavailable';
+```typescript
+this.snackBar.open('No contacts were added.', '', { duration: 6000, panelClass: 'danger-snackbar' });
 ```
 
 **After:**
-```ts
-if (!this.level && this.score === null) return 'Application completeness: Snapshot unavailable';
+```typescript
+this.snackBar.open('No invites were sent.', '', { duration: 6000, panelClass: 'danger-snackbar' });
 ```
 
-**Reason:** Spec requires "Application completeness: Snapshot unavailable". The lowercase "unavailable" produced a mismatch between aria-label and visible badge text ("Unavailable"). The longer form explains what is unavailable (the snapshot), not just a generic state.
-
-**Impact:** Screen reader users. No visible change.
-
-**Risk:** None — aria-label copy change only.
+**Reason:** The company-user invite flow sends invitations to colleagues/team members, not CRM contacts. Using "contacts" is factually wrong and inconsistent with the success-path verb "Invite sent." / "N invites sent." The corrected copy is consistent, accurate, and uses the right domain noun for this flow.
 
 ---
 
-### Fix 2 — Back button: added explicit aria-label for directional clarity
-
-**File:** `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.html`
-**Line:** 4
+### FIX-2: `.success-snackbar` missing `color: #ffffff`
+**File:** `src/styles.scss`
+**Line:** 241-244
+**Change type:** CSS fix
 
 **Before:**
-```html
-<button type="button" class="aad-back" (click)="goBack()">
-  <span aria-hidden="true">‹</span> My Applications
-</button>
+```scss
+.success-snackbar {
+  background-color: $color-global-red-buttons;
+}
 ```
 
 **After:**
-```html
-<button type="button" class="aad-back" aria-label="Back to My Applications" (click)="goBack()">
-  <span aria-hidden="true">‹</span> My Applications
-</button>
+```scss
+.success-snackbar {
+  background-color: $color-global-red-buttons;
+  color: #ffffff;
+}
 ```
 
-**Reason:** Visible text "My Applications" is accessible but lacks directional context. A screen reader user tabbing to this button needs to understand it *navigates back*. "Back to My Applications" is unambiguous. The `‹` icon is aria-hidden so the aria-label becomes the complete accessible name.
-
-**Impact:** Screen reader users. No visual change.
-
-**Risk:** None — additive aria-label.
+**Reason:** All other snackbar classes (`.danger-snackbar`, `.warning-snackbar`, `.info-snackbar`) explicitly set `color: #ffffff`. Without this declaration, Angular Material inherits its default dark text color on a red (#FF7062) background — potentially rendering near-black text on a medium-bright red, which is a contrast failure. This is consistent with the rest of the snackbar system.
 
 ---
 
-### Fix 3 — Toggle button: replaced title-only with dynamic aria-label
+## Changes Already in Place (Prior BRAND Pass — Not Applied This Audit)
 
-**File:** `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html`
-**Lines:** 23–29 (completeness toggle button)
+These changes were made by an earlier automated BRAND pass before this audit ran. They are documented here for traceability.
 
-**Before:**
-```html
-<button type="button"
-        class="app-completeness-toggle"
-        [attr.aria-expanded]="expandedSnapshotId === app.jobApplicationId"
-        [attr.aria-controls]="'completeness-' + app.jobApplicationId"
-        (click)="toggleSnapshot(app.jobApplicationId)"
-        title="View application completeness details">
+### BRAND-FIX-A: `.warning-snackbar` amber upgraded for WCAG AA
+**File:** `src/styles.scss` (line 258-261), `src/assets/styles/colors.scss` (lines 27-30)
+
+Original NOTIFY-P2 shipped value: `background-color: #f59e0b` (Tailwind amber-400)
+- Contrast vs white: 2.15:1 — **WCAG AA fail** (requires 4.5:1 normal text, 3:1 large text)
+
+BRAND pass upgraded to: `background-color: $color-warning-amber` = `#b45309` (Tailwind amber-800)
+- Contrast vs white: 5.02:1 — **WCAG AA pass**
+
+Added to `colors.scss`:
+```scss
+// NOTIFY-P2 toast semantic tokens
+$color-warning-amber: #b45309;
+$color-info-gray: #6b7280;
 ```
-
-**After:**
-```html
-<button type="button"
-        class="app-completeness-toggle"
-        [attr.aria-expanded]="expandedSnapshotId === app.jobApplicationId"
-        [attr.aria-controls]="'completeness-' + app.jobApplicationId"
-        [attr.aria-label]="(expandedSnapshotId === app.jobApplicationId ? 'Hide' : 'Show') + ' application completeness for ' + app.jobTitle"
-        (click)="toggleSnapshot(app.jobApplicationId)"
-        title="View application completeness details">
-```
-
-**Reason:** `title` attributes are not reliably announced by screen readers. The button had no explicit aria-label. Multiple rows in the list meant screen readers could not distinguish which job's toggle was focused. The dynamic aria-label now reads "Show application completeness for {jobTitle}" or "Hide application completeness for {jobTitle}", matching the aria-expanded state.
-
-**Impact:** Screen reader users in applications list. No visual change.
-
-**Risk:** None — additive aria-label; title retained for tooltip users.
 
 ---
 
-### Fix 4 — "View full details" link: added descriptive aria-label per application
+## Summary
 
-**File:** `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html`
-**Lines:** 57–61
+| Fix | File | Type | Applied By |
+|---|---|---|---|
+| FIX-1: "No contacts were added." → "No invites were sent." | import-add-user.component.ts | Copy | This audit |
+| FIX-2: `color: #ffffff` on `.success-snackbar` | styles.scss | CSS | This audit |
+| BRAND-FIX-A: amber #f59e0b → #b45309 (WCAG AA) | styles.scss + colors.scss | CSS | Prior BRAND pass |
 
-**Before:**
-```html
-<a class="app-detail-link"
-   [routerLink]="['/user/applications', app.jobApplicationId]"
-   [state]="{ jobTitle: app.jobTitle, companyName: app.companyName, status: app.applicantStatusName }">
-  View full details <span aria-hidden="true">→</span>
-</a>
-```
-
-**After:**
-```html
-<a class="app-detail-link"
-   [routerLink]="['/user/applications', app.jobApplicationId]"
-   [state]="{ jobTitle: app.jobTitle, companyName: app.companyName, status: app.applicantStatusName }"
-   [attr.aria-label]="'View full application details for ' + app.jobTitle">
-  View full details <span aria-hidden="true">→</span>
-</a>
-```
-
-**Reason:** "View full details" is ambiguous in a list context — a screen reader user tabbing through links would hear "View full details, View full details..." with no way to distinguish which application each link opens. The aria-label is descriptive out of context.
-
-**Impact:** Screen reader users in applications list. No visual change.
-
-**Risk:** None — additive aria-label; visible text unchanged.
-
----
-
-## Fixes Considered and Rejected
-
-| Considered Fix | Reason Not Applied |
-|----------------|-------------------|
-| Change visible back-button text to "← Back to My Applications" | Requires SCSS change (visual scope exceeds copy-only); aria-label fix (Fix 2) is sufficient |
-| Remove `title` from toggle button | `title` provides tooltip for mouse/pointer users; harmless to retain alongside aria-label |
-| Add explicit `aria-live` to badge loading span | `role="status"` already implies `aria-live="polite"` per HTML spec; duplication unnecessary |
-| Change "What was missing when you applied" wording | Current copy is historically precise; altering it would misrepresent the snapshot's purpose (historical observation, not current recommendation) |
+**Total changes applied this audit: 2**

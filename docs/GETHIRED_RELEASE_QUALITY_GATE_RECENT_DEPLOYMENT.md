@@ -1,64 +1,107 @@
-# GETHIRED_RELEASE_QUALITY_GATE_RECENT_DEPLOYMENT
-
-**Deployment:** FE HEAD 5ab9a05  
-**Date:** 2026-06-24  
-**Auditor:** Claude Code — TEST RECENT DEPLOYMENT command  
-**Scope:** ApplicationCompletenessBadge / ApplicationCompletenessCard / ApplicantApplications / ApplicantApplicationDetail
+# GetHired RELEASE QUALITY GATE — NOTIFY-P2
+**Deployment:** NOTIFY-P2 (BE 2ff6358 / FE 1863842)
+**Audit date:** 2026-06-26
+**Auditor:** Claude Code automated QA gate
 
 ---
 
-## Release Gate Summary
+## Gate A: Behavior Preserved — PASS
 
-| Gate | Status | Rationale |
-|------|--------|-----------|
-| **A — Build: zero errors** | PASS | Production build clean at 2026-06-24T13:55:04.831Z (18101ms). Zero errors. Three warnings are pre-existing (autoprefixer x2, xlsx CommonJS x1) — none introduced by this deployment. |
-| **B — Badge: all 5 states without crash** | PASS | Loading skeleton, unavailable, incomplete/Getting-started, named level (strong/basic/excellent), level+score — all gated correctly via `*ngIf` mutual exclusion; no unsafe property access. |
-| **C — Card: all 7 states without crash** | PASS | Loading, error, null-snapshot, pre-deployment, complete/positive, missing-required, missing-recommended — all gated via nested `*ngIf` / `ng-container`. Optional chaining used throughout getters. |
-| **D — Detail route: no shadow of list** | PASS | Route order in `applicant-panel.module.ts`: exact `applications` before parameterised `applications/:id`. Angular router's first-match-wins rule guarantees no shadowing. |
-| **E — Analytics CTA guard** | PASS | `if (this.applicationId)` guard in `ApplicationCompletenessCardComponent.onCtaClick()` prevents any analytics event when `applicationId` is empty string (default). |
+**Criterion:** NOTIFY-P2 changes produce correct user-visible outcomes for all contact/candidate import scenarios.
 
-**Overall gate verdict: PASS — 5/5 gates green, 0 blockers.**
+| Check | Result | Evidence |
+|-------|--------|----------|
+| `addContact` returns `status: 'ADDED'` for all add-succeeds branches | PASS | All 6 non-duplicate return paths verified in source |
+| `addContact` returns `status: 'DUPLICATE_CONTACT'` for pure-duplicate paths | PASS | Lines 28, 33 verified |
+| `addMultipleContact` mirrors same status logic | PASS | Lines 131, 136, 140, 150, 155, 180, 184, 193, 198 verified |
+| `addCandidates` returns `status: 'ADDED'` on success | PASS | Line 51 verified |
+| `addCandidates` returns `status: 'DUPLICATE_CANDIDATE'` on duplicate | PASS | Line 26 verified |
+| `multipleContact` replaces `forEach(async)` with `Promise.allSettled` | PASS | Line 56 of contactsController.js |
+| `multipleCandidate` replaces `forEach(async)` with `Promise.allSettled` | PASS | Line 55 of candidateController.js |
+| `import-add-user`: `successCount===0` never shows success toast | PASS | Line 80: `danger-snackbar` when successCount=0 |
+| `import-add-user`: partial success shows `warning-snackbar` | PASS | Line 77 |
+| `import-add-contact`: single DUPLICATE_CONTACT shows `info-snackbar` | PASS | Lines 116-121 |
+| `import-add-contact`: bulk `successCount===0` never shows `success-snackbar` | PASS | Lines 105-113 cover duplicate-only and all-failed |
+| `import-add-candidate`: default copy is "Candidate added." not "Contact added." | PASS | Line 94 |
+| `.warning-snackbar` CSS class defined | PASS | styles.scss lines 255-258 |
+| `.info-snackbar` CSS class defined | PASS | styles.scss lines 260-263 |
 
----
-
-## Finding Register
-
-| # | Severity | Finding | Recommendation |
-|---|----------|---------|----------------|
-| F1 | Low | Detail component maps `data === null` (no snapshot found) to `error=true` instead of rendering the card's null-snapshot "unavailable" state. Shows incorrect error+retry UI for valid applications that pre-date snapshot tracking. | Set `this.error = false; this.snapshot = null` when response is null (not an actual error). Separate HTTP errors via `catchError` path. |
-| F2 | Low | Batch snapshot chunk errors are silently swallowed via `catchError(() => of({}))`. Applications in a failed chunk show "Unavailable" badge with no indication to the user. | Add per-chunk error tracking or a partial-failure flag so the list can surface a partial-retry affordance. |
-| F3 | Info | Detail router state reads `window.history.state` as fallback for hard-refreshes. Empty/stale state is handled gracefully (fallback heading renders). | Document behaviour; consider persisting metadata in sessionStorage for better hard-refresh experience. |
-| F4 | Info | `SharedModule` re-exports `CommonModule` transitively, making `DatePipe` available in the card template. This is correct but implicit. | No action required; noted for future module refactoring awareness. |
-
----
-
-## What Was Verified
-
-### Code paths confirmed safe (static analysis)
-- Badge: 3-branch template (`loading` / `level===null` / `level!==null`) is fully mutually exclusive
-- Card: 5-state nesting (`loading` → `error` → `snapshot===null` → `!hasSnapshot` → `hasSnapshot`) covers all inputs without unsafe access
-- `isComplete` getter uses `?.length` safe-navigation on both arrays
-- `sectionLabel()` uses `(reason ?? '').toLowerCase()` null-safe entry
-- `trackByReason()` fallbacks to `String(_index)` when `tip?.reason` is null
-- Detail `ngOnInit`: early return + `error=true` when `id` param is falsy — `load()` never reached
-- `retry()` in list: both subscriptions explicitly unsubscribed before reload
-- `onSnapshotRetry()`: only `snapshotsSub` touched; applications list untouched
-
-### Module wiring confirmed
-- Both components declared in `SharedModule.classesToInclude` and exported
-- Both analytics methods (`trackApplicationCompletenessViewed`, `trackApplicationCompletenessCtaClicked`) exist in `PublicPortalAnalyticsService`
-- Both service methods (`getApplicationSnapshot`, `getApplicationSnapshots`) exist in `ApplicationService`
-- `ApplicantApplicationDetailComponent` declared in `ApplicantPanelModule` (correct — routed page, not shared widget)
-
-### Build artifacts
-- Build hash: c33deb2e223f80ac
-- Build time: 18101ms
-- Errors: 0
-- New warnings introduced by deployment: 0
+**Gate A verdict: PASS**
 
 ---
 
-## Release Decision
+## Gate B: Contract Safe — PASS
 
-**APPROVED TO STAY DEPLOYED.**  
-All 5 gates pass. No crash paths identified. The two low-severity findings (F1, F2) are UX rough edges with no data-loss or security impact. Recommend addressing F1 in the next sprint to correctly differentiate "no snapshot" from "fetch error" on the detail page.
+**Criterion:** The bulk endpoint shape change from flat array to `{ contacts/candidates, summary }` does not break any existing FE consumers.
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| FE `contacts.service.ts` `AddMultipleContact` maps `res.data` | PASS | Line 47: `map((res: any) => res.data)` — passes `{ contacts, summary }` through |
+| FE `candidates.service.ts` `AddMultipleCandidate` maps `res.data` | PASS | Line 39: `map((res: any) => res.data)` |
+| NgRx contact reducer assigns payload without interpreting shape | PASS | `contact.reducer.ts` line 75: `contactRes: action.payload` |
+| NgRx candidate reducer assigns payload without interpreting shape | PASS | `candidate.reducer.ts` line 71: `candidateRes: action.payload` |
+| `import-add-contact` handles new `{ contacts, summary }` shape | PASS | Lines 93-122: `hasSummary` branch reads `res.summary` |
+| `import-add-candidate` handles new `{ candidates, summary }` shape | PASS | Lines 93-122: same pattern |
+| No other FE component subscribes to `contactRes` or `candidateRes` | PASS | Grep: 0 additional consumers found |
+| BE response key for contacts endpoint is `contacts` (not `candidates`) | PASS | `contactsController.js` line 75: `{ contacts: addedItems, summary }` |
+| BE response key for candidates endpoint is `candidates` (not `contacts`) | PASS | `candidateController.js` line 74: `{ candidates: addedItems, summary }` |
+
+**Gate B verdict: PASS**
+
+---
+
+## Gate C: Regression Safe — PASS
+
+**Criterion:** Unrelated features not broken by NOTIFY-P2.
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| SEC-02: `GET /job/details` has `optionalVerifyAuth` | PASS | `jobsRoute.js` line 62 |
+| SEC-02: `GET /job/sharelink` has `optionalVerifyAuth` | PASS | `jobsRoute.js` line 63 |
+| SEC-01: `getUserProfile` reads `req.user.uid` only | PASS | `userController.js` line 264: `const { uid } = req.user` |
+| Public job browsing (`GET /job/published`) unchanged | PASS | Route unchanged, no middleware modification |
+| Applicant flow (`getJobAppliedList`, `listOfAppliedJobsById`) unchanged | PASS | `candidateController.js` lines 161-176 untouched |
+| `createGroup` and `updateGroup` in `contactsController.js` still use old `forEach(async)` pattern | NOTED | These pre-existing bugs were not part of NOTIFY-P2 scope and remain unchanged (they don't affect import-add flows) |
+
+**Gate C verdict: PASS**
+
+---
+
+## Gate D: No False-Positives Remain — PASS
+
+**Criterion:** The pre-NOTIFY-P2 bug (showing success toast when all contacts were duplicates or failed) is eliminated in all affected code paths.
+
+| Check | Result | Evidence |
+|-------|--------|----------|
+| `import-add-contact` bulk: `successCount===0, duplicateCount>0` shows `info-snackbar` | PASS | Lines 105-108 |
+| `import-add-contact` bulk: `successCount===0, failureCount>0` shows `danger-snackbar` | PASS | Lines 109-112 |
+| `import-add-candidate` bulk: `successCount===0, duplicateCount>0` shows `info-snackbar` | PASS | Lines 105-108 |
+| `import-add-candidate` bulk: `successCount===0, failureCount>0` shows `danger-snackbar` | PASS | Lines 109-112 |
+| `import-add-user`: `successCount===0` shows `danger-snackbar` (line 80) | PASS | Line 80 |
+| `import-add-contact` single: `status === 'DUPLICATE_CONTACT'` shows `info-snackbar`, not `success-snackbar` | PASS | Lines 116-121 |
+| `import-add-candidate` single: `status === 'DUPLICATE_CANDIDATE'` shows `info-snackbar`, not `success-snackbar` | PASS | Lines 116-121 |
+
+**Gate D verdict: PASS**
+
+---
+
+## Pre-existing Issues (not blocking release)
+
+| ID | Severity | Description | Action |
+|----|----------|-------------|--------|
+| F-01 | LOW | Typo `"aleady"` in `contact.service.js` duplicate messages | Fix in next patch |
+| F-02 | MEDIUM | `importCandidateForm` not initialized in `ngOnInit` of `import-add-candidate.component.ts`; only initialized inside `uploadListener`. `saveOnboardMultiple()` throws if called before CSV upload. | Add null guard or move initialization to `ngOnInit` |
+| F-03 | INFO | `import-add-candidate.component.ts` `saveOnboard()` fires both `SAVE_CANDIDATE` and `SAVE_CONTACT` for single-add | Review intended behavior; may be by design |
+
+---
+
+## Overall Release Gate
+
+| Gate | Status |
+|------|--------|
+| A: Behavior preserved | **PASS** |
+| B: Contract safe | **PASS** |
+| C: Regression safe | **PASS** |
+| D: No false-positives remain | **PASS** |
+
+**NOTIFY-P2 is APPROVED for production.** No blocking issues found. Three pre-existing bugs noted for follow-up.

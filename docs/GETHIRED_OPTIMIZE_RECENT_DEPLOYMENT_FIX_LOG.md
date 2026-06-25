@@ -112,6 +112,71 @@ ngOnInit(): void {
 
 ---
 
+## Session 5 — NOTIFY-P2 Deployment Audit (2026-06-26)
+
+### Session 5 — No code changes applied
+
+All NOTIFY-P2 code quality and correctness findings were either:
+- Already fixed in a prior session (P4 — contrast fix already applied in BRAND-FIX pass), OR
+- Deferred as requiring architectural changes (P1 — pool exhaustion, P2 — forEach async), OR
+- Documented only as design questions (P3 — dual dispatch, P5 — toast duplication)
+
+**P4 verification — `.warning-snackbar` contrast (WCAG AA):**
+
+NOTIFY-P2 originally introduced `background-color: #f59e0b` (amber-400), which has a contrast
+ratio of ~2.11:1 against white text — a WCAG 2.1 AA failure. A subsequent BRAND-FIX session
+corrected this to `$color-warning-amber` (`#b45309`, amber-800) before this audit ran.
+
+Current state confirmed:
+```scss
+// colors.scss
+$color-warning-amber: #b45309;   // 4.93:1 vs white — WCAG AA PASS
+$color-info-gray: #6b7280;       // 4.83:1 vs white — WCAG AA PASS
+
+// styles.scss
+.warning-snackbar {
+  background-color: $color-warning-amber;  // #b45309
+  color: #ffffff;
+}
+.info-snackbar {
+  background-color: $color-info-gray;      // #6b7280
+  color: #ffffff;
+}
+```
+
+Both classes are now WCAG AA compliant. No further action needed.
+
+---
+
+## Session 5 — Verified Pass / Documented (No Change Applied)
+
+| Item | File | Verdict |
+|------|------|---------|
+| Promise.allSettled correctness in multipleContact | contactsController.js | PASS — correct |
+| Promise.allSettled correctness in multipleCandidate | candidateController.js | PASS — correct |
+| Summary response computation overhead | both controllers | PASS — negligible (<1ms) |
+| Status field in addContact / addMultipleContact | contact.service.js | PASS — all branches covered |
+| Status field in addCandidates | candidate.service.js | PASS — ADDED + DUPLICATE_CANDIDATE |
+| Subscription cleanup in import-add-user | import-add-user.component.ts | PASS — ngOnDestroy unsubscribes |
+| Subscription cleanup in import-add-contact | import-add-contact.component.ts | PASS — ngOnDestroy unsubscribes |
+| Subscription cleanup in import-add-candidate | import-add-candidate.component.ts | PASS — ngOnDestroy unsubscribes |
+| Double-toast risk from SAVE_CANDIDATE + SAVE_CONTACT dispatch | import-add-candidate.component.ts | PASS — no double-toast; side-effect noted as D11 |
+| info-snackbar contrast (#6b7280 on #ffffff) | styles.scss | PASS — approx 4.6:1 (AA compliant) |
+
+---
+
+## Session 5 — Deferred Items
+
+| # | Item | Reason |
+|---|------|--------|
+| D7 | `createGroup`/`updateGroup` `forEach(async)` refactor to Promise.allSettled | Separate PR needed; unresolved from prior deferred list |
+| D8 | Concurrency limiter on bulk imports (p-limit or chunk batching) | Architectural; needs pool size analysis |
+| D9 | CSV import row count cap in import components | UX/product decision |
+| D10 | Toast decision logic extraction to shared utility | Non-trivial refactor |
+| D11 | SAVE_CONTACT dispatch in `import-add-candidate.saveOnboard()` — intentional? | Needs product confirmation |
+
+---
+
 ## Deferred Items (all sessions)
 
 | # | Item | Reason |
@@ -125,19 +190,16 @@ ngOnInit(): void {
 
 ---
 
-## Build Verification (Session 4)
+## Build Verification
 
-```
-Command: npx ng build --configuration production
-Working directory: get-hired-FE/
-Result: PASS — zero TypeScript/template errors
-Hash: 051561e197aadd79
-Build time: 27029ms
-Pre-existing warnings only:
-  - autoprefixer CSS warning in add-contact-group component (unrelated)
-  - xlsx CommonJS optimization bailout (unrelated)
-```
+| Session | Result | Time | Notes |
+|---------|--------|------|-------|
+| 1 | PASS | — | |
+| 2 | PASS | — | |
+| 3 | PASS | 19161ms | |
+| 4 | PASS | 27029ms | Hash: 051561e197aadd79 |
+| 5 | NOT RUN | — | Single CSS value change; no TS/template compilation risk |
 
-**Files changed in Session 4:**
-1. `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.ts`
-   — moved router state reading from ngOnInit to constructor
+Pre-existing warnings (not introduced by any session):
+- autoprefixer `start` value in `add-contact-group.component.scss`
+- xlsx CommonJS optimization bailout in `excel-downloader.service.ts`

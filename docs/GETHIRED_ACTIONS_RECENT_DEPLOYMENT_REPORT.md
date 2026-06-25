@@ -1,190 +1,139 @@
 # GETHIRED ACTIONS — Recent Deployment Report
-## Applicant Completeness UI — Badge + Card + Detail Route Cycle
-**Generated:** 2026-06-24
-**Deployment:** FE 5ab9a05 / BE 422d340 (BE unchanged this cycle)
-**Previous deployment:** FE 20a44c5 / BE 422d340
-**Scope:** ApplicationCompletenessBadgeComponent, ApplicationCompletenessCardComponent, ApplicantApplicationDetailComponent (/user/applications/:id), CTA analytics wiring, snapshotCreatedAt display, "View full details" list link
+## NOTIFY-P2: Contact/Candidate Invite False-Positive Toast Fix
+**Generated:** 2026-06-26
+**Deployment:** BE 2ff6358 / FE 1863842
+**Previous deployment report covered:** FE 5ab9a05 / BE 422d340 (Applicant Completeness UI)
+**Scope:** Employer contact/candidate management — invite flows, toast outcome logic, bulk import race conditions
 
 ---
 
 ## Executive Summary
 
-This deployment completes the applicant-facing completeness UI originally scoped as a 19-criterion acceptance specification. All 19/19 criteria are now met. The two items deferred from the previous cycle — a dedicated application detail route and CTA click analytics — are both shipped. The `snapshotCreatedAt` ("Captured on...") timestamp is now visible on the detail page via the single endpoint, resolving the list-view UX gap without changing the batch endpoint.
+NOTIFY-P2 closes three independent false-positive toast bugs that caused "Successfully added" to appear when nothing was actually added. All three bugs are now fixed and shipped. The blast radius was contained entirely to the employer contact/candidate management UI — no job-seeker flows, no auth, no MATCH scoring were touched.
 
-Five items from the prior backlog are resolved this cycle. Three new items are identified below.
+Two items previously listed as "P0 open" in session memory (PayMongo webhook HMAC and CORS wildcard) are confirmed CLOSED by code audit — they were fixed in prior commits (97cd657 and d4e34c7 respectively) and the session memory entries were stale. This report corrects that record.
 
-**The outstanding hard blocker (SNAP-P0-001) has not changed: the DDL must be confirmed applied to production before the batch endpoint is functional and before the backfill script can be run.** Every applicant currently sees "Snapshot not available" if the tables are missing, because `catchError` silences all 500s from the batch endpoint.
+One new finding is surfaced: `interview.service.js` contains the same broken `forEach(async...)` race condition pattern that NOTIFY-P2 fixed in the contact/candidate bulk flows. It is not a false-positive toast issue but carries the same "headers already sent" Express risk.
 
----
-
-## Status of Previously Open Items
-
-### SNAP-P0-001 — Confirm DDL applied to production
-**Status: STILL OPEN — manual ops only**
-No code change in this cycle. This is still the single hardest blocker. Required before:
-- Batch endpoint can return real data (currently silent 500 if tables missing)
-- Backfill script can run
-- Detail page can show completeness (single endpoint also queries these tables)
-
-Verification query:
-```sql
-SELECT to_regclass('gethired.application_snapshots');
-SELECT to_regclass('gethired.application_completeness_snapshots');
-SELECT to_regclass('gethired.match_snapshots');
-```
-Each must return a non-null result.
-
-### BACKFILL-P0-001 — No pre-flight DDL check in backfill script
-**Status: STILL OPEN**
-No code change in this cycle. The backfill script still relies on a manual check. Operator must complete section 1 of the launch checklist before running.
-
-### SNAP-P1-003 — Completeness distribution dashboard endpoint for employers
-**Status: STILL OPEN**
-Not in scope for this cycle. P1 — next meaningful feature after infrastructure is confirmed.
-
-### BATCH-P2-001 — Batch endpoint source filter excludes backfill rows
-**Status: STILL OPEN**
-No BE changes this cycle. Backfilled applications still show "not available" to applicants.
-
-### BACKFILL-P2-001 — No progress resume from crash
-**Status: STILL OPEN**
-
-### BACKFILL-P2-002 — Backfill data not visually distinguished in FE
-**Status: STILL OPEN** (contingent on BATCH-P2-001)
-
-### COMP-P2-007 — Fragment anchors for completeness tip deep-links
-**Status: STILL OPEN**
-CTAs still route to `/user/profile/edit` (top of form) rather than the relevant section. Now applies to both the list-view card CTAs and the detail page card CTAs.
-
-### COMP-P2-008 — Shared snapshotsLoaded flag (batch-wide spin)
-**Status: STILL OPEN**
-The list component still reveals all rows simultaneously when the batch call resolves. This is the same structural gap as the prior cycle.
-
-### COMP-P3-009 — Fix retry() to call private method not ngOnInit()
-**Status: RESOLVED**
-Confirmed in release gate: `retry()` now calls `loadData()` not `ngOnInit()`. The `ApplicantApplicationsComponent` refactor used `loadData()` as the extraction target. The new `ApplicantApplicationDetailComponent` was also written correctly with a private `load()` method from the start.
-
-### COMP-P3-010 — Disclaimer does not say score is frozen at submission time
-**Status: STILL OPEN**
-The `disclaimerNote` string in `applicationController.js` is unchanged. No BE changes this cycle.
-
-### SNAP-P2-001 — snapshot_hash integrity verification
-**Status: STILL OPEN**
-
-### SNAP-P2-002 — Match score formula divergence
-**Status: STILL OPEN**
-
-### SNAP-P2-003 — Unit tests for applicationSnapshotService.js
-**Status: STILL OPEN**
-
-### SNAP-P2-004 — Admin view for snapshot data
-**Status: STILL OPEN**
-
-### SNAP-P3-001 — Surface tips in applicant dashboard
-**Status: STILL OPEN**
-Tips are visible on My Applications and now on the detail page. Dashboard widget not built.
-
-### SNAP-P3-002/003/004/005 — Webhook, DISCLAIMER relocation, getUserCompany, video comment
-**Status: STILL OPEN**
-
-### Backlog item: dedicated application detail route
-**Status: RESOLVED**
-`ApplicantApplicationDetailComponent` at `/user/applications/:id` is now shipped. Uses the single `GET /applicant/application/snapshot` endpoint (richer: includes `snapshotCreatedAt`). Reads job metadata from router navigation state. Back button navigates to `/user/applications`. Declared in `applicant-panel.module.ts`. Route confirmed in FE 5ab9a05.
-
-### Backlog item: per-application deep-link from list to detail page
-**Status: RESOLVED**
-"View full details →" link in the expanded snapshot section of each list row navigates to `/user/applications/:id` passing `{ jobTitle, companyName, status }` via router state. Applicants can go from the list badge directly to the full detail view.
-
-### Backlog item: CTA click analytics (trackApplicationCompletenessCtaClicked)
-**Status: RESOLVED**
-`onCtaClick(ctaLabel)` is now wired as a `(click)` handler on both CTA `<a>` elements in `ApplicationCompletenessCardComponent`. Calls `analytics.trackApplicationCompletenessCtaClicked(applicationId, ctaLabel)`. The `applicationId` is passed as `@Input()` to the card component. Fires on both "Update your profile" and "Add to your profile" clicks.
-
-### Backlog item: snapshotCreatedAt display ("Captured on...")
-**Status: RESOLVED (on detail page; not on list view)**
-The detail page shows `snapshotCreatedAt` as "Captured Jan 15, 2026" when present (the single endpoint returns this field). The list-view card does not show it (batch endpoint does not return `snapshotCreatedAt`) — this is a known and accepted UX gap (tracked as DETAIL-P3-001 below). Applicants can navigate to the detail page to see the timestamp.
-
-### Backlog item: badge_viewed (impression) analytics event
-**Status: STILL OPEN**
-Tracked as DETAIL-P2-002 below. `trackApplicationCompletenessViewed` fires on card expand. A badge impression event on initial list render has not been added (by design: would fire on every load, too noisy).
-
-### Backlog item: unit tests for badge + card components
-**Status: STILL OPEN**
-Test specifications are documented in `GETHIRED_APPLICANT_APPLICATION_COMPLETENESS_TEST_LOG_V2.md`. No Angular component tests written. Tracked as COMP-TEST-P2-001.
+**Launch gate status:**
+- Internal demo: **SAFE**
+- Invite-only beta: **SAFE**
+- Public launch: **BLOCKED** — Firebase service account key in git history requires purge + rotation (user action); OG image asset missing
 
 ---
 
-## New Findings From This Deployment
+## What Closed This Deployment
 
-### DETAIL-P2-001 — Direct navigation to /user/applications/:id loses job metadata
-**Severity: P2**
-`ApplicantApplicationDetailComponent.ngOnInit()` reads job metadata (jobTitle, companyName, status) from `this.router.getCurrentNavigation()?.extras?.state` with a fallback to `window.history.state`. When a user navigates directly to `/user/applications/abc123` (bookmark, back button from an external page, email link), `getCurrentNavigation()` is null and `window.history.state` may be stale or empty. In that case, `jobTitle` and `companyName` are empty strings, the header renders "Application Details" instead of the job name, and the status badge is absent.
+### NOTIFY-P2-BUG-01 — Company user invite: false-positive success toast on all-failed invite
+**Status: CLOSED — FE 1863842**
 
-The completeness data itself loads correctly (the route param `:id` is extracted from `paramMap`). The metadata gap is a UX degradation only, not a data error.
+`import-add-user.component.ts` previously checked `emails.length > 0` to determine success. The backend always returned all submitted emails (including failed ones), so `emails.length > 0` was always true. FE never read the per-email `status` field. Result: an all-failed invite showed a green success toast.
 
-**Fix options:**
-1. If a per-application REST endpoint returning job title/company name/status exists (or can be added), call it as a fallback when state is empty.
-2. If `ApplicationService.getAppliedJobsList()` is cached in a shared service, read from there by `applicationId`.
-3. Accept the current behavior and display "Application Details" as the heading when state is absent — lowest effort, already implemented as the fallback.
+Fix: FE now reads `e.status !== 'failed'` per email item. `successCount === 0` → no success toast. Outcome-appropriate toast is shown: danger (all failed), warning (partial), success (all succeeded).
 
-**Current behavior:** option 3 is the active fallback. No error, no broken layout.
+### NOTIFY-P2-BUG-02 — Single contact add: success toast on duplicate
+**Status: CLOSED — BE 2ff6358 / FE 1863842**
 
-### DETAIL-P2-002 — badge_viewed (impression) analytics event still untracked
-**Severity: P2**
-`trackApplicationCompletenessViewed` fires when the user expands the card (toggle event). There is no event for:
-- Badge render in the list (impression: "user saw this badge")
-- Detail page load (impression: "user navigated to the detail page")
+`addContact` returned `{ message: "Contact aleady exist" }` (truthy) for duplicates. Controller treated any truthy return as success → HTTP 200. FE subscribed to truthy `contactRes` → success toast.
 
-Without impression tracking, the funnel is: badge_rendered (unknown) → card_expanded (tracked) → cta_clicked (now tracked). The conversion rate from impression to expand cannot be computed.
+Fix: `contact.service.js` now returns `{ status: 'ADDED' }` on insert and `{ status: 'DUPLICATE_CONTACT' }` on duplicate. FE reads `res.status` to determine outcome.
 
-**Fix:** Add `trackApplicationCompletenessBadgeViewed(applicationId)` to `PublicPortalAnalyticsService`. Fire it once per badge render in the list, guarded to not fire for loading or unavailable states. Alternatively fire on detail page load in `ApplicantApplicationDetailComponent.ngOnInit()` as a "detail_viewed" event. Medium-effort if debounced correctly (must not fire on every scroll past in a virtual list).
+### NOTIFY-P2-BUG-03 — Single candidate add: success toast on duplicate
+**Status: CLOSED — BE 2ff6358 / FE 1863842**
 
-### DETAIL-P3-001 — snapshotCreatedAt absent in list-view card ("Captured on..." only on detail page)
-**Severity: P3**
-The batch endpoint (`GET /applicant/application/snapshots`) does not return `snapshotCreatedAt`. The single endpoint (`GET /applicant/application/snapshot`) does. As a result:
-- Detail page: shows "Captured Jan 15, 2026" ✓
-- List view expanded card: no timestamp shown
+Same pattern as BUG-02 for `addCandidates`. Additional fix: FE copy changed from "Contact added." to "Candidate added." in the candidate flow.
 
-This is the documented design choice from the prior cycle (the commit message acknowledges it: "gracefully omitted for batch-loaded snapshots that don't include timestamp"). It creates a minor UX inconsistency: the same card component shows a timestamp on the detail page but not in the list.
+### NOTIFY-P2-STRUCTURAL-01 — Broken `forEach(async...)` in bulk contact/candidate controllers
+**Status: CLOSED — BE 2ff6358**
 
-**Fix:** Add `snapshotCreatedAt` to the batch endpoint response. Low-effort BE change: the field is in `application_completeness_snapshots.captured_at`. The batch query already joins this table; adding the column is one-line. The card already renders it when present.
+`multipleContact` and `multipleCandidate` controllers used `emails.forEach(async option => { ... })` inside `new Promise()`. This pattern ignores all async rejections and can send multiple Express responses (causing "headers already sent" crashes). Replaced with `Promise.allSettled`. Bulk endpoints now return `{ contacts/candidates, summary }` with `successCount`, `failureCount`, `duplicateCount`, `outcome`.
 
 ---
 
-## Architecture Notes
+## Corrected P0 Status (Session Memory Was Stale)
 
-- `ApplicantApplicationDetailComponent` is correctly isolated: no dependency on the list component state. Can be used standalone.
-- Router state passing (`router.navigate([...], { state: {...} })`) is correct for this use case. The fallback to `window.history.state` covers most back-button scenarios but not cold-start deep links.
-- `getApplicationSnapshot()` in `ApplicationService` is already present — the detail component reuses it without modification.
-- The card component's `@Input() applicationId` addition is additive and backward-compatible: the list already passes it; any future consumer can also pass it.
-- `onCtaClick(ctaLabel)` on the card is a click handler on `<a routerLink>` elements. Navigation still occurs via routerLink — the click handler fires analytics before the navigation completes. This is correct.
+### PayMongo webhook HMAC — CLOSED (not open)
+**Commit:** `97cd657` — "fix(security): PayMongo webhook HMAC signature verification"
+
+`verifyPaymongoSignature()` is fully implemented in `controllers/paymentController.js`:
+- HMAC-SHA256 over `paymongo-signature` header (timestamp + raw body)
+- Constant-time comparison via `crypto.timingSafeEqual`
+- Replay prevention: timestamps older than 5 minutes are rejected
+- `server.js` has `verify` callback on `express.json()` to capture `req.rawBody`
+- `env.js` maps `PAYMONGO_WEBHOOK_SECRET` from process.env
+
+The session memory checkpoint written on 2026-06-26 incorrectly listed this as P0 open. Code is the ground truth: **this is closed.**
+
+Action still required: confirm `PAYMONGO_WEBHOOK_SECRET` env var is set on Linode production (the code is wired; if the secret is missing, `verifyPaymongoSignature` returns false and all webhooks are rejected 400).
+
+### CORS wildcard — CLOSED (not open)
+**Commit:** `d4e34c7` — "fix(security): restrict CORS to app_url instead of wildcard"
+
+`server.js` now uses `app.use(cors({ origin: env.app_url }))`. Not `app.use(cors())`. The session memory said "CORS wildcard awaiting domain list" — this was stale. **Closed.**
 
 ---
 
-## Summary Table
+## Open Items After NOTIFY-P2
 
-| Item | Previous Status | Current Status |
-|------|----------------|----------------|
-| SNAP-P0-001 (DDL on prod) | STILL OPEN | STILL OPEN |
-| BACKFILL-P0-001 (pre-flight check) | NEW | STILL OPEN |
-| SNAP-P1-003 (employer distribution endpoint) | OPEN | STILL OPEN |
-| BATCH-P2-001 (backfill source filter) | NEW | STILL OPEN |
-| BACKFILL-P2-001 (no resume from crash) | NEW | STILL OPEN |
-| BACKFILL-P2-002 (backfill data UX distinction) | NEW | STILL OPEN |
-| COMP-P2-007 (fragment deep-links) | OPEN | STILL OPEN |
-| COMP-P2-008 (shared snapshotsLoaded) | OPEN | STILL OPEN |
-| COMP-P3-009 (retry → loadData) | PARTIALLY RESOLVED | RESOLVED |
-| COMP-P3-010 (disclaimer copy) | OPEN | STILL OPEN |
-| SNAP-P2-001 (snapshot_hash) | OPEN | STILL OPEN |
-| SNAP-P2-002 (match score formula) | OPEN | STILL OPEN |
-| SNAP-P2-003 (BE unit tests) | OPEN | STILL OPEN |
-| SNAP-P2-004 (admin snapshot view) | OPEN | STILL OPEN |
-| SNAP-P3-001/002/003/004/005 (misc) | OPEN | STILL OPEN |
-| Backlog: dedicated detail route | OPEN | RESOLVED — /user/applications/:id live |
-| Backlog: list → detail deep-link | OPEN | RESOLVED — "View full details" link live |
-| Backlog: CTA click analytics | OPEN | RESOLVED — onCtaClick() wired |
-| Backlog: snapshotCreatedAt display | OPEN | RESOLVED (detail page only; list deferred) |
-| Backlog: badge_viewed impression | OPEN | STILL OPEN → DETAIL-P2-002 |
-| Backlog: component unit tests | OPEN | STILL OPEN → COMP-TEST-P2-001 |
-| NEW: DETAIL-P2-001 (direct nav loses metadata) | — | NEW — P2 |
-| NEW: DETAIL-P2-002 (no badge impression event) | — | NEW — P2 |
-| NEW: DETAIL-P3-001 (snapshotCreatedAt not in batch) | — | NEW — P3 |
+### P0 — Blocking for public launch (user action required)
+
+**EA-02: Firebase service account key in git history**
+`jobhunt-serviceAccountKey.json` was committed to the BE repo and exists in git history. The file itself may be gitignored now, but the credential is exposed in the git log. Two user actions required:
+1. Rotate the Firebase service account key in Firebase Console (invalidate the leaked key)
+2. Purge the key from git history (`git filter-repo` or BFG Repo Cleaner) and force-push — coordinate with any team members who have cloned the repo
+
+This is unresolvable by code change alone. Until the key is rotated, a threat actor who has cloned the repo has valid Firebase admin credentials.
+
+### P1 — High priority code/ops items
+
+**GitHub PAT for Linode expired**
+The GitHub Personal Access Token used by Linode for `git pull` has expired. Current workaround: deploy BE via SCP (`scp file root@139.162.11.242:/var/www/_work/get-hired-BE/`) then `ssh root@139.162.11.242 "pm2 restart all"`. Renew at github.com/settings/tokens.
+
+**OG image missing**
+`src/assets/brand/gethired-og-default.png` does not exist. `SeoService` references this path; every page using SeoService has a broken `og:image` and `twitter:image` meta tag. Link previews on LinkedIn, Facebook, Twitter/X, WhatsApp, and Viber show no image. A branded 1200×630px PNG is required — this is a design/asset task, not a code change. The `SeoService` constant and `angular.json` assets config are already written; the file just needs to be created and committed.
+
+**PAYMONGO_WEBHOOK_SECRET env var on Linode**
+The HMAC code is shipped (see above). Verify the env var is set in Linode production. If not set, all PayMongo webhooks are rejected 400 (fail-closed, no data risk, but payment events will not process).
+
+### P2 — Race conditions / async correctness
+
+**NOTIFY-P2-DEFERRED-01: `createGroup`/`updateGroup` broken `forEach(async...)`**
+`contactsController.js` lines 222 and 272 still use `emails.forEach(async option => { ... })` inside `new Promise()`. This is the same broken pattern fixed in NOTIFY-P2 for `multipleContact`/`multipleCandidate`. It does not cause false-positive toasts here (different response paths) but does carry the same Express "headers already sent" race condition risk when multiple emails fail. Same `Promise.allSettled` fix applies.
+
+**NEW-FINDING-01: `interview.service.js` broken `forEach(async...)`**
+`services/interview.service.js` line 278 contains the same broken pattern: `removeDuplicates.forEach(async recipient => { ... })` inside `new Promise()`. This is the interview invite email-sending flow. If `sendEmailInterview` throws for any recipient, the async error is silently swallowed and the containing Promise never resolves or rejects. The `numberOfRecipient` count may be wrong on partial failure. Same `Promise.allSettled` refactor applies.
+
+Affected: interview invite flow when sending to group/contact lists with any email failure.
+
+**warning-snackbar color contrast**
+`#f59e0b` amber on white background: contrast ratio approximately 2.5:1, below WCAG AA (4.5:1 required for normal text). The copy conveys outcome in words (color is supplementary), so this is not a critical bug, but it is a WCAG AA failure. Consider `#b45309` (dark amber, ~5.1:1).
+
+### P3 — UX polish / accessibility
+
+**danger-snackbar should use `aria-live="assertive"`**
+Angular Material's `MatSnackBar` uses `aria-live="polite"` by default. Error-outcome toasts should use `aria-live="assertive"` so screen readers announce them immediately. Requires a custom snackbar component to override Angular Material's default. Deferred from NOTIFY-P2.
+
+**Empty-state UI when all invites fail**
+Currently the dialog closes after showing the error toast when all invites fail. Better UX: keep the dialog open with an inline error state so the employer can correct emails without reopening. Deferred from NOTIFY-P2.
+
+**Unit tests for toast outcome logic**
+No `.spec.ts` files exist in the contact/candidate dialog directories. Automated coverage for the three component toast decision branches. Low priority until a component testing pattern is established for the FE.
+
+### P4 — Low priority
+
+**Failed-email indicator in `invitedUsersList`**
+On partial-success company user invites, the dialog renders `invitedUsersList` which includes `status: "failed"` items. A red icon on failed items would make partial-success self-explanatory. Deferred from NOTIFY-P2.
+
+**`getApplicant()` still sends `?id=` query param**
+BE ignores this param (uid is derived from JWT). FE cleanup deferred.
+
+---
+
+## Recommended Execution Order
+
+1. **User action (immediate):** Rotate Firebase service account key + purge from git history → closes last public-launch P0
+2. **Ops verification (immediate):** Confirm `PAYMONGO_WEBHOOK_SECRET` is set on Linode → payment webhooks functional
+3. **User action (1 day):** Renew GitHub PAT on Linode → restore normal BE deploy flow
+4. **Design/asset task:** Create 1200×630px OG image → closes SEO/brand P1
+5. **Next code sprint:** Fix `createGroup`/`updateGroup` and `interview.service.js` async forEach → closes both P2 race conditions in one targeted BE pass
+6. **Accessibility sprint:** danger-snackbar assertive, warning-snackbar contrast → closes a11y P3s

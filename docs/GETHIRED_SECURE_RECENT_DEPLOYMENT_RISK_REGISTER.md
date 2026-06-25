@@ -1,25 +1,61 @@
-# GETHIRED SECURE — Risk Register (Recent Deployment)
-**Scope:** FE HEAD 5ab9a05 — ApplicantApplicationDetailComponent + ApplicationCompletenessCardComponent
-**Date:** 2026-06-24
+# GetHired — Security Risk Register
+**Last updated:** 2026-06-26 (NOTIFY-P2 audit)
+**Previous version:** 2026-06-24
 
 ---
 
-| ID | Category | Title | Severity | Likelihood | Impact | Residual Risk | Mitigations | Status |
-|----|----------|-------|----------|------------|--------|---------------|-------------|--------|
-| R-01 | Auth / Access Control | `ApplicantGuard` absent from `user/` child routes | P1 | Medium — requires authenticated wrong-role user to know a valid URL | Low — BE 403 backstop prevents data return; redirect fires quickly | LOW | (1) `AuthGuard` blocks unauthenticated users; (2) BE IDOR guard returns 403 for ownership mismatch; (3) Fix applied: `canActivate: [ApplicantGuard]` added to parent route | FIXED |
-| R-02 | Auth / Access Control | `AuthGuard` returns `true` for wrong-role authenticated users (systemic) | INFO | Low — requires authenticated user of wrong role to directly navigate to a sibling-product URL | Low — redirected before meaningful interaction | LOW | Guard redirects user to correct dashboard before page renders | OPEN — backlog |
-| R-03 | Input Validation | Router state spoofing: `jobTitle`/`companyName`/`status` from `window.history.state` | INFO | Medium — any user can set these values | Very low — display-only, own browser only, Angular-escaped | NEGLIGIBLE | Values are display-only, never sent to BE, never used in security decisions, Angular interpolation escapes output | ACCEPTED |
-| R-04 | IDOR / Data Access | Applicant accesses `/user/applications/<other-user-id>` | P0 concern (mitigated) | Medium — ID is in URL, sequential IDs are guessable | High if exploitable — would expose another user's application data | VERY LOW | BE `getApplicantApplicationSnapshot` checks `candidate_id !== uid` before returning data; 403 triggers FE error state; no data rendered | CLOSED (BE guard) |
-| R-05 | XSS | Snapshot text fields (`disclaimerNote`, `privacyNote`, `tip.reason`) rendered unsafely | P0 concern (mitigated) | Low — requires malicious data in DB | High if exploitable | NEGLIGIBLE | All fields bound with Angular `{{ }}` interpolation (HTML-escaped); no `[innerHTML]` usage found | CLOSED (safe binding) |
-| R-06 | Privacy / PII leak | Analytics service sending PII to external provider | P1 concern (mitigated) | Low — no real SDK is wired | N/A until SDK is integrated | NEGLIGIBLE | Analytics service is a no-op in prod; payload contains only internal ID and static strings | CLOSED (no-op) |
-| R-07 | Security — Supply Chain | Future analytics SDK integration may introduce PII leak | INFO | Low — requires future code change | Medium | LOW | Standing comment in analytics service documents the privacy rule; payload structure must be reviewed at integration time | OPEN — future |
+## P0 — Critical (Must fix before launch / must be externally mitigated)
+
+| ID | Title | Location | Status | Notes |
+|---|---|---|---|---|
+| P0-1 | PayMongo webhook HMAC verification missing | `routes/paymentRoute.js`, webhook handler | OPEN | Endpoint accepts any event without signature check. Attacker can forge payment confirmations. No NOTIFY-P2 impact. |
+| P0-2 | Firebase service account key in git history | git history (committed secret) | OPEN — EXTERNAL ACTION REQUIRED | Cannot be fixed by code change alone. Requires: (1) rotate the key in Firebase Console, (2) add secret to `.gitignore`, (3) consider git history scrub. No NOTIFY-P2 impact. |
 
 ---
 
-## Risk Scoring Key
+## P1 — High (Fix before public launch)
 
-- **Severity:** P0 (critical), P1 (high), P2 (medium), INFO (informational)
-- **Likelihood:** Low / Medium / High (probability of exploitation in practice)
-- **Impact:** Low / Medium / High / Very High (blast radius if exploited)
-- **Residual Risk:** NEGLIGIBLE / VERY LOW / LOW / MEDIUM / HIGH (after mitigations)
-- **Status:** FIXED (code change applied) / CLOSED (mitigated without code change) / OPEN (backlog) / ACCEPTED (risk accepted)
+| ID | Title | Location | Status | Notes |
+|---|---|---|---|---|
+| P1-1 | CORS wildcard (`app.use(cors())`) | `app.js` or server entry | OPEN | Allows any origin. Awaiting domain list from user to configure allowed origins. No NOTIFY-P2 impact. |
+| P1-2 | `verifyAuth.js` leaks raw Firebase error messages to clients | `middleware/verifyAuth.js` | PARTIALLY OPEN | Generic error path still returns some internal error context. Low exploitability but information disclosure risk. |
+| P1-3 | `createGroup`/`updateGroup` broken `forEach(async)` race condition | `controllers/contactsController.js` lines 221-239, 269-283 | OPEN | Race condition can cause "headers already sent" Express errors + partial group creation with no failure response. DoS/data integrity risk under concurrent load. Not a secret leak but availability/integrity concern. Not fixed in NOTIFY-P2 (only `multipleContact`/`multipleCandidate` were fixed). |
+
+---
+
+## Medium (M) — Should fix before scaling
+
+| ID | Title | Location | Status | Notes |
+|---|---|---|---|---|
+| M2-1 | `checkEmailIfExistInCandidate` global scope (cross-tenant oracle) | `services/candidate.service.js` line 57 | OPEN — pre-existing, confirmed 2026-06-26 | SQL has no company_id filter. An employer can determine if any email is in the platform's candidates table globally. NOTIFY-P2 made this more visible via structured status. Fix documented in FIX_LOG. |
+
+---
+
+## Fixed / Closed
+
+| ID | Title | Fixed in | Notes |
+|---|---|---|---|
+| F-1 | BOLA on createContact (companyId from body) | QA8 FIX-7 | getUserCompany from JWT now used |
+| F-2 | BOLA on multipleContact (companyId from body) | QA8 FIX-7 | JWT-derived companyId overrides body |
+| F-3 | No auth middleware on contact routes | STITCH GH-ACT-011 | verifyAuth added to all contact routes |
+| F-4 | No auth middleware on candidate routes | STITCH GH-ACT-011 | verifyAuth added to all candidate routes |
+| F-5 | GET /job/details anonymous access missing auth guard | SEC-02 | optionalVerifyAuth added |
+| F-6 | GET /job/sharelink anonymous access missing auth guard | SEC-02 | optionalVerifyAuth added |
+| F-7 | GET /job/applicants — no auth, exposed full applicant PII | SECURE pass | verifyAuth added; ownership check in controller |
+| F-8 | Hardcoded password `p@ssw0rd1111` emailed to invited users | STITCH GH-ACT-004 | Replaced with random password + Firebase reset link |
+| F-9 | deleteContact/deleteGroup — no ownership check | QA7 FIX-5 | Ownership folded into DELETE WHERE company_id=$2 |
+| F-10 | updateContact/updateGroup — no ownership check | QA7 FIX-5 | Ownership folded into UPDATE WHERE company_id=$2 |
+| F-11 | BOLA on list/grouplist (companyId from query param) | QA9 FIX-12 | getUserCompany from JWT |
+| F-12 | BOLA on createCandidate/multipleCandidate | QA10 FIX-5 | getUserCompany from JWT, body companyId overridden |
+| F-13 | forEach(async) race in multipleContact/multipleCandidate | NOTIFY-P2 | Replaced with Promise.allSettled |
+| F-14 | SQL injection in deleteContact via string interpolation | STITCH fix | Parameterized query with $1/$2 |
+
+---
+
+## Low / Informational
+
+| ID | Title | Status | Notes |
+|---|---|---|---|
+| L-1 | `console.log(dbResponse)` in candidateList logs full list to server | OPEN | Pre-existing; cosmetic; no external exposure |
+| L-2 | FE `console.log(data)` in import-add-user constructor | OPEN | Browser-side only; cosmetic |
+| L-3 | No rate limiting anywhere on write endpoints | OPEN | Known gap from prior sessions; flagged for future SECURE pass |

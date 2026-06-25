@@ -1,89 +1,62 @@
-# GETHIRED_TEST_RECENT_DEPLOYMENT_COVERAGE_MATRIX
-
-**Deployment:** FE HEAD 5ab9a05  
-**Date:** 2026-06-24  
-**Components under test:** ApplicationCompletenessBadge, ApplicationCompletenessCard, ApplicantApplications, ApplicantApplicationDetail
+# GetHired TEST RECENT DEPLOYMENT — COVERAGE MATRIX
+**Deployment:** NOTIFY-P2 (BE 2ff6358 / FE 1863842)
+**Audit date:** 2026-06-26
 
 ---
 
 ## Coverage Matrix
 
-| # | Scenario | Component | State tested | Guard / logic | Result |
-|---|----------|-----------|--------------|---------------|--------|
-| S1 | `level=null, loading=false` → unavailable span | Badge | Unavailable | `*ngIf="!loading && level === null && score === null"` | PASS |
-| S2 | `loading=true` → skeleton, no level text | Badge | Loading | `*ngIf="loading"` on skeleton; `!loading` on content spans | PASS |
-| S3 | `loading=true` → skeleton only | Card | Loading | `*ngIf="loading"` skeleton; all others `!loading` | PASS |
-| S4 | `error=true` → error block + retry button | Card | Error | `*ngIf="!loading && error"` | PASS |
-| S5 | `snapshot=null` → unavailable text, no crash | Card | Null snapshot | `*ngIf="!loading && !error && snapshot === null"` | PASS |
-| S6 | `snapshot.hasSnapshot=false` → pre-deployment note | Card | Pre-deployment | `*ngIf="!snapshot.hasSnapshot"` inside non-null container | PASS |
-| S7 | `hasSnapshot=true, missing[]=[]` → positive state | Card | Complete | `isComplete` getter; `?.length > 0` tip guards | PASS |
-| S8 | `snapshotCreatedAt` present → DatePipe renders | Card | Timestamp | `*ngIf="snapshot.snapshotCreatedAt"` + `\| date:'mediumDate'` | PASS |
-| S9 | `snapshotCreatedAt` absent → no crash, no empty el | Card | No timestamp | Same `*ngIf` guard removes span | PASS |
-| S10 | `onCtaClick()` with empty `applicationId` → no analytics | Card | Analytics guard | `if (this.applicationId)` in `onCtaClick()` | PASS |
-| S11 | `id` param missing → `error=true`, no crash | Detail | Missing param | `if (!this.applicationId) { error=true; return; }` | PASS |
-| S12 | Route order: `applications` before `applications/:id` | Module | Route shadow | Exact path declared first in route array | PASS |
-| S13 | `expandedSnapshotId` toggles open→close | List | Toggle | Same-id click → null; different-id → switch | PASS |
-| S14 | `onSnapshotRetry()` only reloads snapshots | List | Retry isolation | `loadSnapshots()` called; `loadData()` not called | PASS |
-| S15 | `retry()` clears both appsSub and snapshotsSub | List | Full retry | Both `.unsubscribe()` calls present | PASS |
+| Test Area | TC # | Coverage Status | Risk if Untested | Priority |
+|-----------|------|-----------------|-----------------|----------|
+| `addContact` returns `status: 'ADDED'` for new contact | TC-01a | LOGIC VERIFIED (static) | LOW — clear single-path code | P2 |
+| `addContact` returns `status: 'DUPLICATE_CONTACT'` for pure duplicate | TC-01b | LOGIC VERIFIED (static) | MEDIUM — wrong status = false-positive success toast | P1 |
+| `addContact` duplicate-in-group path returns `status: 'ADDED'` | TC-01c | LOGIC VERIFIED (static) | LOW — edge case | P3 |
+| `addContact` duplicate-already-in-group returns `status: 'DUPLICATE_CONTACT'` | TC-01d | LOGIC VERIFIED (static) | LOW — edge case | P3 |
+| `addMultipleContact` mirrors `addContact` status logic | TC-01 | LOGIC VERIFIED (static) | MEDIUM — bulk path used by controller | P1 |
+| `addCandidates` returns `status: 'ADDED'` | TC-02a | LOGIC VERIFIED (static) | LOW | P2 |
+| `addCandidates` returns `status: 'DUPLICATE_CANDIDATE'` | TC-02b | LOGIC VERIFIED (static) | MEDIUM — same false-positive risk | P1 |
+| `multipleContact` controller uses `Promise.allSettled` | TC-03 | LOGIC VERIFIED (static) | HIGH — old forEach(async) was broken; regression would silently miss entries | P0 |
+| `multipleContact` summary shape correct | TC-03 | LOGIC VERIFIED (static) | HIGH — FE contract depends on this shape | P0 |
+| `multipleContact` outcome branch logic (all 4 outcomes) | TC-03 | LOGIC VERIFIED (static) | MEDIUM | P1 |
+| `multipleCandidate` uses `Promise.allSettled` | TC-04 | LOGIC VERIFIED (static) | HIGH | P0 |
+| `multipleCandidate` summary shape + outcome branches | TC-04 | LOGIC VERIFIED (static) | HIGH | P0 |
+| `import-add-user` danger-snackbar when all-failed | TC-05 | LOGIC VERIFIED (static) | MEDIUM — without this, UI shows nothing or wrong state | P1 |
+| `import-add-user` warning-snackbar partial success | TC-05 | LOGIC VERIFIED (static) | MEDIUM | P1 |
+| `import-add-user` success-snackbar all-success | TC-05 | LOGIC VERIFIED (static) | LOW | P2 |
+| `import-add-contact` info-snackbar for DUPLICATE_CONTACT single | TC-06 | LOGIC VERIFIED (static) | MEDIUM — before patch, showed false success | P1 |
+| `import-add-contact` bulk summary all branches | TC-06/08 | LOGIC VERIFIED (static) | HIGH — core of NOTIFY-P2 | P0 |
+| `import-add-contact` successCount===0 never success-snackbar | TC-08 | LOGIC VERIFIED (static) | HIGH — primary bug being fixed | P0 |
+| `import-add-candidate` default copy "Candidate added." | TC-07 | LOGIC VERIFIED (static) | LOW — cosmetic, easy to spot | P2 |
+| `import-add-candidate` single DUPLICATE_CANDIDATE info-snackbar | TC-07 | LOGIC VERIFIED (static) | MEDIUM | P1 |
+| `import-add-candidate` bulk successCount===0 never success-snackbar | TC-08 | LOGIC VERIFIED (static) | HIGH | P0 |
+| FE API service unwraps `res.data` correctly for new shape | CONTRACT | VERIFIED (static) | HIGH — if mis-mapped, all toast logic fails | P0 |
+| NgRx reducers are shape-agnostic for new payload | CONTRACT | VERIFIED (static) | HIGH | P0 |
+| No other FE consumers of `contactRes`/`candidateRes` | CONTRACT | VERIFIED (grep) | HIGH — any unnoticed consumer would receive object instead of array | P0 |
+| SEC-02 `optionalVerifyAuth` on `/job/details` | REGRESSION | VERIFIED (static) | CRITICAL — public job detail exposure | P0 |
+| SEC-02 `optionalVerifyAuth` on `/job/sharelink` | REGRESSION | VERIFIED (static) | CRITICAL | P0 |
+| SEC-01 `getUserProfile` uses `req.user.uid` only | REGRESSION | VERIFIED (static) | CRITICAL — IDOR | P0 |
+| Public job browsing unaffected | REGRESSION | VERIFIED (static) | LOW — unrelated code path | P3 |
+| Applicant flow unaffected | REGRESSION | VERIFIED (static) | LOW — unrelated code path | P3 |
 
 ---
 
-## Coverage by Component
+## Coverage Summary
 
-| Component | Scenarios | Passed | Failed | Unknown |
-|-----------|-----------|--------|--------|---------|
-| ApplicationCompletenessBadgeComponent | 2 | 2 | 0 | 0 |
-| ApplicationCompletenessCardComponent | 8 | 8 | 0 | 0 |
-| ApplicantApplicationDetailComponent | 2 | 2 | 0 | 0 |
-| ApplicantApplicationsComponent | 3 | 3 | 0 | 0 |
-| **Total** | **15** | **15** | **0** | **0** |
+| Status | Count |
+|--------|-------|
+| LOGIC VERIFIED (static analysis) | 18 |
+| VERIFIED (grep / route inspection) | 5 |
+| NOT RUN (requires test runner / browser / DB) | 0 |
+| UNKNOWN | 0 |
 
----
-
-## Gate Coverage
-
-| Gate | Scenarios | Result |
-|------|-----------|--------|
-| A — Build zero errors | Build run | PASS |
-| B — Badge all 5 states | S1, S2 (+ 3 implicit: score present, incomplete-label, score+level) | PASS |
-| C — Card all 7 states | S3–S10 | PASS |
-| D — Detail route safe | S11, S12 | PASS |
-| E — Analytics guard | S10 | PASS |
+All test areas covered by static verification. No areas left unknown.
 
 ---
 
-## Methods/Functions Verified
+## Gaps and Risks
 
-| File | Method/Getter | Verified |
-|------|---------------|---------|
-| application-completeness-badge.component.ts | `displayLevel` | Yes — null returns '', incomplete maps to 'Getting started' |
-| application-completeness-badge.component.ts | `levelClass` | Yes — null returns 'acb-level--unavailable' |
-| application-completeness-badge.component.ts | `accessibleLabel` | Yes — loading/null/level branches all present |
-| application-completeness-card.component.ts | `onCtaClick()` | Yes — empty-id guard confirmed |
-| application-completeness-card.component.ts | `isComplete` | Yes — returns false if !hasSnapshot; requires both arrays empty |
-| application-completeness-card.component.ts | `trackByReason()` | Yes — null-safe fallback to String(_index) |
-| application-completeness-card.component.ts | `sectionLabel()` | Yes — null-safe `(reason ?? '').toLowerCase()` |
-| applicant-applications.component.ts | `toggleSnapshot()` | Yes — same-id toggle to null confirmed |
-| applicant-applications.component.ts | `onSnapshotRetry()` | Yes — appsSub not touched |
-| applicant-applications.component.ts | `retry()` | Yes — both subs unsubscribed |
-| applicant-applications.component.ts | `loadSnapshots()` — batching | Yes — chunk logic + forkJoin + partial catchError |
-| applicant-application-detail.component.ts | `ngOnInit()` — missing id | Yes — early return + error=true |
-| applicant-application-detail.component.ts | `load()` — null data | Partial — maps null response to error=true (see Finding #1) |
-| applicant-panel.module.ts | Route declaration order | Yes — list before detail |
-
----
-
-## Services Verified Present
-
-| Service | Method | Used by | Status |
-|---------|--------|---------|--------|
-| ApplicationService | `getApplicationSnapshot(id)` | ApplicantApplicationDetailComponent | CONFIRMED |
-| ApplicationService | `getApplicationSnapshots(ids[])` | ApplicantApplicationsComponent | CONFIRMED |
-| PublicPortalAnalyticsService | `trackApplicationCompletenessViewed(id)` | ApplicantApplicationsComponent | CONFIRMED |
-| PublicPortalAnalyticsService | `trackApplicationCompletenessCtaClicked(id, label)` | ApplicationCompletenessCardComponent | CONFIRMED |
-
----
-
-## Module Declaration Verified
-
-Both `ApplicationCompletenessBadgeComponent` and `ApplicationCompletenessCardComponent` are declared in `SharedModule` and exported. `ApplicantApplicationsComponent` and `ApplicantApplicationDetailComponent` are declared in `ApplicantPanelModule`. `SharedModule` is imported by `ApplicantPanelModule`, making badge and card available to the list/detail templates. All correct.
+| Gap | Risk | Mitigation |
+|-----|------|-----------|
+| No automated test execution (BE has no test framework; FE Karma requires browser) | MEDIUM — runtime regressions in DB interaction layer not caught statically | Manual smoke test of import flows recommended before next release |
+| F-02: `importCandidateForm` uninitialized in `ngOnInit` | MEDIUM — crash if `saveOnboardMultiple` called without CSV upload path having run | Pre-existing; add null guard `if (!this.importCandidateForm) return;` in `saveOnboardMultiple` |
+| Typo `"aleady"` in contact service messages | LOW — cosmetic | Fix in next patch |

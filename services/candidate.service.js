@@ -18,11 +18,11 @@ const addCandidates = async (candidate) => {
     jobId,
   } = candidate;
   try {
-    const ifExistCandidate = await checkEmailIfExistInCandidate(email);
+    const ifExistCandidate = await checkEmailIfExistInCandidate(email, companyId);
     //const ifRegistered = await checkEmailIfExistInContactAndRegistered(email, userId)
     if (ifExistCandidate) {
       // NOTIFY-P2: pure duplicate — no new candidate added.
-      message = "Candidate Already Exist";
+      message = "Candidate already exists";
       return { message, status: 'DUPLICATE_CANDIDATE' };
     }
     const insertQuery = `INSERT INTO ${dbSchema}.candidates
@@ -54,13 +54,12 @@ const addCandidates = async (candidate) => {
   }
 };
 
-const checkEmailIfExistInCandidate = async (email) => {
-  // TODO (Filter by agency)
+const checkEmailIfExistInCandidate = async (email, companyId) => {
   try {
     const searchQuery = `SELECT email
             FROM ${dbSchema}.candidates
-            where candidates.email = $1;`;
-    const { rows } = await dbQuery.query(searchQuery, [email]);
+            WHERE candidates.email = $1 AND company_id = $2;`;
+    const { rows } = await dbQuery.query(searchQuery, [email, companyId]);
     if (!rows || rows.length === 0) {
       return false;
     }

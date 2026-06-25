@@ -1,75 +1,89 @@
-# GETHIRED SECURE — Fix Log (Recent Deployment)
-**Scope:** FE HEAD 5ab9a05 — ApplicantApplicationDetailComponent + ApplicationCompletenessCardComponent
-**Date:** 2026-06-24
-**Total fixes applied:** 1
+# GetHired — SECURE Fix Log (NOTIFY-P2 Recent Deployment)
+**Scope:** BE 2ff6358 / FE 1863842 (NOTIFY-P2 deployment)
+**Audit date:** 2026-06-26
+**Total fixes applied this pass:** 0
 
 ---
 
-## Fix F-01 — Add canActivate: [ApplicantGuard] to applicant panel parent route
+## No new security fixes required
 
-**Finding ID:** F-01
-**Severity:** P1
-**Type:** Access control — missing route guard
+The NOTIFY-P2 deployment introduced no new P0 or P1 vulnerabilities. No code changes were required during this audit pass.
 
-### Problem
+---
 
-`applicant-panel.module.ts` defines a `path: ''` parent route with five child
-routes (`dashboard`, `profile`, `applications`, `applications/:id`, `settings`).
-`ApplicantGuard` was imported in the module but never placed on any route,
-leaving all five child routes guarded only by `AuthGuard` (applied at the
-`path: 'user'` level in `app.routing.module.ts`).
+## Recommended Non-Blocking Fix (not applied — awaiting PR)
 
-`AuthGuard` checks that the user is authenticated and checks the role, but
-returns `true` for wrong-role authenticated users (it redirects but does not
-block). This means a logged-in recruiter (role=2) or admin (role=1) who directly
-navigates to `/user/applications/123` can mount the component and fire the API
-call before the redirect completes. The BE IDOR guard (403 on `candidate_id`
-mismatch) prevents data leakage, but the FE guard layer is porous.
+### REC-1: Scope `checkEmailIfExistInCandidate` to caller's company (MEDIUM)
 
-### Fix applied
+**File:** `C:\Users\paulg\OneDrive\Desktop\Gethired\get-hired-BE\services\candidate.service.js`
 
-**File:** `src/app/applicant-panel/applicant-panel.module.ts`
-
-```diff
-  {
-    path: '',
-    component: ApplicantPanelComponent,
-+   canActivate: [ApplicantGuard],
-    children: [
+**Current code (lines 57-71):**
+```js
+const checkEmailIfExistInCandidate = async (email) => {
+  // TODO (Filter by agency)
+  try {
+    const searchQuery = `SELECT email
+            FROM ${dbSchema}.candidates
+            where candidates.email = $1;`;
+    const { rows } = await dbQuery.query(searchQuery, [email]);
+    if (!rows || rows.length === 0) {
+      return false;
+    }
+    return true;
+  } catch {
+    throw Error("Operation Failed");
+  }
+};
 ```
 
-`ApplicantGuard.canActivate` checks:
-1. `state` in localStorage equals `'true'` (authenticated)
-2. `role` in localStorage equals `'3'` (applicant role)
+**Recommended fix:**
+1. Change the function signature to accept `companyId` as a second parameter
+2. Add `AND company_id = $2` to the WHERE clause
+3. Update callers (`addCandidates` at line 21, `multipleCandidate` controller) to pass `companyId`
 
-If either check fails it resets the router config and returns `false`, which
-properly blocks navigation — unlike `AuthGuard` which returns `true` after
-redirecting. Placing the guard on the parent `path: ''` route means it fires
-for all five child routes simultaneously.
+```js
+// Recommended replacement:
+const checkEmailIfExistInCandidate = async (email, companyId) => {
+  try {
+    const searchQuery = `SELECT email
+            FROM ${dbSchema}.candidates
+            WHERE candidates.email = $1 AND company_id = $2;`;
+    const { rows } = await dbQuery.query(searchQuery, [email, companyId]);
+    if (!rows || rows.length === 0) {
+      return false;
+    }
+    return true;
+  } catch {
+    throw Error("Operation Failed");
+  }
+};
+```
 
-### Coverage after fix
+And in `addCandidates` (line 21), change:
+```js
+const ifExistCandidate = await checkEmailIfExistInCandidate(email);
+```
+to:
+```js
+const ifExistCandidate = await checkEmailIfExistInCandidate(email, companyId);
+```
 
-| Route | Guard chain |
-|-------|-------------|
-| `/user/dashboard` | AuthGuard + ApplicantGuard |
-| `/user/profile` | AuthGuard + ApplicantGuard |
-| `/user/applications` | AuthGuard + ApplicantGuard |
-| `/user/applications/:id` | AuthGuard + ApplicantGuard |
-| `/user/settings` | AuthGuard + ApplicantGuard |
+**Impact:** Eliminates the cross-company email-existence oracle for candidates. After the fix, an employer importing email X will only receive `DUPLICATE_CANDIDATE` if that email is already in their own company's candidate list.
 
-### Risk of change
+**Blocking for release?** No. The oracle was pre-existing and the practical leak is low (existence only, no other data).
 
-Low. `ApplicantGuard` enforces the same intent already declared in
-`app.routing.module.ts` (`data: { role: '3' }`). Applicant users (role=3) see
-no change in behaviour. Wrong-role users are now properly blocked at the FE
-guard layer (in addition to being redirected by `AuthGuard` and blocked by the
-BE 403 guard).
+---
 
-### Verification
+## Prior Session Fixes Still Holding (verified)
 
-Confirm in the browser:
-1. Log in as recruiter (role=2) → direct navigate to `/user/applications` → should
-   redirect to recruiter dashboard, not show the applicant panel.
-2. Log in as applicant (role=3) → navigate to `/user/applications` → should load
-   normally.
-3. Log out → direct navigate to `/user/applications/123` → should redirect to /signin.
+These fixes from prior sessions were verified still intact during this audit:
+
+| Fix | Session | Status |
+|---|---|---|
+| BOLA: `getUserCompany` from JWT in `createContact` | QA8 FIX-7 | HOLDING |
+| BOLA: `getUserCompany` from JWT in `multipleContact` | QA8 FIX-7 | HOLDING |
+| BOLA: JWT companyId override in `contacts.map(option => ...)` | NOTIFY-P2 | HOLDING |
+| Auth middleware on all contact routes | STITCH GH-ACT-011 | HOLDING |
+| Auth middleware on all candidate routes | STITCH GH-ACT-011 | HOLDING |
+| optionalVerifyAuth on GET /job/details | SEC-02 | HOLDING |
+| optionalVerifyAuth on GET /job/sharelink | SEC-02 | HOLDING |

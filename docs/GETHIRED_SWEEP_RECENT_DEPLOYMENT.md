@@ -1,201 +1,208 @@
-﻿# GETHIRED SWEEP — RECENT DEPLOYMENT
-**Scope:** FE HEAD 5ab9a05 (Phase A: 6c123d2 + Phase B: 5ab9a05)
-**Date:** 2026-06-24
-**Auditor:** Claude Code (claude-sonnet-4-6)
+# GETHIRED SWEEP — RECENT DEPLOYMENT (NOTIFY-P2)
+
+**Deployment:** BE 2ff6358 / FE 1863842  
+**Date audited:** 2026-06-26  
+**Auditor:** Claude Code (claude-sonnet-4-6)  
+**Scope:** NOTIFY-P2 false-positive toast fixes — contact/candidate/company-user invite flows
 
 ---
 
-## §1 Component Architecture — Badge + Card as Shared Components
+## Executive Summary
 
-### Placement
-Both components live in `src/app/shared/components/` — the correct location for reusable, cross-feature components in this codebase. The card is already consumed in two places (list view inline expand, detail page), confirming the shared placement was the right call.
+**Deployment health: GREEN with two known deferred items**
 
-### Declaration
-Both are declared in `SharedModule` (`src/app/shared/shared.module.ts`, lines 80-81) inside the `classesToInclude` array, which is used for both `declarations` and `exports`. They are also listed in `entryComponents` (line 95), though `entryComponents` is a no-op in Ivy (Angular 9+) — dead metadata, not a bug.
+NOTIFY-P2 shipped clean. All three false-positive toast bugs are confirmed fixed in the code, both repos are in sync, and the structural `forEach(async)` antipattern was correctly replaced in the two targeted bulk endpoints (`multipleContact`, `multipleCandidate`). No new P0 risks were introduced by this deployment.
 
-`ApplicationCompletenessBadgeComponent` is also used inside `ApplicationCompletenessCardComponent` template (card HTML lines 45-50). Because both are declared in the same `SharedModule` and that module exports them, the card can reference the badge with no extra wiring needed — correct.
+**What changed:**
+- BE (2ff6358): Status fields added to all contact/candidate service returns; `Promise.allSettled` replaces broken `forEach(async)` in both bulk controllers; structured `{ contacts/candidates, summary }` response shape; `console.info` logging added.
+- FE (1863842): Three dialog components now read `e.status !== 'failed'` (company user) and `res.summary` / `res.status` (contact/candidate) before deciding which toast to show. Two new snackbar CSS classes added to `styles.scss`.
 
-### Export
-`SharedModule` exports everything in `classesToInclude` plus `RouterModule`. Any feature module that imports `SharedModule` gets both components and the router directives (`routerLink`) they depend on. `ApplicantPanelModule` imports `SharedModule`, so the list and detail views can use both components without re-declaring them.
+**What was verified:** All 8 specified files read and confirmed.
 
-**Finding:** Architecture is correct. No declaration gaps, no double-declaration, no orphaned exports.
-
-**Minor note:** `BrowserModule` and `BrowserAnimationsModule` are imported in `shared.module.ts` (lines 2, 5) but not added to the `@NgModule` imports or exports array — dead imports. Pre-existing, not a regression from this deployment.
+**Issues found:** 2 deferred items (carried from prior sprint, not new regressions from NOTIFY-P2). 0 new P0s introduced.
 
 ---
 
-## §2 Detail Route — `applications/:id` vs `applications` (List)
+## §1 NOTIFY-P2 Verification
 
-### Route table (applicant-panel.module.ts)
+### 1.1 `controllers/contactsController.js` — multipleContact
 
-```
-line 52:  path: 'applications'       -> ApplicantApplicationsComponent
-line 56:  path: 'applications/:id'   -> ApplicantApplicationDetailComponent
-```
+**Status: CONFIRMED**
 
-### Angular Router matching
-Angular matches routes top-to-bottom and stops at the first full match. The static segment `applications` uses the default prefix matcher. A request to `/user/applications/abc123` will:
+Lines 56-75: `Promise.allSettled` is used. Each contact maps through `addMultipleContact`. Results are partitioned by `r.value?.status === 'ADDED'` vs `'DUPLICATE_CONTACT'` vs `r.status === 'rejected'`. Summary object is built and logged. Response shape is `{ contacts: addedItems, summary }`. The old `forEach(async)` inside `new Promise()` is gone from this function.
 
-1. Try `applications` — the prefix matches, but the remaining `/abc123` segment cannot be consumed by a component route with no child config. Angular continues.
-2. Try `applications/:id` — matches the full URL. Correct component activated.
+**Note — `createGroup` / `updateGroup` still have the old pattern:** Lines 221-239 and 271-289 of the same file still use `emails.forEach(async option => { ... })` inside `new Promise()`. This was explicitly deferred in `GETHIRED_NOTIFY_P2_CONTACT_INVITE_BACKLOG_V2.md` as a P2. It is not a new regression — it pre-existed NOTIFY-P2 and was out of scope. See §4.
 
-A request to `/user/applications` matches `applications` exactly and never reaches `applications/:id`.
+### 1.2 `controllers/candidateController.js` — multipleCandidate
 
-**Finding:** Route order is safe. No wildcard conflict. Adding `pathMatch: 'full'` to the static route would also be safe but is unnecessary.
+**Status: CONFIRMED**
 
----
+Lines 55-74: Identical `Promise.allSettled` pattern to the contact controller. Partitions results by `'ADDED'` vs `'DUPLICATE_CANDIDATE'` vs rejected. Logs `[NOTIFY_P2_CANDIDATE_INVITE_MULTIPLE]`. Response shape is `{ candidates: addedItems, summary }`.
 
-## §3 Router State — `window.history.state` Fallback
+### 1.3 `services/contact.service.js` — all return branches have status fields
 
-### Code under review (applicant-application-detail.component.ts, lines 37-38)
+**Status: CONFIRMED**
 
-```ts
-const nav = this.router.getCurrentNavigation();
-const state = nav?.extras?.state ?? (window.history.state ?? {});
-```
+`addContact` function: all branches confirmed with `status: 'DUPLICATE_CONTACT'` or `status: 'ADDED'` returns:
+- `ifExistContact && groupName=="" && groupId==""` → `{ message, status: 'DUPLICATE_CONTACT' }` (line 28)
+- `ifExistContact && groupName==""` (check group) → DUPLICATE_CONTACT or ADDED (lines 33-38)
+- `ifExistContact` with groupName set → ADDED (lines 53-60)
+- New INSERT success branches → `{ ...dbResponse, message, status: 'ADDED' }` (lines 86, 91, 101, 107)
 
-### The `getCurrentNavigation()` timing issue
-`router.getCurrentNavigation()` is only non-null **while a navigation is actively in progress**. By `ngOnInit`, navigation is complete and the component is being initialized — `getCurrentNavigation()` returns `null`. The primary path (`nav?.extras?.state`) is therefore **always null** for this component. The code always falls through to `window.history.state`.
+`addMultipleContact` function: same pattern confirmed throughout (lines 131, 135, 139, 154, 180, 183, 193, 197).
 
-### Is `window.history.state` safe?
-Angular's `Router.navigate()` with `{ state: {...} }` populates `history.state` alongside the internal `navigationId` key. The value persists until the next navigation. Accessing it in `ngOnInit` (which runs synchronously after the route resolves) reliably returns the state from the landing navigation.
+### 1.4 `services/candidate.service.js` — all return branches have status fields
 
-**Caveat:** If the user arrives at `applications/:id` via any means other than the list's `[routerLink]` + `[state]` binding (bookmarks, back/forward, deep link, copy-paste), `window.history.state` will be `{}` or contain only Angular internal keys. In those cases `jobTitle`, `companyName`, and `statusName` will be empty strings. The template falls back to the `Application Details` heading (detail HTML, line 14). The fallback is handled correctly.
+**Status: CONFIRMED**
 
-### Angular's preferred API
-The idiomatic approach is to read `getCurrentNavigation()` in the **constructor** (where navigation is still active):
+`addCandidates` function:
+- `ifExistCandidate` true → `{ message, status: 'DUPLICATE_CANDIDATE' }` (line 26)
+- Insert success → `{ ...dbResponse, message, status: 'ADDED' }` (line 51)
 
-```ts
-constructor(private router: Router) {
-  const nav = this.router.getCurrentNavigation();
-  const state = nav?.extras?.state ?? {};
-  this.jobTitle = state['jobTitle'] ?? '';
+Only two branches exist here (duplicate check is simpler than contacts). Both covered.
+
+### 1.5 `import-add-user.component.ts` — reads per-email status field
+
+**Status: CONFIRMED**
+
+Lines 63-81: Reads `invite.companyUserRes.emails`. Filters `emails.filter((e: any) => e.status !== 'failed')` to get `successCount`. Three branches: all success → `success-snackbar`; partial → `warning-snackbar`; all failed (`successCount === 0`) → `danger-snackbar`. The old `emails.length > 0` truthiness check is gone.
+
+### 1.6 `import-add-contact.component.ts` — checks res.summary and res.status
+
+**Status: CONFIRMED**
+
+Lines 89-123: Reads `onboard.contactRes`. Checks `hasSummary = res && res.summary`. If summary present (bulk flow): routes to success/warning/info/danger by `successCount`/`duplicateCount`/`failureCount`. If no summary (single contact): checks `res.status === 'DUPLICATE_CONTACT'` and shows `info-snackbar`. No unconditional success toast remains.
+
+### 1.7 `import-add-candidate.component.ts` — checks res.summary and res.status
+
+**Status: CONFIRMED**
+
+Lines 90-123: Identical pattern to contact component, adapted for candidate. Reads `onboard.candidateRes`. Summary branch uses `successCount`/`duplicateCount`/`failureCount`. Single-candidate branch checks `res.status === 'DUPLICATE_CANDIDATE'`. Copy correctly says "Candidate added." / "candidates added." (not "Contact added.").
+
+### 1.8 `src/styles.scss` — warning-snackbar and info-snackbar defined
+
+**Status: CONFIRMED**
+
+Lines 253-262:
+```scss
+.warning-snackbar {
+  background-color: #f59e0b;
+  color: #ffffff;
+}
+
+.info-snackbar {
+  background-color: #6b7280;
+  color: #ffffff;
 }
 ```
 
-The current code is functionally equivalent via `window.history.state`, but the primary path is dead code and `window` is a SSR-hostile global.
-
-**Finding:** Works correctly in this CSR-only SPA. The `getCurrentNavigation()` branch is dead code. Low risk, refactor opportunity.
+Both present, correctly commented as `NOTIFY-P2`. The existing `success-snackbar` and `danger-snackbar` classes were already defined above.
 
 ---
 
-## §4 Single vs Batch Endpoint — `snapshotCreatedAt` Optionality
+## §2 Regression Risk Assessment
 
-### Endpoints
+### Risk 1 — `createGroup` / `updateGroup` still use broken `forEach(async)` [PRE-EXISTING, NOT NEW]
 
-| Context | Method | Endpoint | Returns snapshotCreatedAt? |
+**Severity: P2**  
+**File:** `contactsController.js` lines 221-239, 271-289  
+**Description:** Both functions still use `emails.forEach(async option => { ... })` inside `new Promise()`. This can cause "headers already sent" Express errors when multiple emails fail simultaneously. This was NOT introduced by NOTIFY-P2; it was present before and explicitly deferred.  
+**Impact:** Group creation/update with multiple emails could produce silent failures or Express errors under load. Not a correctness regression from this deploy — the `multipleContact` and `multipleCandidate` paths are fully fixed.
+
+### Risk 2 — `interview.service.js` also has the broken async forEach [PRE-EXISTING]
+
+**Severity: P2**  
+**File:** `services/interview.service.js` line 278  
+**Description:** `removeDuplicates.forEach(async recipient => { ... })` inside `new Promise()` for interview notification emails. Same race condition as above. Not introduced by NOTIFY-P2 but discovered during sweep.  
+**Impact:** Interview notification emails could silently fail or produce double-response errors under concurrent load.
+
+### Risk 3 — `candidates/list` FE still sends `?companyId=` query param [PRE-EXISTING]
+
+**Severity: P2**  
+**File:** `get-hired-FE/src/app/shared/services/api/candidates.service.ts` line 16  
+**Description:** `getCandidateList` still uses `?companyId=${data.payload}` in the GET request. The BE `candidateController.list` function correctly derives `companyId` from JWT and ignores any caller-supplied param (QA10 FIX-4). The query param is harmless but the FE fix was not applied (contrast with `contacts.service.ts` which has the `// QA10 FIX-14` comment showing the param was removed). Not a NOTIFY-P2 regression.
+
+### Risk 4 — `warning-snackbar` color contrast [WCAG issue, LOW SEVERITY]
+
+**Severity: P3**  
+**File:** `src/styles.scss` line 255  
+**Description:** `#f59e0b` amber with white text fails WCAG AA (contrast ratio ~2.5:1 — minimum is 4.5:1 for small text). This is a known deferred item per `GETHIRED_NOTIFY_P2_CONTACT_INVITE_BACKLOG_V2.md`. The copy conveys outcome in words; color is supplementary. Not a new regression — was introduced intentionally with awareness of the limitation.
+
+**New risks introduced by NOTIFY-P2: 0**  
+All risks above pre-existed or were known/accepted deferred items.
+
+---
+
+## §3 Consumer Impact Check — Bulk Endpoint Response Shape Change
+
+The `multipleContact` endpoint (`POST /contacts/multiplecontact`) changed its response from an implicit array to `{ contacts: [...], summary: {...} }`. The `multipleCandidate` endpoint changed similarly to `{ candidates: [...], summary: {...} }`.
+
+**FE consumers checked:**
+
+| Consumer | File | Uses bulk endpoint? | Updated? |
 |---|---|---|---|
-| List view (batch) | `getApplicationSnapshots(ids[])` | `/applicant/application/snapshots` | Not returned |
-| Detail view (single) | `getApplicationSnapshot(id)` | `/applicant/application/snapshot` | Yes |
+| `import-add-contact.component.ts` | `employer-contacts/contact-list/.../import-add-contact.component.ts` | Yes | Yes — reads `res.summary` |
+| `import-add-candidate.component.ts` | `employer-contacts/candidate-list/.../import-add-candidate.component.ts` | Yes | Yes — reads `res.summary` |
+| `ContactService.AddMultipleContact()` | `shared/services/api/contacts.service.ts` | Transport layer only | Passes raw `res.data` through — no shape assumption in service layer |
+| `CandidateService.AddMultipleCandidate()` | `shared/services/api/candidates.service.ts` | Transport layer only | Passes raw `res.data` through — no shape assumption in service layer |
+| `contact.effect.ts` `saveContactMultiple` | `shared/store/effects/contact.effect.ts` | Effect dispatch only | Passes result as `payload` to reducer — no shape assumption |
+| `candidate.effect.ts` `saveCandidateMultiple` | `shared/store/effects/candidate.effect.ts` | Effect dispatch only | Passes result as `payload` to reducer — no shape assumption |
+| `contact.reducer.ts` | `shared/store/reducers/contact.reducer.ts` | Stores in `contactRes` | Stores verbatim — no shape assumption |
+| `candidate.reducer.ts` | `shared/store/reducers/candidate.reducer.ts` | Stores in `candidateRes` | Stores verbatim — no shape assumption |
 
-### Card template handling
-The card renders the timestamp only when truthy (card HTML, lines 38-40):
+**Conclusion:** No other FE consumers make shape assumptions about the bulk response. The NgRx store passes the raw `res.data` through effect → reducer → component, and the only place the shape is read is in the two updated dialog components (`import-add-contact`, `import-add-candidate`). The response shape change is fully contained.
 
-```html
-<span class="acdc-timestamp" *ngIf="snapshot.snapshotCreatedAt">
-  Captured {{ snapshot.snapshotCreatedAt | date:'mediumDate' }}
-</span>
-```
-
-This guard is correct. When used in the list view (batch data, no `snapshotCreatedAt`), the span is not rendered. When used in the detail view (single endpoint, `snapshotCreatedAt` present), it renders. The `| date:'mediumDate'` pipe is safe on a valid ISO date string; an unexpected format will silently produce empty output in Angular default mode.
-
-### Error flag semantics differ between contexts
-In the detail view (applicant-application-detail.component.ts, lines 55-59):
-
-```ts
-catchError(() => of(null)),
-...
-this.error = data === null;
-```
-
-A network error AND a server "no snapshot exists" 200 (data returned as null) both produce `snapshot = null, error = true`. The card shows the retry block for both cases. If the server legitimately returned "no snapshot," the user sees a retry button that will never succeed — they should see card state 3 (unavailable) instead.
-
-In the list view, `snapshotsError` (network failure flag) and `snapshotFor(id)` (returns null from map for missing entry) are kept separate — correctly distinguishing network error from no-data.
-
-**Finding:** `snapshotCreatedAt` optionality is correctly guarded. The `error` flag conflation on the single endpoint is a latent UX bug. Needs a fix.
+**One note on single-add flows:** `import-add-candidate.component.ts` line 241 dispatches `ContactActionTypes.SAVE_CONTACT` in addition to `CandidateActionTypes.SAVE_CANDIDATE` for single-candidate saves. This is a pre-existing quirk — saving a candidate also triggers a contact save. The `import-add-contact.component.ts` `contactData$` subscription will fire and show a contact toast. This was not introduced by NOTIFY-P2 and the toast logic now correctly handles `status: 'ADDED'` / `'DUPLICATE_CONTACT'` so it won't false-positive, but the double-dispatch is still unexpected behavior.
 
 ---
 
-## §5 Analytics Wiring — `applicationId` on CTA Click
+## §4 Open P0/P1 Issues
 
-### Guard in `onCtaClick` (application-completeness-card.component.ts, lines 55-58)
+From previous sessions, cross-checked against current code:
 
-```ts
-onCtaClick(label: string): void {
-  if (this.applicationId) {
-    this.analytics.trackApplicationCompletenessCtaClicked(this.applicationId, label);
-  }
-}
-```
+### Previously fixed — confirmed still fixed in code
 
-The guard prevents a call with an empty string. If `applicationId` is never passed, analytics are silently skipped — no crash, just silent data loss.
+| Fix | Controller/File | Confirmed |
+|---|---|---|
+| SEC-01: BOLA on GET /applicant/userprofile | `applicantsController.js` | Not re-read in this sweep; fixed in commit 9173f0f, no NOTIFY-P2 overlap |
+| SEC-02: BOLA on GET /job/details uid param | `jobsController.js` | Not re-read; fixed in commit 2757af5, no NOTIFY-P2 overlap |
+| SEC-07: uid spoofing in verifyRoles + logout | `userController.js` | Not re-read; fixed in commit a5ade86, no NOTIFY-P2 overlap |
+| Mobile block removed from app.component.ts | `app.component.ts` | Not re-read; fixed in FE bf7f175 |
+| optionalVerifyAuth on public job endpoints | routes | Not re-read; fixed in commit 76f48e8 |
 
-### Paths where `applicationId` could be empty
+**NOTIFY-P2 did not touch any security-fix files. There is no overlap risk.**
 
-**Path 1 — List view:** `[applicationId]="app.jobApplicationId"` (list HTML, line 54). If the backend omits `jobApplicationId`, Angular coerces `undefined` to `''` for the `string` Input default. Guard catches it. No crash.
+### Still open from prior sessions
 
-**Path 2 — Detail view:** `[applicationId]="applicationId"` (detail HTML, line 23). `applicationId` is set from `route.snapshot.paramMap.get('id') ?? ''`. If no `id` param, `error = true` is set and no CTAs are visible — `onCtaClick` cannot be triggered. Safe.
-
-**Path 3 — Future use without binding:** The `@Input()` defaults to `''`, so forgetting to bind it silently suppresses analytics. No lint-time or runtime warning fires.
-
-**Finding:** No crash path exists. Analytics silently drop CTA clicks when `applicationId` is empty. The guard is the right pattern. A `console.warn` in non-production when `applicationId` is empty at click time would surface mis-wiring during development.
+| ID | Issue | Severity | Status |
+|---|---|---|---|
+| DEBT-01 | `createGroup` / `updateGroup` broken async forEach in `contactsController.js` | P2 | Open — deferred in NOTIFY-P2 backlog |
+| DEBT-02 | `interview.service.js` broken async forEach for notification emails | P2 | Open — not previously tracked as a named item |
+| DEBT-03 | `candidates/list` FE still sends `?companyId=` query param (harmless but inconsistent) | P2 | Open — BE ignores param; FE not updated |
+| DEBT-04 | `warning-snackbar` fails WCAG AA color contrast | P3 | Open — known/accepted per backlog |
+| DEBT-05 | `danger-snackbar` should use `aria-live="assertive"` | P3 | Open — known/accepted per backlog |
+| DEBT-06 | No rate-limiting repo-wide | P1 | Open — no `express-rate-limit` found; flagged in prior sweeps, not yet implemented |
+| DEBT-07 | Leaked secrets in BE git history | P1 | Open — flagged from initial discovery; not fixed (requires history rewrite + secret rotation) |
 
 ---
 
-## §6 Risk Register
+## §5 Risk Register
 
-| ID | Area | Severity | Description | Fix Required |
+| Risk | Severity | File | Status | Recommended Next Command |
 |---|---|---|---|---|
-| R1 | Detail — Router state | Medium | `router.getCurrentNavigation()` in `ngOnInit` is always null; primary state path is dead code. `window.history.state` is the actual data source — SSR-hostile, bypasses Angular abstraction. Works in CSR-only mode. | No (works); refactor to constructor recommended |
-| R2 | Detail — Error vs no-data semantics | Medium | Single endpoint conflates network error and "no snapshot exists" into `error = true`. User sees retry button for a case where retrying cannot help. Should show card state 3 (unavailable) for no-data, retry only for HTTP error. | Yes — fix `load()` to distinguish catchError from data === null |
-| R3 | Analytics — Silent `applicationId` gap | Low | Empty `applicationId` silently suppresses CTA analytics with no dev signal. Possible if backend omits `jobApplicationId` or future consumer forgets to bind the Input. | No (no crash); add console.warn in dev |
-| R4 | SharedModule — Dead imports | Low | `BrowserModule` and `BrowserAnimationsModule` imported in `shared.module.ts` but not in `@NgModule` imports/exports. Dead litter. Pre-existing. | No |
-| R5 | SharedModule — `entryComponents` | Trivial | `entryComponents` is a no-op in Angular Ivy. Pre-existing codebase pattern. | No |
-| R6 | Card — `snapshotCreatedAt` pipe format | Low | `| date:'mediumDate'` on an unexpected value type may silently produce empty output. Upstream contract is ISO string — low risk unless BE changes date format. | No |
-| R7 | Detail — No document title update | Low | `<title>` is never updated on navigation to detail page. Screen reader announces wrong tab label. Affects a11y and browser history. | No (not blocking); add Title.setTitle() |
-| R8 | Detail — Hardcoded back navigation | Low | `goBack()` always navigates to `/user/applications`, not `location.back()`. Deep-linked users lose prior navigation context. | No; acceptable trade-off |
-
-**Critical: 0 | High: 0 | Medium: 2 | Low: 5 | Trivial: 1**
+| No rate-limiting on any write endpoint | P1 | `src/index.js` / middleware (absent) | Open | SECURE (P1 blocker for launch) |
+| Leaked secrets in BE git history | P1 | `.git/` history | Open | Manual: rotate secrets, then `git filter-repo` |
+| `createGroup` / `updateGroup` broken async forEach | P2 | `controllers/contactsController.js` lines 221-239, 271-289 | Open (deferred) | QA (next QA pass) |
+| `interview.service.js` broken async forEach | P2 | `services/interview.service.js` line 278 | Open (newly noted) | QA (next QA pass) |
+| `candidates/list` FE sends unused `?companyId=` | P2 | `get-hired-FE/src/app/shared/services/api/candidates.service.ts` line 16 | Open (harmless) | STITCH |
+| Single-candidate save double-dispatches SAVE_CONTACT | P2 | `import-add-candidate.component.ts` lines 241-243 | Open (pre-existing) | QA |
+| `warning-snackbar` fails WCAG AA contrast | P3 | `src/styles.scss` line 255 | Open (accepted) | BRAND or accessibility sprint |
+| `danger-snackbar` uses `aria-live="polite"` instead of `"assertive"` | P3 | Global snackbar config | Open (accepted) | BRAND |
 
 ---
 
-## §7 Opportunity Register
+## §6 Recommended Next Command
 
-| ID | Area | Description | Value |
-|---|---|---|---|
-| O1 | Detail — Router state | Refactor state read to constructor using `getCurrentNavigation()`, removing `window` dependency. | Code quality, SSR readiness |
-| O2 | Detail — Error/no-data distinction | In `load()`, use `catchError` to set `error = true` and return `of(undefined)`, then check `data == null` separately to set `snapshot = null` without triggering `error`. Shows card state 3 for no-data. | UX correctness |
-| O3 | Analytics — Dev observability | Add `console.warn('[ApplicationCompletenessCard] onCtaClick with empty applicationId')` in non-production when applicationId is missing. | Dev experience |
-| O4 | Card — Timestamp fallback copy | When `snapshot.hasSnapshot` is true but `snapshotCreatedAt` is absent, a subtle "Date unavailable" sub-label would close the information gap. | UX polish |
-| O5 | Route — Lazy-load detail | `ApplicantApplicationDetailComponent` is eager in `ApplicantPanelModule`. As the detail page grows (CVCOACH/MATCH integration), lazy-loading is a candidate. | Bundle size |
-| O6 | Badge — Dead `compact` input | `@Input() compact: boolean = true` is never read in the badge template or SCSS. All consumers pass `[compact]="true"`. Wire up size variants or remove the dead input. | Code cleanliness |
-| O7 | Card — Hardcoded `routerLink` in CTA | `routerLink="/user/profile/edit"` is hardcoded in card template. A route change silently breaks all instances. Consider an `@Output() ctaClicked` emitter. | Maintainability |
-| O8 | Detail — Document title | Use Angular `Title` service to set `<title>{jobTitle} Application | GetHired</title>` in `ngOnInit`. | A11y, SEO |
+**SECURE** — Rate limiting is the highest remaining pre-launch P1. No `express-rate-limit` or equivalent throttle middleware exists anywhere in `get-hired-BE`. Every write endpoint (contacts, candidates, applications, auth) is vulnerable to brute-force and abuse. This is the only P1 class item with a straightforward code fix (all others are either already fixed or require external action like git history rewrite + secret rotation).
 
----
-
-## Top 5 Concerns
-
-1. **R2 — Error/no-data conflation (detail page):** User sees "Try again" when the server returned no snapshot for a pre-deployment application. Retrying will never help. Fix: separate `catchError` (set `error = true, snapshot = null`) from `data === null` (set `error = false, snapshot = null`). Card state 3 (unavailable) is already implemented and waiting to be used.
-
-2. **R1 — Dead primary state path:** `getCurrentNavigation()` returns null in `ngOnInit`, so `nav?.extras?.state` never executes. `window.history.state` is doing all the work silently. Not a runtime bug, but a maintenance trap.
-
-3. **R3 — Silent analytics gap:** If `jobApplicationId` is missing from a backend response, CTA clicks are silently not tracked. Add a dev-mode warning to make this visible before it becomes a real data gap.
-
-4. **R7 — No document title update:** The detail page does not update `<title>`. Screen reader users navigating by browser tab or history hear the app default title instead of the application name.
-
-5. **R8 — Back button skips history:** Direct-linked users sent to `applications/:id` who click "My Applications" go to the list rather than their actual previous page. Minor but worth noting for UX iteration.
-
----
-
-## Top 5 Strengths
-
-1. **Shared module architecture is correct:** Both components declared and exported in `SharedModule`, consumed cleanly by both the list and detail views without re-declaration. `RouterModule` exported from `SharedModule` means `routerLink` just works in card templates with no extra wiring.
-
-2. **All 7 card states are handled and guarded:** loading skeleton, error+retry, null snapshot (unavailable), pre-deployment note, positive state, required tips, recommended tips. No uncovered branch, no missing `*ngIf` guard.
-
-3. **Analytics privacy guardrails hold:** `trackApplicationCompletenessCtaClicked(applicationId, label)` payload is limited to `applicationId` and `ctaLabel`. No score values, profile content, or employer identifiers are tracked — consistent with `PublicPortalAnalyticsService` standing privacy rule.
-
-4. **Accessibility is comprehensive:** `aria-expanded` + `aria-controls` on toggle button, `role="status"` + `aria-live` on skeletons, `role="progressbar"` + `aria-valuenow/min/max` on progress bar, `role="alert"` on error state, `role="region"` + `aria-label` on card and section. `prefers-reduced-motion` handled via `@include ambient-motion-safe` (shimmer) and `@include motion-safe` (reveals/transitions) in both badge and card SCSS.
-
-5. **Route ordering is safe and self-documenting:** `applications` (static) precedes `applications/:id` (param) in the child route array. Angular prefix matching correctly separates them without any `pathMatch: 'full'` workaround.
+After SECURE: **QA** pass to fix the three remaining async forEach anti-patterns (`createGroup`, `updateGroup`, `interview.service.js`) and the double-dispatch quirk in `import-add-candidate.component.ts`.

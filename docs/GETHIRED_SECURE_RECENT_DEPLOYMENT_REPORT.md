@@ -1,240 +1,197 @@
-# GETHIRED SECURE — Recent Deployment Security Report
-**Scope:** FE HEAD 5ab9a05 — ApplicantApplicationDetailComponent + ApplicationCompletenessCardComponent
-**Date:** 2026-06-24
-**Auditor:** SECURE command (automated)
+# GetHired — SECURE Recent Deployment Report
+## NOTIFY-P2 Security Assessment
+**Audit date:** 2026-06-26
+**Scope:** BE 2ff6358 / FE 1863842 (NOTIFY-P2 deployment)
+**Auditor:** Claude Code SECURE RECENT DEPLOYMENT pass
 
 ---
 
-## Executive Summary
+## 1. Executive Summary
 
-The recent deployment introduced two new FE surfaces:
-- `ApplicantApplicationDetailComponent` at `/user/applications/:id`
-- `ApplicationCompletenessCardComponent` (child completeness card)
+The NOTIFY-P2 deployment is **security-clean with one pre-existing medium-severity concern** (candidate duplicate-check scope, see section 4.2) that was present before this deployment. No new security regressions were introduced. All BOLA guards remain intact, logging is safe, and no sensitive data is exposed through new status fields.
 
-**Overall verdict: GO WITH CAUTION**
-
-The backend IDOR guard is solid and no XSS vectors exist. The one notable gap is
-that `ApplicantGuard` is imported in `applicant-panel.module.ts` but never placed
-on any route — so the intended role enforcement for the new detail route relies
-entirely on `AuthGuard`, which returns `true` for wrong-role authenticated users
-(redirect-only). The BE 403 backstop prevents data leakage; a one-line fix closes
-the FE gap.
+**Overall verdict:** GO WITH CAUTION (one pre-existing M2 finding documented; no P0 introduced by this deployment)
 
 ---
 
-## Gate Results
+## 2. NOTIFY-P2 Changes Audited
 
-| Gate | Description | Result |
-|------|-------------|--------|
-| A | `/user/applications/:id` protected by ApplicantGuard | PARTIAL PASS |
-| B | BE IDOR check exists; FE shows error on 403 | PASS |
-| C | Router state values are display-only, never sent to BE | PASS |
-| D | Analytics data contains no PII beyond applicationId | PASS |
-| E | No `[innerHTML]` on snapshot text fields | PASS |
-
----
-
-## Gate A — Route Guard Analysis (PARTIAL PASS)
-
-### App-level routing (`app.routing.module.ts` lines 46-53)
-
-```
-{
-  path: 'user',
-  loadChildren: () => import('./applicant-panel/applicant-panel.module')...,
-  canActivate: [AuthGuard],
-  data: { role: '3', isMobileViewAllowed: false }
-}
-```
-
-`AuthGuard` is the only guard that fires for the entire `user/` subtree.
-
-### Panel-level routing (`applicant-panel.module.ts` lines 25-66)
-
-```
-const routes: Routes = [
-  {
-    path: '',
-    component: ApplicantPanelComponent,
-    // NO canActivate here
-    children: [
-      { path: 'applications', component: ApplicantApplicationsComponent },
-      { path: 'applications/:id', component: ApplicantApplicationDetailComponent },
-      // NO canActivate on any child
-    ],
-  },
-];
-```
-
-`ApplicantGuard` is imported in the module (`line 6`) but never placed on any route.
-
-### AuthGuard behaviour for wrong-role users
-
-```typescript
-// auth.guard.ts lines 54-68
-async checkUserLogin(route, url): Promise<boolean> {
-  const logged = await this.asyncLocalStorage.getItem('state');
-  if (logged == 'true') {
-    const userRole = await this.coreService.getRole();
-    if (route.data.role && route.data.role.indexOf(userRole) === -1) {
-      this.navigateToUserRole(userRole);  // redirects but...
-    }
-    return true;  // ...still returns true — wrong-role user is not blocked
-  }
-  ...
-}
-```
-
-A logged-in recruiter (role=2) who navigates to `/user/applications/123` will:
-1. Pass `AuthGuard` (returns `true` after firing redirect)
-2. The FE component mounts briefly and calls `getApplicationSnapshot(123)`
-3. The BE returns 403 (IDOR guard fires)
-4. The error state is shown
-5. The redirect to `/recruiter/dashboard` arrives
-
-The component lifecycle and API call fire for one tick before the redirect arrives.
-No data is returned or shown due to the BE backstop.
-
-**Risk level: P1** (not P0) — BE backstop prevents data leakage; unauthenticated
-users are fully blocked by `AuthGuard`'s `logged != 'true'` check.
-
-**Recommended fix:** Add `canActivate: [ApplicantGuard]` to the `path: ''` parent
-route in `applicant-panel.module.ts`. This covers all 5 child routes at once.
-See FIX_LOG for the exact one-line patch.
+| File | Change | Security-relevant? |
+|---|---|---|
+| `services/contact.service.js` | Added `status: 'ADDED' / 'DUPLICATE_CONTACT'` return field | Yes — email-oracle risk assessed (section 4) |
+| `services/candidate.service.js` | Added `status: 'ADDED' / 'DUPLICATE_CANDIDATE'` return field | Yes — candidate-oracle risk assessed (section 4) |
+| `controllers/contactsController.js` multipleContact | Replaced broken forEach(async) with Promise.allSettled; added console.info log | Yes — BOLA guard, logging both assessed (sections 3, 5) |
+| `controllers/candidateController.js` multipleCandidate | Same pattern replacement + logging | Yes — BOLA guard, logging both assessed (sections 3, 5) |
+| `get-hired-FE` import-add-user.component | Per-email status display in UI | Yes — information disclosure assessed (section 6) |
 
 ---
 
-## Gate B — IDOR on Detail Route (PASS)
+## 3. BOLA Protection Verification
 
-**BE enforcement:** `getApplicantApplicationSnapshot` checks `candidate_id !== uid`
-before returning any data, returning 403 on mismatch.
+### 3.1 multipleContact — contactsController.js (lines 38-82)
 
-**FE error handling (`applicant-application-detail.component.ts` lines 52-60):**
+**BOLA guard: INTACT**
 
-```typescript
-this.sub = this.applicationService.getApplicationSnapshot(this.applicationId).pipe(
-  map((res: any) => res?.data ?? null),
-  catchError(() => of(null)),   // any error (including 403) -> null
-).subscribe(data => {
-  this.snapshot = data;
-  this.loading = false;
-  this.error = data === null;   // null -> error card shown
+- `getUserCompany(req.user.uid)` runs at line 43 — JWT-derived, BEFORE any data processing
+- Hard 403 return if no valid company (lines 44-46)
+- `companyId` from JWT is spread LAST in `{ ...option, companyId }` at line 57, overwriting any body-supplied companyId
+- `Promise.allSettled` result: only `addedItems` (ADDED status) are returned to the client (lines 60-62). Duplicate and failure counts are returned as aggregate integers only — no per-record email addresses or IDs leak through the summary object
+
+**Verdict: PASS**
+
+### 3.2 multipleCandidate — candidateController.js (lines 39-80)
+
+**BOLA guard: INTACT** — identical pattern to multipleContact:
+
+- `getUserCompany(req.user.uid)` at line 44 before any processing
+- `companyId` spread-overrides body value at line 56
+- Only `addedItems` returned; duplicate/failure counts are aggregate integers
+
+**Verdict: PASS**
+
+### 3.3 createContact — still uses JWT companyId (line 16)
+
+**Verdict: PASS** (unchanged from prior sessions)
+
+### 3.4 Route-level auth middleware
+
+Both `/contacts/multiplecontact` and `/candidates/multiplecandidate` are registered with `verifyAuth` middleware in their respective route files. No unauthenticated path exists.
+
+**Verdict: PASS**
+
+---
+
+## 4. Email-Existence Oracle (Information Disclosure) Analysis
+
+### 4.1 Contact oracle — checkEmailIfExistInContact (contact.service.js lines 205-221)
+
+SQL used:
+```
+SELECT email FROM {schema}.contact
+WHERE contact.email = $1 AND contact.company_id = $2
+```
+
+**Scoped to the caller's own company_id.** The `companyId` passed here is the JWT-derived value from the controller. An employer submitting email X and receiving `DUPLICATE_CONTACT` learns only that **they already have email X in their own contact list** — which is correct, expected, and not a cross-company information leak.
+
+**Verdict: ACCEPTABLE** — company-scoped duplicate check; no cross-tenant oracle risk.
+
+### 4.2 Candidate oracle — checkEmailIfExistInCandidate (candidate.service.js lines 57-71)
+
+SQL used:
+```
+SELECT email FROM {schema}.candidates
+WHERE candidates.email = $1
+-- NOTE: NO company_id filter
+```
+
+**This is a pre-existing global duplicate check.** The `companyId` is NOT passed to this function. An employer importing candidate X receives `DUPLICATE_CANDIDATE` if email X is in the candidates table under ANY company. This means:
+
+- Employer A submitting email X learns email X has been imported as a candidate somewhere on the platform — even if it was Employer B's import.
+- This is a **cross-company information oracle** for the candidates table.
+
+**Severity: MEDIUM (M2)** — This was present before NOTIFY-P2. The `// TODO (Filter by agency)` comment at line 58 of candidate.service.js acknowledges it. NOTIFY-P2 made the oracle's output more visible by surfacing it as a structured `DUPLICATE_CANDIDATE` status field rather than silently failing, but did not introduce the underlying global scope.
+
+**Note:** Practical impact is low — the signal only tells an employer "this email exists in candidates globally" (not which company, not which job, not any PII beyond the email they themselves submitted), but it is a policy violation to leak any cross-tenant existence signal.
+
+**Recommended fix (non-blocking for release):** Pass `companyId` into `checkEmailIfExistInCandidate` and add `AND company_id = $2` to the WHERE clause. See FIX_LOG for the recommended change.
+
+---
+
+## 5. Logging Safety Review
+
+### 5.1 contactsController.js multipleContact log (line 73)
+
+```
+console.info('[NOTIFY_P2_CONTACT_INVITE_MULTIPLE]', {
+    endpoint: 'POST /contacts/multiplecontact',
+    totalRequested,
+    successCount,
+    failureCount,
+    duplicateCount,
+    outcome
 });
 ```
 
-A 403 response is caught by `catchError`, produces `null`, sets `error = true`,
-and shows the error card. No snapshot data is ever rendered.
+**Safe.** The logged object contains:
+- `endpoint` — static string, no PII
+- `totalRequested`, `successCount`, `failureCount`, `duplicateCount` — aggregate integers, no PII
+- `outcome` — one of `all_success | partial_success | duplicate_only | all_failed` — no PII
 
-**Enumeration exposure:** `applicationId` is read from the URL param (attacker
-supplies it). It is not logged to console or analytics before the BE confirms
-ownership. `onCtaClick` analytics only fires after a valid owned snapshot is
-displayed. No pre-confirmation logging of the ID exists in the codebase.
+No email addresses, UIDs, names, phone numbers, or other PII are logged.
 
-**Result: PASS**
+**Verdict: PASS**
 
----
+### 5.2 candidateController.js multipleCandidate log (line 72)
 
-## Gate C — Router State Trust (PASS)
+Identical structure to 5.1. Same verdict.
 
-`jobTitle`, `companyName`, `statusName` are read from `window.history.state`.
+**Verdict: PASS**
 
-Full data-flow audit:
-- Displayed only via Angular interpolation: `{{ jobTitle }}`, `{{ companyName }}`,
-  `{{ statusName }}` — HTML-escaped, XSS-safe.
-- Never passed to any HTTP call (only `this.applicationId` goes to the API).
-- Never used in a security decision, guard check, or permission evaluation.
-- Not passed to analytics (analytics receives only `applicationId` and a static
-  label string).
+### 5.3 Pre-existing console logs noted (non-blocking)
 
-A user who crafts `window.history.state` can only affect their own browser display.
-No other user is impacted.
-
-**Result: PASS**
+- `console.log(data)` in import-add-user.component.ts constructor (line 49): logs the full dialog data object to the browser console. Browser-side only, not server exposure. Low severity, cosmetic.
+- `console.log(data, "company add user data")` in saveCompanyUser (line 154): logs companyId and email array to browser console. Not a server-side risk.
+- `console.log(dbResponse)` in candidate.service.js line 149 inside `candidateList`: logs the full candidate list result to the server console. Pre-existing, not introduced by NOTIFY-P2. Low severity but unnecessary production log.
 
 ---
 
-## Gate D — Analytics PII (PASS)
+## 6. FE Component Security Review — import-add-user.component
 
-`trackApplicationCompletenessCtaClicked(applicationId, ctaLabel)` sends:
-- `applicationId`: internal DB ID — not name, email, or personal detail
-- `ctaLabel`: one of two static strings (`'Update your profile'` / `'Add to your profile'`)
+### 6.1 What invitedUsersList exposes in the UI template
 
-The analytics service (`public-portal-analytics.service.ts`):
-- Has no real SDK wired (`console.debug` only in dev; no-op in prod per comment and prior
-  repo-wide search confirming no gtag/segment/mixpanel/amplitude)
-- Makes no network calls
-- Payload contains no PII, no score values, no employer identifiers
+The template at lines 176-185 of the HTML renders `invitedUsersList` showing `item.email`, `item.msg`, and `item.message`. This data comes from `invite.companyUserRes.emails` — the response from `POST /company/addcompanyuser` (addCompanyUser controller). The controller returns per-email: `{ email, status, msg }` where msg is one of:
 
-**Result: PASS**
+- "Email already a user."
+- "Failed to Create credentials"
+- "Successfully added"
+- "Failed to assign User to a Company"
+- "Failed to add user"
 
----
+**Assessment:** The FE shows back only the emails the employer themselves submitted, plus a success/failure message for each. No cross-tenant data is exposed. No UIDs, Firebase tokens, or internal IDs are returned or displayed.
 
-## Gate E — XSS via Snapshot Data (PASS)
+**Verdict: PASS**
 
-All snapshot text bindings in `application-completeness-card.component.html`:
+### 6.2 Status leakage via per-email statuses
 
-| Field | Binding | Safe |
-|-------|---------|------|
-| `snapshot.disclaimerNote` | `{{ snapshot.disclaimerNote }}` | YES |
-| `snapshot.privacyNote` | `{{ snapshot.privacyNote }}` | YES |
-| `tip.reason` (missingRequired) | `{{ tip.reason }}` | YES |
-| `tip.reason` (missingRecommended) | `{{ tip.reason }}` | YES |
-| `snapshot.completenessScore` | `{{ snapshot.completenessScore }}` | YES |
-| `snapshot.snapshotCreatedAt` | `{{ snapshot.snapshotCreatedAt \| date:'mediumDate' }}` | YES |
-| `snapshot.completenessLevel` | `[ngClass]="progressLevelClass"` (class string) | YES |
+The `status: 'failed'` / `status: 'success'` values are visible only to the invoking employer. The "failed because already a user" case discloses that the submitted email is already registered in the system — but only to the employer who submitted that email. This is functionally necessary and scoped appropriately.
 
-No `[innerHTML]` binding found anywhere in the detail component, the card component
-template, or the card component TypeScript. Angular interpolation escapes all output.
-
-**Result: PASS**
+**Verdict: ACCEPTABLE**
 
 ---
 
-## All Findings
+## 7. Existing Security Fix Verification
 
-| ID | Severity | Title | Status |
-|----|----------|-------|--------|
-| F-01 | P1 | `ApplicantGuard` not in route chain for any `user/` child route | Fix applied |
-| F-02 | INFO | `AuthGuard.canActivate` returns `true` for wrong-role users (systemic, pre-existing) | Documented |
-| F-03 | INFO | Router state spoofing — cosmetic display-only risk | Accepted |
+| Fix | Location | Status |
+|---|---|---|
+| `createContact` uses `getUserCompany(req.user.uid)` | contactsController.js line 16 | PASS |
+| `multipleContact` BOLA guard present in new code | contactsController.js lines 43-47 | PASS |
+| `optionalVerifyAuth` on GET /job/details | jobsRoute.js line 62 | PASS |
+| `optionalVerifyAuth` on GET /job/sharelink | jobsRoute.js line 63 | PASS |
+| `optionalVerifyAuth.js` exists and is correct | middleware/optionalVerifyAuth.js | PASS |
+| All contact routes have `verifyAuth` | contactRoutes.js | PASS |
+| All candidate routes have `verifyAuth` | candidateRoutes.js | PASS |
 
 ---
 
-## Finding Detail
+## 8. Still-Open Security Items (from Prior Sessions — Unchanged by NOTIFY-P2)
 
-### F-01 (P1) — ApplicantGuard not in route chain
+| ID | Item | Severity | Status |
+|---|---|---|---|
+| P0-1 | PayMongo webhook HMAC verification missing | P0 | OPEN — endpoint accepts any event |
+| P0-2 | Firebase service account key in git history | P0 | OPEN — requires external rotation, not fixable in code |
+| P1-1 | CORS wildcard `app.use(cors())` | P1 | OPEN — awaiting domain list |
+| P1-2 | `verifyAuth.js` leaks raw Firebase error messages | P1 | PARTIALLY OPEN |
+| P1-3 | `createGroup`/`updateGroup` broken forEach(async) race condition | P1 (DoS risk) | OPEN — not fixed in NOTIFY-P2 |
+| M2-1 | `checkEmailIfExistInCandidate` lacks company_id scope (global oracle) | MEDIUM | OPEN — pre-existing, confirmed in this audit |
 
-**File:** `src/app/applicant-panel/applicant-panel.module.ts`
+---
 
-`ApplicantGuard` is imported but never placed on any route. All five child routes
-(`dashboard`, `profile`, `applications`, `applications/:id`, `settings`) rely solely
-on `AuthGuard` at the `user/` mount point, which returns `true` for any authenticated
-user regardless of role. A recruiter or admin who directly navigates to
-`/user/applications/123` will mount the component and fire the API call before the
-`navigateToUserRole` redirect completes. The BE 403 backstop prevents data exposure.
+## 9. New Findings from This Audit
 
-**Fix:** Add `canActivate: [ApplicantGuard]` to the parent `path: ''` route — one line
-that covers all child routes simultaneously. See FIX_LOG for the exact patch.
+| ID | Finding | Severity | Action |
+|---|---|---|---|
+| N-1 | `checkEmailIfExistInCandidate` is global-scoped (confirmed, pre-existing) | MEDIUM | Recommend fix; non-blocking for release |
+| N-2 | `console.log(dbResponse)` in `candidateList` service logs full list server-side | LOW | Non-blocking cosmetic |
+| N-3 | FE `console.log(data)` in import-add-user constructor logs dialog data to browser | LOW | Non-blocking cosmetic |
 
-### F-02 (INFO) — AuthGuard returns true for wrong-role users (systemic)
-
-**File:** `src/app/shared/guard/auth.guard.ts` lines 59-64
-
-This is a pre-existing pattern in the codebase affecting all guarded routes, not
-introduced by this deployment. The guard redirects the user but still returns `true`,
-relying on the navigation side-effect rather than the boolean return value to enforce
-role separation. This pattern means any guard that wraps `AuthGuard` semantics (without
-stacking `ApplicantGuard`) is porous to wrong-role authenticated users.
-
-**Fix:** Out of scope for this deployment fix pass — systemic refactor. Flagged for
-backlog.
-
-### F-03 (INFO) — Router state spoofing (cosmetic)
-
-**File:** `src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.ts`
-lines 38-41
-
-A user can manipulate `window.history.state` before navigating to see arbitrary text
-in the job title / company name / status header. This affects only their own view.
-No backend call, security decision, or other user is affected. Accepted as-is —
-this is standard Angular practice for navigation metadata (e.g., breadcrumbs).
+**No P0 or P1 findings were introduced by NOTIFY-P2.**

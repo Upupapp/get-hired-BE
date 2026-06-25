@@ -1,143 +1,144 @@
 # GetHired NOTIFY — Recent Deployment Audit Report
-**Scope:** FE HEAD 5ab9a05 — ApplicationCompletenessBadge, ApplicationCompletenessCard, ApplicantApplicationDetail, ApplicantApplications list
-**Date:** 2026-06-24
-**Auditor:** NOTIFY command (scoped to recent deployment)
+## NOTIFY-P2 — BE 2ff6358 / FE 1863842
+
+**Audit date:** 2026-06-26
+**Scope:** 3 FE components (import-add-user, import-add-contact, import-add-candidate) + styles.scss; codebase-wide false-positive scan
 
 ---
 
-## Summary
+## Executive Summary
 
-32 user-facing strings audited across 4 components (2 shared, 2 applicant-panel). 4 fixes applied. All 5 gates pass.
+NOTIFY-P2 correctly eliminates false-positive success toasts across all three import/add flows. The logic is sound in all three components: each reads actual outcome data from the API response before choosing a toast class and message. No false-positive "Successfully added contact" or equivalent unconditional success strings remain.
 
----
+This audit found and fixed 2 defects:
 
-## Files Audited
+1. **Wrong noun in company-user all-failed copy** — "No contacts were added." used "contacts" for a flow that invites company colleagues, not CRM contacts. Fixed to "No invites were sent." which matches the success-path verb ("Invite sent.").
+2. **`.success-snackbar` missing `color: #ffffff`** — background was set but text color was not, unlike all other snackbar classes. Angular Material would inherit dark text on the red background — a contrast failure. Fixed.
 
-| File | Role |
-|------|------|
-| `get-hired-FE/src/app/shared/components/application-completeness-badge/application-completeness-badge.component.ts` | Badge aria-label logic |
-| `get-hired-FE/src/app/shared/components/application-completeness-badge/application-completeness-badge.component.html` | Badge template |
-| `get-hired-FE/src/app/shared/components/application-completeness-card/application-completeness-card.component.html` | Card template (all score/tip/disclaimer states) |
-| `get-hired-FE/src/app/shared/components/application-completeness-card/application-completeness-card.component.ts` | Card logic |
-| `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.html` | Detail page (back button, section heading) |
-| `get-hired-FE/src/app/applicant-panel/applicant-application-detail/applicant-application-detail.component.ts` | Detail page logic |
-| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.html` | Applications list (detail link, toggle button) |
-| `get-hired-FE/src/app/applicant-panel/applicant-applications/applicant-applications.component.ts` | Applications list logic |
-| `get-hired-BE/controllers/applicationController.js` | BE disclaimer/privacyNote strings, error messages |
+A prior automated BRAND pass (before this audit ran) also upgraded `.warning-snackbar` from `#f59e0b` (amber-400, 2.15:1 — WCAG AA fail) to `#b45309` (amber-800, 5.02:1 — WCAG AA pass) and tokenized both colors into `colors.scss`. Those changes are already in place.
 
 ---
 
-## String Inventory
+## Message Quality Audit (NOTIFY Framework)
 
-### ApplicationCompletenessBadgeComponent (8 strings)
+### import-add-user.component.ts — Company User Invite
+**File:** `src/app/company/company-users/dialogs/import-add-user.component/import-add-user.component.ts`
 
-| # | String | State | Finding |
-|---|--------|-------|---------|
-| 1 | "Getting started" | badge level (incomplete) | PASS — neutral, encouraging, not judgmental |
-| 2 | "Excellent" | badge level | PASS — unambiguously positive |
-| 3 | "Strong" | badge level | PASS — positive |
-| 4 | "Basic" | badge level | PASS — descriptive, not pejorative |
-| 5 | "Unavailable" | visible text (null/null state) | PASS — factual and non-punitive |
-| 6 | "Application completeness: Snapshot unavailable" | aria-label (null/null) | FIXED — was "Application completeness: unavailable" (lowercase); corrected to match spec |
-| 7 | "Loading application completeness" | aria-label (loading) | PASS — clear to screen readers |
-| 8 | "Application completeness: {Level}, {N} percent" | aria-label (score) | PASS — reads aloud correctly, e.g. "Application completeness: Strong, 82 percent" |
+| Outcome | Message | Class | Duration | Quality |
+|---|---|---|---|---|
+| All sent (1 email) | "Invite sent." | success | 4000ms | Clear, honest |
+| All sent (N emails) | "N invites sent." | success | 4000ms | Good specificity |
+| Partial | "N sent. M couldn't be added." | warning | 6000ms | Honest, adequate |
+| All failed | "No invites were sent." (FIXED from "No contacts were added.") | danger | 6000ms | Now correct noun |
 
-### ApplicationCompletenessCardComponent (18 strings)
+**Noun mismatch issue (fixed):** The original all-failed message said "contacts" but this component handles company user invitations — colleagues and team members, not CRM contacts. The word "contacts" is used specifically for the employer contacts feature (import-add-contact). Using it here was both factually wrong and contradicted the success-path terminology ("Invite sent." / "N invites sent."). Fixed to "No invites were sent."
 
-| # | String | State | Finding |
-|---|--------|-------|---------|
-| 9 | "Loading application completeness" | skeleton aria-label | PASS |
-| 10 | "Couldn't load completeness details right now." | error state | PASS — generic, safe, no internals |
-| 11 | "Try again" | error retry button | PASS |
-| 12 | "Completeness details unavailable right now." | null snapshot | PASS — temporary framing, not permanent failure |
-| 13 | "This application was submitted before completeness tracking was introduced. Completeness details are available for new applications going forward." | pre-deployment state | PASS — factual, forward-looking, no blame |
-| 14 | "Application completeness when submitted" | score header label | PASS — anchors score to submission moment, not current state |
-| 15 | "Captured {date}" | timestamp | PASS — precise and unambiguous; only shown when snapshotCreatedAt is present |
-| 16 | "Your profile was complete when you applied. Keep it updated for future applications." | positive/complete state | PASS — affirming, action-forward |
-| 17 | "What was missing when you applied" | required tips heading | PASS — past-tense framing; positions gap as historical, not current judgment |
-| 18 | "Add these now to strengthen future applications:" | required tips sub-heading | PASS — future-focused action framing |
-| 19 | "Nice-to-haves (not required)" | recommended tips heading | PASS — explicitly labels optional nature |
-| 20 | "Extra details that help you stand out:" | recommended tips sub-heading | PASS — positive framing |
-| 21 | "Update your profile →" | required CTA | PASS — directive action, not accusatory |
-| 22 | "Add to your profile →" | recommended CTA | PASS |
-| 23 | "This score reflects how much information was included when you applied — it is not a quality rating and has no effect on hiring decisions." | disclaimerNote (from BE) | PASS — explicitly decouples from hiring; present whenever score shown |
-| 24 | "Protected personal attributes (such as gender, age, religion, and disability status) are never included in completeness scoring." | privacyNote (from BE) | PASS — explicit and reassuring |
-| 25 | "Application completeness: {N} percent" | progressbar aria-label | PASS — reads correctly for assistive tech |
-| 26 | "Application completeness details" | card region aria-label | PASS |
+**Actionability gap (deferred):** Partial and all-failed cases do not identify which email addresses failed. Adding failure detail would require dialog-level UI changes (a failure list below the toast), not just toast copy. Flagged as D-01.
 
-### ApplicantApplicationDetailComponent (6 strings)
+### import-add-contact.component.ts — Contacts
+**File:** `src/app/employer-panel/employer-contacts/contact-list/dialogs/import-add-contact/import-add-contact.component.ts`
 
-| # | String | State | Finding |
-|---|--------|-------|---------|
-| 27 | "Back to My Applications" | back button aria-label | FIXED — added explicit aria-label; visible text ("My Applications") was screen-reader-accessible but lacked directional cue |
-| 28 | "My Applications" | back button visible text | PASS |
-| 29 | "‹" / "←" | back button icon | PASS — aria-hidden="true" |
-| 30 | "Application Details" | fallback h1 | PASS — minimal safe fallback when no jobTitle in router state |
-| 31 | "Application completeness" | section h2 | PASS |
-| 32 | "Application completeness" | section aria-label | PASS (redundant with h2 but not harmful) |
+| Outcome | Message | Class | Duration | Quality |
+|---|---|---|---|---|
+| Single added | "Contact added." | success | 4000ms | Correct |
+| Bulk all added (N=1) | "Contact added." | success | 4000ms | Consistent with single |
+| Bulk all added (N>1) | "N contacts added." | success | 4000ms | Good |
+| Partial | "N added. M couldn't be added." | warning | 6000ms | Honest |
+| All duplicate (bulk) | "No new contacts were added. These contacts are already in your list." | info | 6000ms | Explains why — good |
+| Single duplicate | "This contact is already in your list." | info | 5000ms | Clear, friendly |
+| All failed (non-dup) | "No contacts were added." | danger | 6000ms | Correct |
 
-### applicant-applications.component.html (4 strings/elements)
+Logic verified: reads `res.summary.successCount`, `failureCount`, `duplicateCount` for bulk; `res.status === 'DUPLICATE_CONTACT'` for single. No false positive possible.
 
-| # | String/Element | State | Finding |
-|---|----------------|-------|---------|
-| 33 | Completeness toggle button | list row | FIXED — was title-attribute only; added dynamic aria-label ("Show/Hide application completeness for {jobTitle}") |
-| 34 | "View full details →" | detail link | FIXED — added aria-label="View full application details for {jobTitle}"; was ambiguous when multiple rows present |
-| 35 | "→" (link arrow) | detail link | PASS — aria-hidden="true" |
-| 36 | "Application completeness details" | expandable region aria-label | PASS |
+Duration note: single duplicate 5000ms vs bulk 6000ms — acceptable (shorter message).
+
+### import-add-candidate.component.ts — Candidates
+**File:** `src/app/employer-panel/employer-contacts/candidate-list/dialogs/import-add-candidate/import-add-candidate.component.ts`
+
+Mirror pattern to contacts; uses "candidate" / "candidates" throughout.
+
+| Outcome | Message | Class | Duration | Quality |
+|---|---|---|---|---|
+| Single added | "Candidate added." | success | 4000ms | Correct |
+| Bulk all added (N=1) | "Candidate added." | success | 4000ms | Consistent |
+| Bulk all added (N>1) | "N candidates added." | success | 4000ms | Good |
+| Partial | "N added. M couldn't be added." | warning | 6000ms | Honest |
+| All duplicate (bulk) | "No new candidates were added. These candidates are already in your list." | info | 6000ms | Clear |
+| Single duplicate | "This candidate is already in your list." | info | 5000ms | Clear |
+| All failed (non-dup) | "No candidates were added." | danger | 6000ms | Correct |
+
+Logic verified: same branching pattern as contact component. Reads `res.status === 'DUPLICATE_CANDIDATE'` for single.
 
 ---
 
-## BE Error Message Safety
+## False-Positive Scan — Full Codebase
 
-Both the single-app and batch snapshot endpoints return only safe, generic error messages:
+Searched all `src/` for unconditional success strings on add/import paths.
 
-| Endpoint | Error Message |
-|----------|---------------|
-| GET /applicant/application/snapshot (400) | "applicationId is required." |
-| GET /applicant/application/snapshot (500) | "Unable to retrieve your application snapshot. Please try again later." |
-| GET /applicant/application/snapshots (400) | "applicationIds is required." / "applicationIds must be a non-empty comma-separated list of up to 50 IDs." |
-| GET /applicant/application/snapshots (500) | "Unable to retrieve your application snapshots. Please try again later." |
+**Result: No false positives found in any of the three NOTIFY-P2 components.**
 
-No stack traces, no SQL, no internal field names, no DB schema identifiers in any error response.
+Other snackbar calls audited outside NOTIFY-P2 scope:
 
----
-
-## Forbidden Language Scan
-
-Pattern: `bad application`, `weak candidate`, `rejected`, `AI score`, `guaranteed`, `auto-rejected`, `you are not qualified`
-
-- FE src/app: **0 user-facing matches** (1 code-comment hit on "guaranteed" in routing module — not user-facing)
-- BE applicationController.js: **0 user-facing matches** (1 code-comment hit on "rejected" in input-validation comment — not user-facing)
-
-Gate A: PASS
+| File | Call | Assessment |
+|---|---|---|
+| `contact-list.component.ts:103` | `snackBar.open(contact.success, ...)` with `success-snackbar` | Dead code — `contact.success` is never set in the reducer (initial state is `null`, no case sets it). Never fires. |
+| `candidate-list.component.ts:101` | `snackBar.open(candidate.success, ...)` with `success-snackbar` | Same — dead code. |
+| `contact-list.component.ts:110,122` | "Successfully Edited Contact!" / "Successfully Deleted Contact!" | Gated on `editContactRes`/`deleteContactRes` keys — correct success toasts for confirmed backend operations. Not false positives. |
+| All other success toasts | Profile update, job publish, clipboard copy, auth, interview | All gated on confirmed backend state transitions. No unconditional false positives found. |
 
 ---
 
-## Tone Assessment
+## CSS / Snackbar Class Audit
 
-All tip sections use past-tense anchoring ("What was missing when you applied") to ensure the applicant understands observations are about the submission moment — not a current or ongoing judgment. Sub-headings are action-oriented ("Add these now") and future-facing ("strengthen future applications"). The complete-state message is affirming. The pre-deployment message is purely factual. No comparative, punitive, or accusatory framing found anywhere.
+**File:** `src/styles.scss` | `src/assets/styles/colors.scss`
 
-Gate B: PASS
+### `.success-snackbar` — text color missing (FIXED this audit)
+Was: `background-color: $color-global-red-buttons` with no `color` property.
+Fixed: Added `color: #ffffff`. Without this, Angular Material's default dark text renders on red (#FF7062) — contrast failure. All other snackbar classes (danger/warning/info) already had explicit white text.
+
+### `.warning-snackbar` — amber upgraded (prior BRAND pass, already in place)
+Original NOTIFY-P2 value: `#f59e0b` (Tailwind amber-400) — 2.15:1 contrast vs white (WCAG AA fail).
+Current value: `$color-warning-amber` = `#b45309` (Tailwind amber-800) — 5.02:1 (WCAG AA pass).
+
+### `.info-snackbar` — gray tokenized (prior BRAND pass, already in place)
+`$color-info-gray` = `#6b7280` (Tailwind gray-500) — 4.83:1 contrast vs white (WCAG AA pass for large/bold text).
+
+### Final snackbar class state
+
+| Class | Background | Text | Contrast | WCAG AA Status |
+|---|---|---|---|---|
+| `.success-snackbar` | #FF7062 (brand red) | #ffffff (fixed) | 3.0:1 | Passes AA Large Text (3:1 threshold); below AA Normal Text (4.5:1) — brand constraint |
+| `.danger-snackbar` | #FE6F61 (brand red) | #ffffff | 3.1:1 | Same — brand constraint |
+| `.warning-snackbar` | #b45309 (amber-800) | #ffffff | 5.02:1 | AA pass |
+| `.info-snackbar` | #6b7280 (gray-500) | #ffffff | 4.83:1 | AA pass (large/bold) |
+
+Success and danger use the brand red palette (~3:1). This passes WCAG AA Large Text but not Normal Text. Improving these would require a brand-level color decision — outside scope of this audit.
 
 ---
 
-## Disclaimer Presence Analysis
+## Accessibility Notes
 
-- `disclaimerNote` is hardcoded in both BE endpoints (single and batch) — never absent when data is returned
-- FE card template: `*ngIf="snapshot.disclaimerNote"` — renders when present
-- `disclaimerNote` is included in batch results even for `hasSnapshot === false` entries — in that case the score section is hidden (pre-deployment message shown instead), so the disclaimer paragraph is technically present in the DOM but associated with no displayed score. Low risk; disclaimer text is benign in any context.
+### aria-live
+Angular Material `MatSnackBar` uses `aria-live="polite"` by default. For `danger-snackbar` (all failed), `assertive` would be more appropriate — screen readers should interrupt to announce errors immediately rather than waiting.
 
-Gate C: PASS
+**Angular 13 limitation:** Overriding `aria-live` requires creating a custom `ToastComponent` and using `openFromComponent()` instead of `open()`. This is out of scope for a safe-fix pass. Flagged as D-03.
+
+### Toast durations
+All durations are appropriate for the message lengths:
+- 4000ms success: adequate for "N candidates added." (~3 words)
+- 5000ms single-duplicate info: adequate for "This contact is already in your list." (~8 words)
+- 6000ms warning/multi-info/danger: adequate for longest message "No new contacts were added. These contacts are already in your list." (~14 words, ~5-6s read time)
+
+### Reduced-motion
+The global `prefers-reduced-motion` block in `styles.scss` covers all `transition-duration` and `animation-duration` values globally, suppressing Material's snackbar slide-in. No additional action needed.
 
 ---
 
-## Screen Reader / Back Button / Detail Link
+## Deferred Findings
 
-| Issue | Before | After |
-|-------|--------|-------|
-| Badge null aria-label | "Application completeness: unavailable" | "Application completeness: Snapshot unavailable" |
-| Back button | Text-only (no explicit aria-label) | aria-label="Back to My Applications" |
-| Toggle button | title attribute only | aria-label="Show/Hide application completeness for {jobTitle}" (dynamic) |
-| Detail link | Generic "View full details" (no context) | aria-label="View full application details for {jobTitle}" |
-
-Gate E: PASS (after fixes)
+| ID | Issue | Severity | Recommended Action |
+|---|---|---|---|
+| D-01 | Partial-failure toasts show count but not which items failed | Low | Add a failure detail list in the dialog, not the toast |
+| D-02 | success/danger snackbar contrast ~3:1 (brand red) — below AA for normal-size text | Low | Brand-level color decision required |
+| D-03 | danger-snackbar should use `aria-live="assertive"` for screen readers | Medium | Implement custom `ToastComponent` wrapper in Angular Material |
+| D-04 | `contact.success` / `candidate.success` reducer fields are never populated — dead code branches in list components | Low | Remove dead branches in contact-list.component.ts:102 and candidate-list.component.ts:100 |
