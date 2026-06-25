@@ -339,17 +339,23 @@ const saveJobArray = async (jobId, arrays) => {
   }
 };
 
+// F-08 child-table hardening: companyId is now threaded through from the
+// calling controller (derived from getUserCompany, never from client input).
+// This allows updateQuestionById to add a defence-in-depth company_id check
+// on each individual question update, scoped via job_interview_template.
+// The primary ownership gate is in the parent updateJob WHERE clause.
 const interviewQuestionsUpdate = async (
   jobId,
   interviewQuestions,
-  interviewTemplateId
+  interviewTemplateId,
+  companyId = null
 ) => {
   let templateToUse = interviewTemplateId;
-  interviewQuestions.map(async (question) => {
+  await Promise.all(interviewQuestions.map(async (question) => {
     if (question.questionId) {
-      await updateQuestionById(question);
+      await updateQuestionById(question, companyId);
     } else {
-      if (!interviewTemplateId) {
+      if (!templateToUse) {
         //  Create template first
         const newTemplate = await createInterviewTemplateQuestions(
           jobId,
@@ -360,7 +366,7 @@ const interviewQuestionsUpdate = async (
       }
       await createQuestion(question, templateToUse);
     }
-  });
+  }));
 };
 
 const jobDetails = async (jobId) => {

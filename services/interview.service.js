@@ -71,26 +71,48 @@ const createInterviewTemplateQuestions = async (jobId, templateName, companyId =
   }
 }
 
-const updateQuestionById = async interviewQuestion => {
+// F-08 child-table hardening: updateQuestionById is always called from
+// interviewQuestionsUpdate, which is itself called only after the parent
+// updateJob ownership check succeeds (WHERE job_id=$19 AND company_id=$20).
+// That gate provides the primary protection. As an additional defence-in-depth
+// layer, if a companyId is supplied here (passed through from the controller
+// caller scope), the UPDATE is further scoped via a subquery that joins back
+// through job_interview_template.company_id. When companyId is null (legacy
+// callers that have no company context), the plain WHERE falls back to
+// question_id only — which is acceptable because those callers are already
+// behind the parent ownership gate.
+const updateQuestionById = async (interviewQuestion, companyId = null) => {
   const { questionId, question, answerDuration, retakes, sequence } =
     interviewQuestion
 
-  const updateQuery = `UPDATE ${dbSchema}.interview_template_question
-  SET template_question=$1, template_answer_duration=$2, 
-    template_question_retakes=$3, updated_at=$4, sequence=$5
-  WHERE template_question_id=$6 returning *; `
+  // Build the WHERE clause: if companyId provided, join through template for
+  // an additional ownership scope; otherwise use question_id only.
+  let updateQuery
+  let params
+  if (companyId) {
+    updateQuery = `UPDATE ${dbSchema}.interview_template_question itq
+      SET template_question=$1, template_answer_duration=$2,
+        template_question_retakes=$3, updated_at=$4, sequence=$5
+      WHERE itq.template_question_id=$6
+        AND itq.job_interview_template_id IN (
+          SELECT job_interview_template_id
+          FROM ${dbSchema}.job_interview_template
+          WHERE company_id=$7
+        )
+      returning *;`
+    params = [question, answerDuration, retakes, now, sequence, questionId, companyId]
+  } else {
+    updateQuery = `UPDATE ${dbSchema}.interview_template_question
+      SET template_question=$1, template_answer_duration=$2,
+        template_question_retakes=$3, updated_at=$4, sequence=$5
+      WHERE template_question_id=$6 returning *;`
+    params = [question, answerDuration, retakes, now, sequence, questionId]
+  }
 
   try {
-    const { rows } = await dbQuery.query(updateQuery, [
-      question,
-      answerDuration,
-      retakes,
-      now,
-      sequence,
-      questionId
-    ])
+    const { rows } = await dbQuery.query(updateQuery, params)
 
-    if (!rows && rows.length == 0) {
+    if (!rows || rows.length == 0) {
       throw 'Failed to update question'
     }
     const dbResponse = mappedQuestion(rows[0])

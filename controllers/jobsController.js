@@ -355,10 +355,14 @@ const updateJob = async (req, res) => {
     });
 
     if (interviewQuestions) {
+      // F-08 child-table hardening: pass callerCompany.companyId so that
+      // updateQuestionById gains a defence-in-depth ownership scope on every
+      // individual question update (joins back through job_interview_template).
       await interviewQuestionsUpdate(
         jobId,
         interviewQuestions,
-        interviewTemplateId
+        interviewTemplateId,
+        callerCompany.companyId
       );
     }
 
