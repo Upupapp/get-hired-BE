@@ -228,7 +228,6 @@ const createGroupInterview = async (groupInterview, userId) => {
     (group_interview_id, group_interview_name, interview_template_question_id, job_id, group_ids, created_at, created_by, updated_at, recipients, company_id, external_job_link)
     VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`
 
-  let thisIsRecipient = []
   let recipients2 = []
   let recipientsList = []
   let numberOfRecipient = 0
@@ -274,17 +273,10 @@ const createGroupInterview = async (groupInterview, userId) => {
 
     const removeDuplicates = merge(recipientsList, recipients2)
     const companyName = await getCompanyNameByCompanyId(companyId)
-    let multiple = new Promise((resolve, reject) => {
-      removeDuplicates.forEach(async recipient => {
-        const sendEmail = await sendEmailInterview(recipient, companyName)
-
-        thisIsRecipient.push(recipient)
-        if (thisIsRecipient.length == removeDuplicates.length) resolve()
-      })
-    })
-    multiple.then(() => {
-      numberOfRecipient = thisIsRecipient.length
-    })
+    const emailSettled = await Promise.allSettled(
+      removeDuplicates.map(recipient => sendEmailInterview(recipient, companyName))
+    );
+    numberOfRecipient = emailSettled.filter(r => r.status === 'fulfilled').length;
 
     const dbResponse = await Promise.all(
       rows.map(async row => {

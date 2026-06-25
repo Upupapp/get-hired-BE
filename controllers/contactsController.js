@@ -217,28 +217,15 @@ const createGroup = async (req, res) => {
             return res.status(status.error).json(errorResponse('Failed to Create Group'));
         }
         if (emails.length > 0) {
-
-            let multiple = new Promise((resolve, reject) => {
-                emails.forEach(async option => {
-                    const create = await addInGroupList(add.group_id, option.email)
-                    if (!create) {
-                        return res.status(status.error).json(errorResponse('Failed to Add In Group ' + option.email));
-                    }
-
-                    thisIsContacts.push(create);
-                    if (thisIsContacts.length == emails.length) resolve();
-                });
-            });
-            multiple.then(() => {
-                const addMultiple = {
-                    ...add,
-                    contacts: thisIsContacts
-                };
-
-                return res.status(status.success).json(successResponse(addMultiple));
-            });
-
+            const settled = await Promise.allSettled(
+                emails.map(option => addInGroupList(add.group_id, option.email))
+            );
+            thisIsContacts = settled
+                .filter(r => r.status === 'fulfilled' && r.value)
+                .map(r => r.value);
         }
+
+        return res.status(status.success).json(successResponse({ ...add, contacts: thisIsContacts }));
 
     }
     catch (error) {
@@ -267,30 +254,15 @@ const updateGroup = async (req, res) => {
         }
 
         if (emails.length > 0) {
-
-            let multiple = new Promise((resolve, reject) => {
-                emails.forEach(async option => {
-                    const create = await addInGroupList(groupId, option.email)
-                    if (!create) {
-                        return res.status(status.error).json(errorResponse('Failed to Add In Group ' + option.email));
-                    }
-
-                    thisIsContacts.push(create);
-                    if (thisIsContacts.length == emails.length) resolve();
-                });
-            });
-            multiple.then(() => {
-                const addMultiple = {
-                    ...groupUpdate,
-                    contacts: thisIsContacts
-                };
-
-                return res.status(status.success).json(successResponse(addMultiple));
-            });
-
-        } else {
-            console.log('Empty email object');
+            const settled = await Promise.allSettled(
+                emails.map(option => addInGroupList(groupId, option.email))
+            );
+            thisIsContacts = settled
+                .filter(r => r.status === 'fulfilled' && r.value)
+                .map(r => r.value);
         }
+
+        return res.status(status.success).json(successResponse({ ...groupUpdate, contacts: thisIsContacts }));
     }
     catch (error) {
         if (error && error.message === 'FORBIDDEN') {
