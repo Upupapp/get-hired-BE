@@ -257,7 +257,7 @@ const getUserProfile = async (req, res) => {
     const redactUid = (u) => (typeof u === 'string' && u.length > 6)
       ? u.slice(0, 3) + '***' + u.slice(-3)
       : '***';
-    console.warn(
+    console.error(
       `[SEC_01_APPLICANT_USERPROFILE_UID_MISMATCH] ${ts} ` +
       `endpoint=GET /applicant/userprofile ` +
       `authenticatedUid=${redactUid(tokenUid)} ` +
