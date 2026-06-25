@@ -271,9 +271,11 @@ const getInterviewHub = async (req, res) => {
          j.job_id,
          j.job_title,
          s.job_applicant_status_name,
-         u.first_name,
-         u.last_name,
-         u.email,
+         -- STITCH QA11 FIX F-01: users table uses firstname/lastname (no underscores).
+         -- users.email was dropped in DDL migration; email is on user_credentials.
+         u.firstname,
+         u.lastname,
+         uc.email,
          u.photo_url,
          COALESCE(va.video_answer_count, 0) AS video_answer_count
        FROM ${dbSchema}.job_applicants ja
@@ -284,6 +286,9 @@ const getInterviewHub = async (req, res) => {
          ON ap.user_id = ja.candidate_id
        LEFT JOIN ${dbSchema}.users u
          ON u.uid = ja.candidate_id
+       -- STITCH QA11 FIX F-01: users.email was dropped; join user_credentials for email
+       LEFT JOIN ${dbSchema}.user_credentials uc
+         ON uc.uid = ja.candidate_id
        LEFT JOIN (
          SELECT ia.applicant_id, COUNT(*) AS video_answer_count
          FROM ${dbSchema}.interview_answers ia
@@ -299,8 +304,8 @@ const getInterviewHub = async (req, res) => {
     const items = rows.map(r => ({
       applicationId: r.job_application_id,
       applicantId: r.candidate_id,
-      applicantName: r.first_name && r.last_name
-        ? `${r.first_name} ${r.last_name}`.trim()
+      applicantName: r.firstname && r.lastname
+        ? `${r.firstname} ${r.lastname}`.trim()
         : (r.email || null),
       applicantEmail: r.email || null,
       applicantPhotoUrl: r.photo_url || null,

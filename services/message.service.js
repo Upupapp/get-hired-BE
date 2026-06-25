@@ -193,15 +193,20 @@ const listRecruiterThreads = async (callerUid) => {
        j.job_title      AS "jobTitle",
        last_msg.body    AS "lastMessageSnippet",
        last_msg.sender_role AS "lastSenderRole",
-       u.first_name     AS "applicantFirstName",
-       u.last_name      AS "applicantLastName",
-       u.email          AS "applicantEmail",
+       -- STITCH QA11 FIX F-01: users table uses firstname/lastname (no underscores)
+       u.firstname      AS "applicantFirstName",
+       u.lastname       AS "applicantLastName",
+       uc.email         AS "applicantEmail",
        u.photo_url      AS "applicantPhotoUrl"
      FROM ${dbSchema}.message_threads mt
      LEFT JOIN ${dbSchema}.jobs j
        ON j.job_id = mt.job_id
      LEFT JOIN ${dbSchema}.users u
        ON u.uid = mt.applicant_uid
+     -- STITCH QA11 FIX F-01: users.email was dropped in DDL migration;
+     -- email lives in user_credentials. Join separately to get applicant email.
+     LEFT JOIN ${dbSchema}.user_credentials uc
+       ON uc.uid = mt.applicant_uid
      LEFT JOIN LATERAL (
        SELECT body, sender_role
        FROM   ${dbSchema}.messages
