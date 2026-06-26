@@ -18,7 +18,7 @@ const dbSchema = env.schema;
 const verifyRoles = (allowedRoles) => async(req, res, next) => {
     // SEC-07 FIX: derive uid from verified Firebase JWT, never from caller-supplied body/query.
     // verifyAuth middleware must run before verifyRoles on any route that uses both.
-    const uid = req.user?.uid;
+    const uid = req.user && req.user.uid;
     if (!uid) {
         return res.status(status.unauthorized).json(errorResponse('Authentication required'));
     }

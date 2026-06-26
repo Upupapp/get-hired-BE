@@ -57,9 +57,9 @@ const multipleCandidate = async (req, res) => {
     );
 
     const addedItems = settled
-      .filter(r => r.status === 'fulfilled' && r.value?.status === 'ADDED')
+      .filter(r => r.status === 'fulfilled' && r.value && r.value.status === 'ADDED')
       .map(r => r.value);
-    const duplicateCount = settled.filter(r => r.status === 'fulfilled' && r.value?.status === 'DUPLICATE_CANDIDATE').length;
+    const duplicateCount = settled.filter(r => r.status === 'fulfilled' && r.value && r.value.status === 'DUPLICATE_CANDIDATE').length;
     const failureCount = settled.filter(r => r.status === 'rejected').length;
     const successCount = addedItems.length;
     const totalRequested = candidate.length;
