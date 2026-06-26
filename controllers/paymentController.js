@@ -1,6 +1,5 @@
 import crypto from "crypto";
 import { successResponse, errorResponse, status } from "../helpers/status";
-import idGenerator from "../helpers/randomNumberForId";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 
@@ -88,36 +87,219 @@ const verifyPaymongoSignature = (req) => {
     const b = Buffer.from(expected, "hex");
     if (a.length !== b.length) return false;
     return crypto.timingSafeEqual(a, b);
-  } catch {
+  } catch (e) {
     return false;
   }
 };
 
+// ---------------------------------------------------------------------------
+// NOTIFY-P1: Webhook event ledger — idempotency gate
+// These functions use the payment_webhook_events table to deduplicate by
+// PayMongo event ID. They degrade gracefully if the table hasn't been migrated
+// yet (PostgreSQL error 42P01 = undefined_table) — in that case the
+// insertTransactionTable ON CONFLICT fix below is the safety net.
+// Apply db/payment_webhook_events_ddl.sql to enable full event-ID deduplication.
+// ---------------------------------------------------------------------------
+
+const claimWebhookEvent = async (eventId, eventType, providerObjectId) => {
+  const query = `
+    INSERT INTO ${dbSchema}.payment_webhook_events
+      (provider, event_id, event_type, provider_object_id, status,
+       received_at, created_at, updated_at)
+    VALUES ('paymongo', $1, $2, $3, 'processing', NOW(), NOW(), NOW())
+    ON CONFLICT (provider, event_id) DO NOTHING
+    RETURNING id`;
+  const { rows } = await dbQuery.query(query, [
+    eventId,
+    eventType || null,
+    providerObjectId || null,
+  ]);
+  return { claimed: rows && rows.length > 0 };
+};
+
+const markWebhookEventProcessed = async (eventId, localTransactionId) => {
+  const query = `
+    UPDATE ${dbSchema}.payment_webhook_events
+    SET status = 'processed',
+        processed_at = NOW(),
+        local_transaction_id = $2,
+        updated_at = NOW()
+    WHERE provider = 'paymongo' AND event_id = $1`;
+  await dbQuery.query(query, [eventId, localTransactionId || null]);
+};
+
+const markWebhookEventFailed = async (eventId, errorMsg) => {
+  const redacted = errorMsg ? String(errorMsg).substring(0, 300) : null;
+  const query = `
+    UPDATE ${dbSchema}.payment_webhook_events
+    SET status = 'failed',
+        last_error_message = $2,
+        updated_at = NOW(),
+        internal_attempt_count = COALESCE(internal_attempt_count, 0) + 1
+    WHERE provider = 'paymongo' AND event_id = $1`;
+  await dbQuery.query(query, [eventId, redacted]);
+};
+
+// Try to claim an event in the ledger. Returns:
+//   { claimed: true }  — first delivery, safe to process
+//   { claimed: false } — already in ledger, duplicate
+//   null               — ledger table not yet present, proceed without it
+const tryClaimEvent = async (eventId, eventType, providerObjectId) => {
+  if (!eventId) return null;
+  try {
+    return await claimWebhookEvent(eventId, eventType, providerObjectId);
+  } catch (err) {
+    if (err.code === '42P01') {
+      // payment_webhook_events table not yet migrated — non-blocking
+      console.warn('[paymentController] payment_webhook_events table not migrated — run db/payment_webhook_events_ddl.sql for full event-ID idempotency. ON CONFLICT safety net is active.');
+    } else {
+      console.warn('[paymentController] Webhook event ledger error (non-blocking):', err.code, err.message && err.message.substring(0, 80));
+    }
+    return null;
+  }
+};
+
+const tryMarkProcessed = async (eventId, localTransactionId) => {
+  if (!eventId) return;
+  try {
+    await markWebhookEventProcessed(eventId, localTransactionId);
+  } catch (err) {
+    if (err.code !== '42P01') {
+      console.warn('[paymentController] Could not mark event processed:', err.code);
+    }
+  }
+};
+
+const tryMarkFailed = async (eventId, errorMsg) => {
+  if (!eventId) return;
+  try {
+    await markWebhookEventFailed(eventId, errorMsg);
+  } catch (err) {
+    if (err.code !== '42P01') {
+      console.warn('[paymentController] Could not mark event failed:', err.code);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// NOTIFY-P1: insertTransactionTable — now idempotent
+// ON CONFLICT (id) DO NOTHING: if the same payment link ID is inserted again
+// (PayMongo webhook retry), the existing row is returned with duplicate:true
+// instead of throwing PostgreSQL error 23505 (duplicate key violation).
+// ---------------------------------------------------------------------------
+
+const insertTransactionTable = async (id, checkout_url, reference_number) => {
+  const insertQuery = `INSERT INTO ${dbSchema}.transaction_table
+    (id, checkout_url, reference_number) VALUES($1, $2, $3)
+    ON CONFLICT (id) DO NOTHING
+    RETURNING *`;
+
+  try {
+    const { rows } = await dbQuery.query(insertQuery, [
+      id,
+      checkout_url,
+      reference_number,
+    ]);
+
+    if (rows && rows.length > 0) {
+      return { transaction: rows[0], inserted: true, duplicate: false };
+    }
+
+    // ON CONFLICT DO NOTHING returned no rows — this id already exists.
+    // Fetch and return the existing row so callers can inspect it.
+    const sel = await dbQuery.query(
+      `SELECT * FROM ${dbSchema}.transaction_table WHERE id = $1`,
+      [id]
+    );
+    return {
+      transaction: sel.rows && sel.rows.length > 0 ? sel.rows[0] : null,
+      inserted: false,
+      duplicate: true,
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// NOTIFY-P1: paymongoWebhook — idempotent webhook handler
+// ---------------------------------------------------------------------------
+
 const paymongoWebhook = async (req, res) => {
+  // Step 1: Verify signature before any DB mutation or payload trust.
   if (!verifyPaymongoSignature(req)) {
-    console.warn("[paymentController] Webhook signature verification failed — request rejected");
+    console.warn("[paymentController] PAYMONGO_WEBHOOK_SIGNATURE_INVALID — rejected");
     return res.status(400).json({ message: "Invalid webhook signature" });
   }
 
   const { data } = req.body;
+
+  // Validate minimal payload shape before proceeding.
+  if (!data || !data.attributes) {
+    console.warn('[paymentController] PAYMONGO_WEBHOOK_MALFORMED — missing data.attributes');
+    return res.status(400).json({ message: "Malformed webhook payload" });
+  }
+
+  // PayMongo event ID is at req.body.data.id (the event envelope, not the payment object).
+  // This is the primary dedupe key for the event ledger.
+  const eventId = data.id;
   const webhookEvent = data.attributes.type;
 
+  // Provider object ID (payment link / payment) for the ledger.
+  const providerObjectId = data.attributes.data && data.attributes.data.id;
+
+  if (!webhookEvent) {
+    console.warn('[paymentController] PAYMONGO_WEBHOOK_MALFORMED — missing event type');
+    return res.status(400).json({ message: "Malformed webhook payload" });
+  }
+
+  console.log('[paymentController] PAYMONGO_WEBHOOK_RECEIVED type=' + webhookEvent
+    + ' objectId=' + (providerObjectId ? providerObjectId.substring(0, 14) + '...' : 'none'));
+
+  // Step 2: Claim event in ledger (idempotency gate).
+  // If the exact event ID was already processed, return 2xx duplicate immediately.
+  const ledgerClaim = await tryClaimEvent(eventId, webhookEvent, providerObjectId);
+  if (ledgerClaim && !ledgerClaim.claimed) {
+    console.log('[paymentController] PAYMONGO_WEBHOOK_DUPLICATE_IGNORED eventId=[REDACTED]');
+    return res.status(200).json({
+      received: true,
+      provider: 'paymongo',
+      status: 'duplicate_ignored',
+    });
+  }
+
   try {
+    // -----------------------------------------------------------------------
+    // Case: link.payment.paid — PayMongo payment link paid
+    // -----------------------------------------------------------------------
     if (webhookEvent == "link.payment.paid") {
       const webHookUrl = data.attributes.data;
       const { id, attributes } = webHookUrl;
-      const { checkout_url, reference_number, remarks, status } = attributes;
+      // Renamed 'status' to 'paymentStatus' to avoid shadowing the imported helper
+      const { checkout_url, reference_number, remarks, status: paymentStatus } = attributes;
 
-      const insertTrans = await insertTransactionTable(
-        id,
-        checkout_url,
-        reference_number
-      );
+      // NOTIFY-P1 CORE FIX: insertTransactionTable is now idempotent.
+      // Duplicate webhook delivery returns existing row with { duplicate: true }.
+      const insertResult = await insertTransactionTable(id, checkout_url, reference_number);
+
+      if (insertResult.duplicate) {
+        // Transaction row already exists from a prior successful delivery.
+        // Cart and subscription were already activated — skip all side effects.
+        console.log('[paymentController] PAYMONGO_TRANSACTION_UPSERT_DUPLICATE id=[REDACTED]');
+        await tryMarkProcessed(eventId, id);
+        return res.status(200).json({
+          received: true,
+          provider: 'paymongo',
+          status: 'duplicate_ignored',
+        });
+      }
+
+      console.log('[paymentController] PAYMONGO_TRANSACTION_UPSERT_INSERTED');
 
       const cartId = remarks.slice(9);
-      const updateMyCart = await updateCart(status, id, cartId);
+      await updateCart(paymentStatus, id, cartId);
 
-      if (status == "paid") {
+      if (paymentStatus == "paid") {
         const { payments } = data.attributes.data.attributes;
         const {
           amount,
@@ -137,12 +319,12 @@ const paymongoWebhook = async (req, res) => {
         SET gross_amount=$1, transaction_fee=$2, currency=$3, description=$4, status=$5, payment_id=$6, net_amount=$7, email=$8, name=$9, phone=$10, payment_type=$11, paid_at=$12
         WHERE reference_number=$13 returning *;`;
 
-        const { rows } = await dbQuery.query(updateQuery, [
+        await dbQuery.query(updateQuery, [
           amount / 100,
           fee / 100,
           currency,
           description,
-          status,
+          paymentStatus,
           id,
           net_amount / 100,
           email,
@@ -152,96 +334,94 @@ const paymongoWebhook = async (req, res) => {
           new Date(),
           external_reference_number,
         ]);
-        const output = {
-          ...status,
-        };
 
         const companyId = remarks.slice(0, 13);
         const subscriptionId = remarks.slice(14);
 
-
-        const subs = await createCompanySubscription(companyId, subscriptionId);
-
-        return res.status(200).json(successResponse(output));
+        // createCompanySubscription is now idempotent (see subscriptionController.js)
+        await createCompanySubscription(companyId, subscriptionId);
+        console.log('[paymentController] PAYMONGO_SUBSCRIPTION_STATE_TRANSITIONED companyId=[REDACTED]');
       }
-    }  else if (webhookEvent == "payment.paid") {
-        // QA11 FIX-03 LOGGING: removed console.log(webHookPaid) which wrote
-        // PII (billing name, email, phone) to be_out.log in plaintext.
-        const webHookPaid = data.attributes.data;
-        console.log('[paymentController] payment.paid event received, id:', webHookPaid && webHookPaid.id);
-        const { id, attributes } = webHookPaid;
-        const {
-            amount,
-            currency,
-            description,
-            status,
-            fee,
-            external_reference_number,
-            billing,
-            net_amount,
-            source,
-        } = attributes;
-        const { type } = source;
-        const { email, name, phone } = billing;
 
-        const updateQuery = `UPDATE ${dbSchema}.transaction_table
-    SET gross_amount=$1, transaction_fee=$2, currency=$3, description=$4, status=$5, payment_id=$6, net_amount=$7, email=$8, name=$9, phone=$10, payment_type=$11, 
+      await tryMarkProcessed(eventId, id);
+      return res.status(200).json({ received: true, provider: 'paymongo', status: 'processed' });
+
+    // -----------------------------------------------------------------------
+    // Case: payment.paid — PayMongo direct payment paid
+    // The UPDATE on transaction_table is idempotent — safe on duplicate delivery.
+    // -----------------------------------------------------------------------
+    } else if (webhookEvent == "payment.paid") {
+      // QA11 FIX-03 LOGGING: log only redacted id, not full payload or billing PII.
+      const webHookPaid = data.attributes.data;
+      const { id, attributes } = webHookPaid;
+      const {
+        amount,
+        currency,
+        description,
+        status: paymentStatus,
+        fee,
+        external_reference_number,
+        billing,
+        net_amount,
+        source,
+      } = attributes;
+      const { type } = source;
+      const { email, name, phone } = billing;
+
+      // UPDATE is idempotent — safe to re-run on duplicate delivery.
+      const updateQuery = `UPDATE ${dbSchema}.transaction_table
+    SET gross_amount=$1, transaction_fee=$2, currency=$3, description=$4, status=$5, payment_id=$6, net_amount=$7, email=$8, name=$9, phone=$10, payment_type=$11,
     paid_at=$12
     WHERE reference_number=$13 returning *;`;
 
-        const { rows } = await dbQuery.query(updateQuery, [
-            amount / 100,
-            fee / 100,
-            currency,
-            description,
-            status,
-            id,
-            net_amount / 100,
-            email,
-            name,
-            phone,
-            type,
-            new Date(),
-            external_reference_number,
-        ]);
+      await dbQuery.query(updateQuery, [
+        amount / 100,
+        fee / 100,
+        currency,
+        description,
+        paymentStatus,
+        id,
+        net_amount / 100,
+        email,
+        name,
+        phone,
+        type,
+        new Date(),
+        external_reference_number,
+      ]);
 
-        const dbResponse = webhookEvent;
-        return res.status(200).json(successResponse(dbResponse));
+      await tryMarkProcessed(eventId, id);
+      console.log('[paymentController] PAYMONGO_WEBHOOK_PROCESSED payment.paid');
+      return res.status(200).json({ received: true, provider: 'paymongo', status: 'processed' });
+
+    // -----------------------------------------------------------------------
+    // Case: payment.failed — idempotent, no mutation needed
+    // -----------------------------------------------------------------------
     } else if (webhookEvent == "payment.failed") {
-        // NOTIFY-FIX-01: removed console.log(data) which wrote the full
-        // PayMongo webhook payload — including billing name, email, phone — to
-        // be_out.log in plaintext. Log only the event type and payment id.
-        console.log('[paymentController] payment.failed event received, id:', data && data.id);
-        const dbResponse = webhookEvent;
-        return res.status(200).json(successResponse(dbResponse));
+      // NOTIFY-FIX-01 LOGGING: log only event type, not PII from the payload.
+      console.log('[paymentController] PAYMONGO_WEBHOOK_PROCESSED payment.failed');
+      await tryMarkProcessed(eventId, null);
+      return res.status(200).json({ received: true, provider: 'paymongo', status: 'processed' });
+
+    // -----------------------------------------------------------------------
+    // Case: unknown/unsupported event type
+    // Signature is verified — acknowledge with 2xx so PayMongo does not retry.
+    // -----------------------------------------------------------------------
+    } else {
+      console.log('[paymentController] PAYMONGO_WEBHOOK_IGNORED_UNSUPPORTED_TYPE: ' + webhookEvent);
+      await tryMarkProcessed(eventId, null);
+      return res.status(200).json({ received: true, provider: 'paymongo', status: 'ignored' });
     }
 
-
   } catch (error) {
-    console.error('[paymentController] error:', error);
-    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
-  }
-};
-
-const insertTransactionTable = async (id, checkout_url, reference_number) => {
-  const insertQuery = `INSERT INTO ${dbSchema}.transaction_table
-    (id, checkout_url, reference_number) VALUES($1, $2, $3) returning *`;
-
-  try {
-    const { rows } = await dbQuery.query(insertQuery, [
-      id,
-      checkout_url,
-      reference_number,
-    ]);
-
-    if (!rows || rows.length == 0) {
-      throw "Failed to insert transaction";
-    }
-
-    const dbResponse = rows[0];
-    return dbResponse;
-  } catch (error) {
-    throw error;
+    // Safe error log — no raw payload, no secrets, no stack trace to response.
+    const errCode = error && error.code;
+    const errMsg = error && error.message && error.message.substring(0, 100);
+    console.error('[paymentController] PAYMONGO_WEBHOOK_PROCESSING_FAILED:', errCode, errMsg);
+    await tryMarkFailed(eventId, error && error.message);
+    // Return 500 for retryable failures (DB down, etc.).
+    // Known duplicates never reach here — they are returned as 200 above.
+    return res.status(500).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 

@@ -79,6 +79,24 @@ const createPaymentIntent = async (req, res) => {
 };
 
 const createCompanySubscription = async (companyId, subscriptionId) => {
+  // NOTIFY-P1 FIX: idempotency guard — check before insert to prevent duplicate
+  // subscription rows from PayMongo webhook retries.
+  // A unique DB constraint on (company_id, subscription_id) would give stronger
+  // concurrency safety; apply db/payment_webhook_events_ddl.sql step 5 for that.
+  const checkQuery = `SELECT company_id FROM ${dbSchema}.companies_subscription
+    WHERE company_id = $1 AND subscription_id = $2 LIMIT 1`;
+
+  try {
+    const existing = await dbQuery.query(checkQuery, [companyId, subscriptionId]);
+    if (existing.rows && existing.rows.length > 0) {
+      console.log('[subscriptionController] PAYMONGO_SUBSCRIPTION_DUPLICATE_NOOP: already activated');
+      return existing.rows[0];
+    }
+  } catch (checkErr) {
+    // Non-blocking — if check fails, proceed to INSERT attempt
+    console.warn('[subscriptionController] createCompanySubscription existence check error:', checkErr.code);
+  }
+
   const insertQuery = `INSERT INTO ${dbSchema}.companies_subscription
   (company_id, subscription_id, created_at, is_paid, payment_date)
   VALUES($1, $2, $3, $4, $5) returning *`;
@@ -99,6 +117,12 @@ const createCompanySubscription = async (companyId, subscriptionId) => {
     const dbResponse = rows;
     return dbResponse;
   } catch (error) {
+    // 23505 = duplicate key: race condition between check and insert.
+    // Treat as already-activated — idempotent no-op.
+    if (error.code === '23505') {
+      console.log('[subscriptionController] PAYMONGO_SUBSCRIPTION_DUPLICATE_NOOP: race condition duplicate, already activated');
+      return null;
+    }
     throw error;
   }
 };
