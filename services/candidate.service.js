@@ -70,9 +70,9 @@ const checkEmailIfExistInCandidate = async (email, companyId) => {
 };
 
 const checkCandidateIfExist = async (candidateId) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.candidates WHERE candidate_id='${candidateId}';`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.candidates WHERE candidate_id=$1;`;
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [candidateId]);
     if (!rows || rows.length === 0) {
       return false;
     }
