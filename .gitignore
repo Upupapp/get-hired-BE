@@ -1,6 +1,19 @@
 node_modules
-gethired-serviceAccountKey.json
+
+# Secrets — NEVER commit real credentials
 .env
+.env.*
+!.env.example
+*serviceAccountKey*.json
+*service-account*.json
+*firebase-admin*.json
+*firebase-service-account*.json
+gethired-serviceAccountKey.json
 eucanna-serviceAccountKey.json
 jobhunt-serviceAccountKey.json
+credentials*.json
+secrets*.json
+private-key*.json
+
+# SSH keys in repo (legacy — prefer deploy keys)
 keys
