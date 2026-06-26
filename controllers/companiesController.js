@@ -278,7 +278,13 @@ const createBasicCompany = async (companyName, companyEmail, userId) => {
 
     const dbResponse = mappedCompany(rows[0]);
 
-    const subs = await createCompanySubscription(dbResponse.companyId, 1);
+    // Non-fatal: subscription table may not exist yet on this environment.
+    // Company creation succeeds regardless; subscription can be applied later.
+    try {
+      await createCompanySubscription(dbResponse.companyId, 1);
+    } catch (subErr) {
+      console.warn('[companiesController] createBasicCompany: subscription step skipped:', subErr && subErr.code);
+    }
 
     return dbResponse;
   } catch (error) {
