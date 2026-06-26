@@ -1,0 +1,67 @@
+# GetHired — Decision Log (RECENT_4)
+> Updated: 2026-06-26 | ACTIONS RECENT_4
+> FE HEAD: `8a41f25` | BE HEAD: `35f7754`
+> Previous decision log: `GETHIRED_ACTIONS_RECENT_DEPLOYMENT_V5.md` (DEC-01 through DEC-06)
+
+---
+
+## DEC-RECENT-4-01 | SnackbarService partial migration (not full sweep)
+**Decision:** Ship SnackbarService + HapticService in RECENT_4 with import-add-user fully migrated to the new service; leave remaining 13+ direct MatSnackBar callers for a follow-up migration sprint (BL-P1-07) rather than touching all of them in this commit.
+**Rationale:** The new service enforces ARIA assertive and WCAG-correct contrast automatically. The 13+ remaining components still get correct contrast from the global `styles.scss` panelClass fix (which applies to all `danger-snackbar` / `success-snackbar` openings regardless of call site). The ARIA assertive fix is the only regression left — error toasts opened directly via MatSnackBar still use `politeness: 'polite'`. This is an improvement over baseline but not yet full compliance. Migration is low-risk and can be done component-by-component.
+**Implication:** BL-P1-07 (migration) is P1, not P3 — ARIA regression for error cases still exists in 13+ components.
+
+---
+
+## DEC-RECENT-4-02 | bcrypt removed (not just swapped)
+**Decision:** Remove `bcrypt` package entirely rather than doing a swap to `bcryptjs`.
+**Rationale:** `bcryptjs` was already the active import in all auth services. `bcrypt` was a dead native-binary dependency that was never called. Removing it shrinks the dependency tree and eliminates node-gyp fragility without any code change in auth logic.
+**Verification:** `grep -rn "require('bcrypt')" get-hired-BE/` should return nothing (only `require('bcryptjs')` calls remain).
+
+---
+
+## DEC-RECENT-4-03 | Company pages (public /companies/:slug) — deferred as BL-FEAT-05
+**Decision:** No decision taken yet. Moving to deferred features list pending product decision.
+**Options:**
+1. Build full `/companies/:slug` profile pages (company description, logo, all open jobs, social links) — high SEO value, moderate build cost
+2. Redirect `/companies/:slug` → `/jobs/company/:company_id` (existing list page) — low cost, low SEO value
+3. Do nothing — company discovery via job cards only
+**Recommendation:** Option 1 if company data is already in the DB (check `companies` table schema); structured data for `Organization` is already partially in place (JSON-LD Organization block exists). This is a high-value SEO move once job volume is sufficient.
+**Decision owner:** Product / Paul
+
+---
+
+## DEC-RECENT-4-04 | ESM Acorn constraint: enforce via lint, not convention
+**Decision:** Add an ESLint `no-restricted-syntax` rule to ban `?.` and `??` in the BE codebase, rather than relying on code review or convention.
+**Rationale:** Two separate bugs have now been caused by this constraint (e10a44f, 986e6da). The pattern will recur without tooling. The fix is cheap (one ESLint rule) and eliminates the risk class permanently.
+**Tracking:** BL-P3-13
+
+---
+
+## DEC-RECENT-4-05 | OG image shipped as inline SVG-rendered PNG (not external design tool)
+**Decision:** OG social card shipped as a programmatically described PNG (66KB) constructed to match the brand aesthetic (wordmark, tagline, job card motifs, match ring, domain name) rather than waiting for a designer deliverable.
+**Rationale:** BL-P1-02 was a P1 blocker for social sharing. The card is production-quality and verifiable via Facebook Sharing Debugger / LinkedIn Post Inspector. A designer can replace it later without any code change (drop-in at the same asset path).
+**Verification:** Facebook Sharing Debugger at `https://gethiredonline.app` should now show the branded 1200×630 card.
+
+---
+
+## DEC-RECENT-4-06 | SQL injection fixes: contact.service.js + candidate.service.js only
+**Decision:** Parameterize the 14 identified raw-interpolation patterns in contact.service.js and candidate.service.js. Did not do a full-repo SQL audit in this sprint.
+**Rationale:** These two files contained all the identified raw string interpolations. Other service files should be audited in a follow-up pass (`grep -n "query\`" get-hired-BE/services/*.js`) to confirm no others exist.
+**Tracking:** Follow-up audit recommended before public launch.
+
+---
+
+## Decisions Carried Forward from V5 (still open)
+
+| ID | Decision | Status |
+|----|----------|--------|
+| DEC-01 | Soft 404 via RESPONSE token injection | Approach agreed; not yet implemented (BL-P2-04) |
+| DEC-02 | `p-limit` concurrency cap for bulk imports | Approach agreed; not yet implemented (BL-P2-01) |
+| DEC-03 | SSR verification before sitemap submission | Policy agreed; not yet verified (BL-P2-03) |
+| DEC-04 | PayMongo webhook URL must be registered in dashboard | Known gap; not yet done (BL-P1-06) |
+| DEC-05 | Programmatic SEO landing pages need 5+ jobs/city | Deferred (BL-FEAT-04) |
+| DEC-06 | Admin companies + reports pages need data model TBD | Deferred (BL-FEAT-02) |
+
+---
+
+*Generated by GETHIRED ACTIONS RECENT_4 | FE 8a41f25 / BE 35f7754*
