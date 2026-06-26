@@ -93,7 +93,7 @@ async function processBatch(batch, batchNum, total) {
       const v = r.value;
       if (v.status === "ok" || v.status === "dry-run") ok++;
       else partial++;
-      if (v.errors?.length) {
+      if (v.errors && v.errors.length) {
         console.warn(`  [${v.applicationId}] partial errors:`, v.errors);
       }
     } else {

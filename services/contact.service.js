@@ -40,8 +40,8 @@ const addContact = async (contact) => {
       } else {
         const check = await checkGroupNameIfExist(groupName);
         if (check) {
-          const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name ='${groupName}';`;
-          const { rows } = await dbQuery.query(selectQuery, []);
+          const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name = $1;`;
+          const { rows } = await dbQuery.query(selectQuery, [groupName]);
           const response = rows[0];
           const sendEmail = await sendEmailAdded(
             email,
@@ -92,8 +92,8 @@ const addContact = async (contact) => {
     } else {
       const check = await checkGroupNameIfExist(groupName);
       if (check) {
-        const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name ='${groupName}';`;
-        const { rows } = await dbQuery.query(selectQuery, []);
+        const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name = $1;`;
+        const { rows } = await dbQuery.query(selectQuery, [groupName]);
         const response = rows[0];
         const sendEmail = await sendEmailAdded(email, firstName, nameOfCompany);
         const addToGroupList = await addInGroupList(response.group_id, email);
@@ -141,8 +141,8 @@ const addMultipleContact = async (contact, groupName, groupId) => {
       } else {
         const check = await checkGroupNameIfExist(groupName);
         if (check) {
-          const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name ='${groupName}';`;
-          const { rows } = await dbQuery.query(selectQuery, []);
+          const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name = $1;`;
+          const { rows } = await dbQuery.query(selectQuery, [groupName]);
           const response = rows[0];
           const addToGroupList = await addInGroupList(response.group_id, email);
           message =
@@ -185,8 +185,8 @@ const addMultipleContact = async (contact, groupName, groupId) => {
     } else {
       const check = await checkGroupNameIfExist(groupName);
       if (check) {
-        const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name ='${groupName}';`;
-        const { rows } = await dbQuery.query(selectQuery, []);
+        const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name = $1;`;
+        const { rows } = await dbQuery.query(selectQuery, [groupName]);
         const response = rows[0];
         const addToGroupList = await addInGroupList(response.group_id, email);
         message = "Successfully add contact";
@@ -221,10 +221,10 @@ const checkEmailIfExistInContact = async (email, companyId) => {
 };
 
 const checkContactIfExist = async (contactId) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.contact WHERE contact_id='${contactId}';`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.contact WHERE contact_id=$1;`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [contactId]);
 
     if (!rows || rows.length === 0) {
       return false;
@@ -282,8 +282,8 @@ const editContact = async (contact) => {
     } else {
       const check = await checkGroupNameIfExist(groupName);
       if (check) {
-        const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name ='${groupName}';`;
-        const { rows } = await dbQuery.query(selectQuery, []);
+        const selectQuery = `SELECT group_id FROM ${dbSchema}."group" where group_name = $1;`;
+        const { rows } = await dbQuery.query(selectQuery, [groupName]);
         const response = rows[0];
         const addToGroupList = await addInGroupList(response.group_id, email);
         message = "Successfully update contact";
@@ -306,29 +306,29 @@ function removeDuplicates(arr) {
 const contactList = async (companyId) => {
   try {
     const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.first_name, c.last_name, c.email, c.mobile_number, c.address, c.contact_id,
-                                c.created_at, c.company_id 
+                                c.created_at, c.company_id
                             FROM ${dbSchema}.contact c
-                            where c.company_id = '${companyId}'
+                            where c.company_id = $1
                             order by created_at DESC;`;
-    const searchQuery2 = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.first_name, c.last_name, c.email, c.mobile_number, c.address, 
+    const searchQuery2 = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.first_name, c.last_name, c.email, c.mobile_number, c.address,
                             c.created_at, c.job_id, j.job_title, c.status, c.candidate_id
                         FROM ${dbSchema}.candidates c
                         right join ${dbSchema}.jobs j on j.job_id = c.job_id
-                        where c.company_id = '${companyId}'
+                        where c.company_id = $1
                         order by created_at DESC;`;
 
-    const searchQuery3 = `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.firstname, u.lastname, u.email, u.cell_number as mobile_number, u.address, 
+    const searchQuery3 = `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.firstname, u.lastname, u.email, u.cell_number as mobile_number, u.address,
                         j.date_applied as created_at,  jo.job_id , jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
                        FROM ${dbSchema}.job_applicants j
                        left join ${dbSchema}.jobs jo on jo.job_id = j.job_id
                        left join ${dbSchema}.applicants_profile ap on ap.user_id = j.candidate_id
                        left join ${dbSchema}.users u on u.uid = ap.user_id
                        left join ${dbSchema}.job_applicant_status s on j.application_status_id = s.job_applicant_status_id
-                       where jo.company_id = '${companyId}'`;
+                       where jo.company_id = $1`;
 
-    const { rows } = await dbQuery.query(searchQuery, []);
-    const candidates = await dbQuery.query(searchQuery2, []);
-    const applicants = await dbQuery.query(searchQuery3, []);
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
+    const candidates = await dbQuery.query(searchQuery2, [companyId]);
+    const applicants = await dbQuery.query(searchQuery3, [companyId]);
     const dbResponse = rows;
     candidates.rows.forEach((row) => dbResponse.push(row));
     applicants.rows.forEach((row) => dbResponse.push(row));
@@ -356,11 +356,11 @@ const contactList = async (companyId) => {
 const checkGroups = async (complete) => {
   const searchQuery = `SELECT l.group_id, g.group_name
                         FROM ${dbSchema}.group_list l
-                        right join ${dbSchema}."group" g on g.group_id = l.group_id 
-                        where l.email = '${complete.email}' and g.company_id = '${complete.company_id}';`;
+                        right join ${dbSchema}."group" g on g.group_id = l.group_id
+                        where l.email = $1 and g.company_id = $2;`;
   let value = "";
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [complete.email, complete.company_id]);
 
     const dbResponse = rows;
 
@@ -446,10 +446,10 @@ const addInGroupList = async (groupId, email) => {
 };
 
 const checkIfExistInGroup = async (email, groupId) => {
-  const searchQuery = `SELECT email FROM ${dbSchema}.group_list WHERE email = '${email}' and group_id='${groupId}';`;
+  const searchQuery = `SELECT email FROM ${dbSchema}.group_list WHERE email = $1 and group_id=$2;`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [email, groupId]);
 
     if (!rows || rows.length === 0) {
       return false;
@@ -462,10 +462,10 @@ const checkIfExistInGroup = async (email, groupId) => {
 };
 
 const checkGroupIfExist = async (groupId) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.group WHERE group_id='${groupId}';`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.group WHERE group_id=$1;`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [groupId]);
 
     if (!rows || rows.length === 0) {
       return false;
@@ -478,10 +478,10 @@ const checkGroupIfExist = async (groupId) => {
 };
 
 const checkGroupNameIfExist = async (groupName) => {
-  const searchQuery = `SELECT * FROM ${dbSchema}.group WHERE group_name='${groupName}';`;
+  const searchQuery = `SELECT * FROM ${dbSchema}.group WHERE group_name=$1;`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [groupName]);
 
     if (!rows || rows.length === 0) {
       return false;
@@ -509,9 +509,9 @@ const listOfGroup = async (companyId) => {
   try {
     const searchQuery = `SELECT group_id, group_name
                             FROM ${dbSchema}."group"
-                            where company_id = '${companyId}';`;
+                            where company_id = $1;`;
 
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
 
     const dbResponse = rows;
 
@@ -539,25 +539,25 @@ const getCompanyName = async (companyId) => {
 
 const listOfContacts = async (companyId, groupName) => {
   try {
-    const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.contact_id 
+    const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.contact_id
                             FROM ${dbSchema}.contact c
                             where not exists(select email from ${dbSchema}.group_list
                             right join ${dbSchema}."group" g on g.group_id = group_list.group_id
-                            where group_list.email = c.email 
-                            and g.group_name = '${groupName}') 
-                            and c.company_id = '${companyId}'
+                            where group_list.email = c.email
+                            and g.group_name = $1)
+                            and c.company_id = $2
                             union
-                            SELECT concat(c.firstname , ' ', c.lastname) as full_name, c.email, c.uid  
+                            SELECT concat(c.firstname , ' ', c.lastname) as full_name, c.email, c.uid
                             FROM ${dbSchema}.job_applicants j
                             left join ${dbSchema}.users c on c.uid = j.candidate_id
-                            left join ${dbSchema}.jobs j2 on j2.job_id = j.job_id  
+                            left join ${dbSchema}.jobs j2 on j2.job_id = j.job_id
                             where not exists(select email from ${dbSchema}.group_list
                             right join ${dbSchema}."group" g on g.group_id = group_list.group_id
-                            where group_list.email = c.email 
-                            and g.group_name = '${groupName}') 
-                            and j2.company_id = '${companyId}'`;
+                            where group_list.email = c.email
+                            and g.group_name = $1)
+                            and j2.company_id = $2`;
 
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [groupName, companyId]);
 
     const dbResponse = rows;
 
@@ -575,15 +575,15 @@ const checkContacts = async (complete) => {
   const searchQuery = ` SELECT l.email, u.firstname, u.lastname, u.email, u.cell_number, u.address
                         FROM ${dbSchema}.group_list l
                         right join ${dbSchema}.users u on u.email = l.email
-                        where l.group_id = '${complete.group_id}'
+                        where l.group_id = $1
                         union
                         SELECT l.email, c.first_name, c.last_name, c.email, c.mobile_number, c.address
                         FROM ${dbSchema}.group_list l
-                        right join ${dbSchema}.contact c on c.email = l.email 
-                        where l.group_id = '${complete.group_id}';`;
+                        right join ${dbSchema}.contact c on c.email = l.email
+                        where l.group_id = $1;`;
   let value = "";
   try {
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [complete.group_id]);
 
     const dbResponse = rows;
 
@@ -612,10 +612,10 @@ const groupList = async (companyId) => {
   try {
     const searchQuery = `SELECT group_id, group_name, created_date
                             FROM ${dbSchema}."group"
-                            where company_id = '${companyId}'
+                            where company_id = $1
                             order by created_date DESC;`;
 
-    const { rows } = await dbQuery.query(searchQuery, []);
+    const { rows } = await dbQuery.query(searchQuery, [companyId]);
 
     const dbResponse = rows;
 

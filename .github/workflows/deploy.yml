@@ -50,6 +50,6 @@ jobs:
             npm ci --omit=dev
             npm run build --if-present
             npm run migrate --if-present
-            pm2 restart 0 --update-env
+            pm2 restart gethired --update-env
             pm2 save
           ENDSSH
