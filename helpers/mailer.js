@@ -21,7 +21,10 @@ const gethiredSendgrid = {
   invite: "d-db34d7fe16994377bcb29b1609f21b52",
   contact: "d-f041a4c13a0f49c0a91b3aa425bb7b38",
   interview: "d-998725e138f042399ac0142db104e86d",
-  application: "d-9775084a27d44a36834f0b43c8abe1fc"
+  application: "d-9775084a27d44a36834f0b43c8abe1fc",
+  // LAUNCH-02: status-change email reuses the application template for P0.
+  // Create a dedicated SendGrid dynamic template and update this ID post-launch.
+  application_status_changed: "d-9775084a27d44a36834f0b43c8abe1fc",
 };
 
 const eucannajobsSendgrid = {
@@ -35,36 +38,42 @@ const eucannajobsSendgrid = {
 const getTemplate = (template) => {
   switch (env.mailerTemplate) {
     case "gethiredSendgrid":
-      return gethiredSendgrid[template];
+      return gethiredSendgrid[template] || null;
     case "jobhuntSendgrid":
-      return jobhuntSendgrid[template];
+      return jobhuntSendgrid[template] || null;
     case "eucannajobsSendgrid":
-      return eucannajobsSendgrid[template];
+      return eucannajobsSendgrid[template] || null;
+    default:
+      return null;
   }
 };
 
-const send = (recipient, templateToUse, data) => {
+// LAUNCH-02: send() is now async and returns { sent: true } or { sent: false, reason }.
+// It never throws — callers can safely fire-and-forget or await/catch.
+const send = async (recipient, templateToUse, data) => {
   const email = isValidEmail(recipient.trim()) ? recipient : env.mailerSender;
+  const templateId = getTemplate(templateToUse);
+  if (!templateId) {
+    console.warn('[mailer] No template configured for:', templateToUse, '(env:', env.mailerTemplate + ')');
+    return { sent: false, reason: 'no_template' };
+  }
   const msg = {
     to: email,
     from: env.mailerSender,
-    templateId: getTemplate(templateToUse),
-    dynamic_template_data: {
-      ...data,
-    },
+    templateId: templateId,
+    dynamic_template_data: { ...data },
   };
-
-  console.log(msg);
-
-  sgMail.send(msg).then(
-    () => {
-      return "Email sent!";
-    },
-    (error) => {
-      console.log(error.response.body);
-      throw Error("Failed Sending Email");
-    }
-  );
+  try {
+    await sgMail.send(msg);
+    return { sent: true };
+  } catch (error) {
+    const code = error && error.code ? error.code : 'SENDGRID_ERROR';
+    const body = error && error.response && error.response.body
+      ? JSON.stringify(error.response.body).substring(0, 200)
+      : '';
+    console.error('[mailer] SendGrid send failed:', code, body);
+    return { sent: false, reason: code };
+  }
 };
 
 export { send };

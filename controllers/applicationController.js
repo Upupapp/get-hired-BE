@@ -1,4 +1,4 @@
-import { jobApply } from "../services/application.service";
+import { jobApply, updateApplicationStatus as updateApplicationStatusService } from "../services/application.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import {
   getApplicationSnapshot,
@@ -239,4 +239,57 @@ const getApplicantApplicationSnapshotsBatch = async (req, res) => {
   }
 };
 
-export { submitApplication, getApplicantApplicationSnapshot, getEmployerApplicantSnapshotSummary, getApplicantApplicationSnapshotsBatch };
+/**
+ * PUT /application/status
+ * Employer/admin updates an applicant's application status.
+ * Verifies company ownership, suppresses no-op updates, sends status-change email.
+ */
+const updateApplicationStatus = async (req, res) => {
+  const { uid } = req.user;
+  const { applicationId, newStatusId } = req.body;
+
+  if (!applicationId || newStatusId === undefined || newStatusId === null) {
+    return res.status(status.bad).json(errorResponse('applicationId and newStatusId are required.'));
+  }
+
+  const newStatusIdInt = parseInt(newStatusId);
+  if (isNaN(newStatusIdInt) || newStatusIdInt < 1 || newStatusIdInt > 6) {
+    return res.status(status.bad).json(errorResponse('Invalid status. Must be an integer between 1 and 6.'));
+  }
+
+  try {
+    const callerCompany = await getUserCompanyForRequest(req, uid);
+    if (!callerCompany || Array.isArray(callerCompany)) {
+      return res.status(403).json(errorResponse('Forbidden.'));
+    }
+
+    const result = await updateApplicationStatusService(applicationId, newStatusIdInt, callerCompany.companyId);
+
+    if (result.noop) {
+      return res.status(status.success).json(successResponse({
+        updated: false,
+        reason: 'no_change',
+        applicationId: applicationId,
+      }));
+    }
+
+    return res.status(status.success).json(successResponse({
+      updated: true,
+      applicationId: result.applicationId,
+      oldStatusId: result.oldStatusId,
+      newStatusId: result.newStatusId,
+      newStatusLabel: result.newStatusLabel,
+    }));
+  } catch (error) {
+    if (error && error.code === 'APPLICATION_NOT_FOUND') {
+      return res.status(status.notfound).json(errorResponse('Application not found.'));
+    }
+    if (error && error.code === 'FORBIDDEN') {
+      return res.status(403).json(errorResponse('Forbidden.'));
+    }
+    console.error('[updateApplicationStatus]', error);
+    return res.status(status.error).json(errorResponse('Unable to update application status. Please try again.'));
+  }
+};
+
+export { submitApplication, updateApplicationStatus, getApplicantApplicationSnapshot, getEmployerApplicantSnapshotSummary, getApplicantApplicationSnapshotsBatch };

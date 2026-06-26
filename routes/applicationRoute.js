@@ -18,6 +18,7 @@ import {
 } from "../controllers/applicantsController";
 import {
   submitApplication,
+  updateApplicationStatus,
   getApplicantApplicationSnapshot,
   getEmployerApplicantSnapshotSummary,
   getApplicantApplicationSnapshotsBatch,
@@ -36,6 +37,8 @@ router.post("/application/create", verifyAuth, createApplication);
 router.put("/application/updateJobs", verifyAuth, updateApplication);
 router.delete("/application/delete", verifyAuth, deleteApplication);
 router.post("/application/apply", verifyAuth, submitApplication)
+// LAUNCH-02: employer/admin updates applicant status with email notification
+router.put("/application/status", verifyAuth, updateApplicationStatus)
 // Applicant: get their own application snapshot + completeness (single)
 router.get("/applicant/application/snapshot", verifyAuth, getApplicantApplicationSnapshot)
 // Applicant: batch completeness snapshots for a list of applicationIds (replaces N individual calls)

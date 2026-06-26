@@ -14,6 +14,16 @@ import { createApplicationSnapshots } from './applicationSnapshotService';
 
 const dbSchema = env.schema;
 
+// LAUNCH-02: applicant-safe status labels — never expose internal enum IDs directly.
+const APPLICANT_SAFE_STATUS_MAP = {
+  1: 'Application received',
+  2: 'Application received',
+  3: 'Under review',
+  4: 'Shortlisted',
+  5: 'Not selected',
+  6: 'Selected',
+};
+
 // GH-FOUND-B01 -- "active" means not archived. Checked before every
 // insert so the same applicant can't create a second row for the same
 // job; also reused as the single source of truth for what "duplicate"
@@ -132,13 +142,21 @@ const jobApply = async (jobApplication, userId) => {
     const user = await getUserProfileById(userId);
 
     const job = await jobDetails(jobId);
-    // Send email application
-    const data = {
+
+    // LAUNCH-02: confirmation email — non-blocking, failure never blocks submission.
+    const statusLabel = APPLICANT_SAFE_STATUS_MAP[applicationStatusId] || 'Application received';
+    const emailData = {
       job_name: job.jobTitle,
       company_name: job.companyName,
-      app_url: `${env.app_url}/user/dashboard`,
+      first_name: user.firstName || '',
+      status_label: statusLabel,
+      app_url: env.app_url + '/user/applications',
     };
-    send(user.email, "application", data);
+    send(user.email, 'application', emailData).catch(function(err) {
+      console.error('[application] APPLICATION_CONFIRMATION_EMAIL_FAILED (non-blocking):',
+        err && err.message ? err.message.substring(0, 80) : 'unknown');
+    });
+    console.log('[application] APPLICATION_CONFIRMATION_EMAIL_QUEUED', { applicationId: jobApplicantionId, jobId: jobId });
 
     // Best-effort: build application/completeness/match snapshots.
     // Never throws — snapshot failure must never block submission.
@@ -156,12 +174,17 @@ const jobApply = async (jobApplication, userId) => {
       console.error("[applicationSnapshot] snapshot creation failed:", err);
     });
 
+    // LAUNCH-01: include jobTitle/companyName/statusLabel so FE inline
+    // success panel can display them without a second fetch.
     return {
       jobApplicantionId: dbResponse.job_application_id,
       jobId: dbResponse.job_id,
+      jobTitle: job.jobTitle,
+      companyName: job.companyName,
       dateApplied: dbResponse.date_applied,
       candidateId: dbResponse.candidate_id,
       applicationStatusId: dbResponse.application_status_id,
+      statusLabel: statusLabel,
     };
   } catch (error) {
     throw error;
@@ -255,6 +278,96 @@ const uploadApplicationAttachment = async (
   } catch (error) {
     throw error;
   }
+};
+
+// LAUNCH-02: employer status-update with idempotency check and status-change email.
+// Company ownership is pre-verified by the caller (applicationController).
+const updateApplicationStatus = async (applicationId, newStatusId, callerCompanyId) => {
+  const newStatusIdInt = parseInt(newStatusId);
+
+  const selectQuery = `SELECT ja.job_application_id, ja.job_id, ja.candidate_id,
+    ja.application_status_id as old_status_id, j.company_id
+    FROM ${dbSchema}.job_applicants ja
+    INNER JOIN ${dbSchema}.jobs j ON j.job_id = ja.job_id
+    WHERE ja.job_application_id = $1
+    AND (ja.is_archived IS NULL OR ja.is_archived = false)
+    LIMIT 1`;
+
+  const { rows: appRows } = await dbQuery.query(selectQuery, [applicationId]);
+  if (!appRows || appRows.length === 0) {
+    const err = new Error('Application not found');
+    err.code = 'APPLICATION_NOT_FOUND';
+    throw err;
+  }
+
+  const app = appRows[0];
+
+  if (app.company_id !== callerCompanyId) {
+    const err = new Error('Forbidden');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  const oldStatusId = parseInt(app.old_status_id);
+
+  // LAUNCH-02: no-op suppression — do not update or email if status unchanged.
+  if (oldStatusId === newStatusIdInt) {
+    console.log('[applicationStatus] APPLICATION_STATUS_CHANGE_EMAIL_SUPPRESSED_NOOP',
+      { applicationId: applicationId, statusId: oldStatusId });
+    return { noop: true, applicationId: applicationId, jobId: app.job_id,
+      candidateId: app.candidate_id, oldStatusId: oldStatusId, newStatusId: newStatusIdInt };
+  }
+
+  const updateQuery = `UPDATE ${dbSchema}.job_applicants
+    SET application_status_id = $1, updated_at = NOW()
+    WHERE job_application_id = $2
+    AND (is_archived IS NULL OR is_archived = false)
+    RETURNING *`;
+
+  const { rows: updRows } = await dbQuery.query(updateQuery, [newStatusIdInt, applicationId]);
+  if (!updRows || updRows.length === 0) {
+    throw new Error('Status update failed');
+  }
+
+  const newStatusLabel = APPLICANT_SAFE_STATUS_MAP[newStatusIdInt] || 'Status updated';
+
+  // LAUNCH-02: status-change email — non-blocking, post-commit.
+  try {
+    const job = await jobDetails(app.job_id);
+    const applicant = await getUserProfileById(app.candidate_id);
+    if (applicant && applicant.email) {
+      const emailData = {
+        job_name: job.jobTitle,
+        company_name: job.companyName,
+        first_name: applicant.firstName || '',
+        status_label: newStatusLabel,
+        app_url: env.app_url + '/user/applications',
+      };
+      send(applicant.email, 'application_status_changed', emailData).catch(function(err) {
+        console.error('[applicationStatus] APPLICATION_STATUS_CHANGE_EMAIL_FAILED (non-blocking):',
+          err && err.message ? err.message.substring(0, 80) : 'unknown');
+      });
+      console.log('[applicationStatus] APPLICATION_STATUS_CHANGE_EMAIL_QUEUED',
+        { applicationId: applicationId, oldStatusId: oldStatusId, newStatusId: newStatusIdInt, newStatusLabel: newStatusLabel });
+    } else {
+      console.warn('[applicationStatus] APPLICATION_STATUS_CHANGE_EMAIL_SUPPRESSED_NO_EMAIL',
+        { applicationId: applicationId });
+    }
+  } catch (emailErr) {
+    console.warn('[applicationStatus] status-change email setup error (non-blocking):',
+      emailErr && emailErr.message ? emailErr.message.substring(0, 80) : 'unknown');
+  }
+
+  return {
+    noop: false,
+    applicationId: applicationId,
+    jobId: app.job_id,
+    candidateId: app.candidate_id,
+    companyId: app.company_id,
+    oldStatusId: oldStatusId,
+    newStatusId: newStatusIdInt,
+    newStatusLabel: newStatusLabel,
+  };
 };
 
 const charts = async (uid) => {
@@ -375,4 +488,4 @@ const totalJobs = async (uid) => {
   };
 };
 
-export { jobApply, charts, graph, statistic, totalJobs };
+export { jobApply, updateApplicationStatus, APPLICANT_SAFE_STATUS_MAP, charts, graph, statistic, totalJobs };
