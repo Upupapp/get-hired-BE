@@ -132,7 +132,7 @@ const updateCompany = async (req, res) => {
     // QA8 FIX-8: added Array.isArray guard — getUserCompany returns [] (not null)
     // when no company row exists, so the prior !userCompany check alone would
     // have passed for a caller with no company ([] is truthy).
-    const userCompany = await getUserCompany(req.user.uid);
+    const userCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(userCompany) || !userCompany || userCompany.companyId !== companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -180,11 +180,11 @@ const updateCompany = async (req, res) => {
 };
 
 const getUserCompany = async (id) => {
-  const searchQuery = `select 
+  const searchQuery = `select
     c.*, ce.employee_id, i.industry_name as company_industry_name
-    from ${dbSchema}.company_employees ce 
-      left join ${dbSchema}.companies c 
-      on c.company_id = ce.company_id 
+    from ${dbSchema}.company_employees ce
+      left join ${dbSchema}.companies c
+      on c.company_id = ce.company_id
       LEFT JOIN ${dbSchema}.industry i
       on c.industry_id = i.industry_id
       where ce.employee_uuid = $1`;
@@ -207,6 +207,36 @@ const getUserCompany = async (id) => {
   }
 };
 
+// PERF-01: request-scoped cache for getUserCompany.
+// Stores a pending Promise on first miss so concurrent same-uid calls
+// within one request share a single DB round-trip (singleflight pattern).
+// Cache lives on req.getHiredRequestCache and is discarded with the request.
+// The original getUserCompany() is preserved for non-request contexts
+// (services without req, scripts, tests).
+const getRequestCache = (req) => {
+  if (!req.getHiredRequestCache) {
+    req.getHiredRequestCache = new Map();
+  }
+  return req.getHiredRequestCache;
+};
+
+const getUserCompanyForRequest = (req, uid) => {
+  if (!uid) {
+    return getUserCompany(uid);
+  }
+  const cache = getRequestCache(req);
+  const key = 'getUserCompany:' + uid;
+  if (cache.has(key)) {
+    return cache.get(key);
+  }
+  const promise = getUserCompany(uid).catch((error) => {
+    cache.delete(key);
+    throw error;
+  });
+  cache.set(key, promise);
+  return promise;
+};
+
 const getSpecificCompany = async (req, res) => {
   const { id } = req.query;
   let company = {};
@@ -215,7 +245,7 @@ const getSpecificCompany = async (req, res) => {
     if (!id || id == "") {
       const { uid } = req.user;
 
-      company = await getUserCompany(uid);
+      company = await getUserCompanyForRequest(req, uid);
     } else {
       company = await companyDetailsById(id);
     }
@@ -330,7 +360,7 @@ const getDashboard = async (req, res) => {
   const { uid } = req.user;
 
   try {
-    const userCompany = await getUserCompany(uid);
+    const userCompany = await getUserCompanyForRequest(req, uid);
     const chart = await charts(userCompany.companyId);
     const statistics = await statistic(userCompany.companyId);
     const totalContact = await totalContacts(userCompany.companyId);
@@ -363,7 +393,7 @@ const getDashboardPipelineOverview = async (req, res) => {
   const { uid } = req.user;
 
   try {
-    const userCompany = await getUserCompany(uid);
+    const userCompany = await getUserCompanyForRequest(req, uid);
     if (!userCompany || Array.isArray(userCompany)) {
       return res.status(status.unauthorized).send({
         status: "error",
@@ -440,7 +470,7 @@ const removeCompanyUser = async (req, res) => {
     // QA9 FIX-9: added Array.isArray guard — getUserCompany returns [] (not null)
     // when no company row exists, so the prior !callerCompany check alone would
     // have passed for a caller with no company ([] is truthy).
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || callerCompany.companyId !== companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -474,7 +504,7 @@ const addCompanyUser = async (req, res) => {
     // QA9 FIX-3 BOLA: derive companyId from JWT, never from req.body —
     // any employer could otherwise add users to a different company by
     // supplying a spoofed companyId.
-    const callerCompany = await getUserCompany(uid);
+    const callerCompany = await getUserCompanyForRequest(req, uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -627,7 +657,7 @@ const getSubscriptionRestrictions = async (req, res) => {
     // QA10 FIX-11 BOLA: derive companyId from JWT, never from query param —
     // any authenticated employer could read another company's subscription
     // metadata by supplying a different companyId.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -714,6 +744,7 @@ export {
   createCompany,
   createInitialCompany,
   getUserCompany,
+  getUserCompanyForRequest,
   getSpecificCompany,
   updateCompany,
   getDashboard,

@@ -2,7 +2,7 @@ import dbQuery from "../db/dbQuery";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
-import { getUserCompany } from "./companiesController";
+import { getUserCompanyForRequest } from "./companiesController";
 import { getUserProfileById } from "../helpers/userDetails";
 
 const dbSchema = env.schema;
@@ -15,7 +15,7 @@ const getEmployerCompany = async (req, res) => {
   const { uid } = req.user;
 
   try {
-    const userCompany = await getUserCompany(uid);
+    const userCompany = await getUserCompanyForRequest(req, uid);
 
     return res.status(status.success).json(successResponse(userCompany));
   } catch (error) {
@@ -30,7 +30,7 @@ const getEmployerProfile = async (req, res) => {
 
   try {
     const user = await getUserProfileById(uid);
-    const userCompany = await getUserCompany(uid);
+    const userCompany = await getUserCompanyForRequest(req, uid);
 
     const dbResponse = {
       ...user,

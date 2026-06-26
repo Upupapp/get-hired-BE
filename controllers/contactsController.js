@@ -3,7 +3,7 @@ import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact, addMultipleContact, listOfGroup, listOfContacts, checkGroupIfExist, editGroup, checkEmailIfExistInContact, groupList } from "../services/contact.service";
 import { checkEmailIfExist } from "../helpers/userDetails";
-import { getUserCompany } from "./companiesController";
+import { getUserCompanyForRequest } from "./companiesController";
 const dbSchema = env.schema;
 
 const createContact = async (req, res) => {
@@ -13,7 +13,7 @@ const createContact = async (req, res) => {
         // QA8 FIX-7 BOLA: derive companyId from JWT, never from req.body —
         // any employer could otherwise create a contact attributed to a
         // different company by supplying a spoofed companyId.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -40,7 +40,7 @@ const multipleContact = async (req, res) => {
     try {
         // QA8 FIX-7 BOLA: derive companyId from JWT; override any companyId
         // in individual contact objects so callers can't spoof company ownership.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -94,7 +94,7 @@ const deleteContact = async (req, res) => {
         // OPT-02 (QA7): ownership check folded into DELETE WHERE clause —
         // eliminates the separate ownership SELECT round-trip. Zero rowCount
         // means contact not found OR company_id mismatch; both return 403.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -125,7 +125,7 @@ const updateContact = async (req, res) => {
         // OPT-02 (QA7): ownership check folded into editContact via companyId param —
         // the service's UPDATE WHERE now includes company_id, eliminating the separate
         // SELECT pre-check. Total: getUserCompany + editContact UPDATE = 2 calls (was 3).
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -153,7 +153,7 @@ const list = async (req, res) => {
         // QA9 FIX-12 BOLA: derive companyId from JWT, never from query param —
         // any authenticated employer could read another company's contact list
         // by supplying a different companyId.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -178,7 +178,7 @@ const grouplist = async (req, res) => {
     try {
         // QA9 FIX-12 BOLA: derive companyId from JWT, never from query param —
         // any authenticated employer could read another company's group list.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -205,7 +205,7 @@ const createGroup = async (req, res) => {
         // QA8 FIX-7 BOLA: derive companyId from JWT, never from req.body —
         // any employer could otherwise create a group attributed to a
         // different company by supplying a spoofed companyId.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -242,7 +242,7 @@ const updateGroup = async (req, res) => {
         // OPT-02 (QA7): ownership check folded into editGroup via companyId param —
         // editGroup's UPDATE WHERE now includes company_id, eliminating the separate
         // SELECT pre-check. Total: getUserCompany + editGroup UPDATE = 2 calls (was 3).
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -281,7 +281,7 @@ const contactslist = async (req, res) => {
         // QA10 FIX-2 BOLA: derive companyId from JWT, never from query param —
         // any authenticated employer could read another company's contact list
         // by supplying a different companyId.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -314,7 +314,7 @@ const deleteGroup = async (req, res) => {
         // OPT-02 (QA7): ownership check folded into DELETE WHERE clause —
         // eliminates the separate ownership SELECT. Zero rowCount = group not
         // found OR company_id mismatch; both return 403 with no information leak.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }
@@ -345,7 +345,7 @@ const list2 = async (req, res) => {
         // QA10 FIX-2 BOLA: derive companyId from JWT, never from query param —
         // any authenticated employer could read another company's group list
         // by supplying a different companyId.
-        const callerCompany = await getUserCompany(req.user.uid);
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
         if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
             return res.status(403).json({ message: "You don't have permission to do that." });
         }

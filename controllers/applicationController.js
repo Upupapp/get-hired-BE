@@ -7,7 +7,7 @@ import {
   getApplicationSnapshotSummaryForEmployer,
   EXCLUDED_FIELDS,
 } from "../services/applicationSnapshotService";
-import { getUserCompany } from "./companiesController";
+import { getUserCompanyForRequest } from "./companiesController";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 
@@ -133,7 +133,7 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
       return res.status(403).send({ status: "error", error: "Forbidden." });
     }
 
-    const callerCompany = await getUserCompany(uid);
+    const callerCompany = await getUserCompanyForRequest(req, uid);
     // Array.isArray guard: getUserCompany returns [] when no company exists
     // (not null/undefined), so !callerCompany alone won't catch that case.
     if (!callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobRows[0].company_id) {

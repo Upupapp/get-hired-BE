@@ -11,7 +11,7 @@ import {
 import { companyUsers } from "../services/company.service";
 import { getAllVideoResponsesByJobIds } from "../services/job.service";
 
-import { getUserCompany } from "./companiesController";
+import { getUserCompanyForRequest } from "./companiesController";
 import { createPaymongoLink } from "./paymentController";
 const dbSchema = env.schema;
 
@@ -28,7 +28,7 @@ const createPaymentIntent = async (req, res) => {
   try {
     // Derive the company from the authenticated caller, not a
     // client-supplied email -- STITCH/security fix (GH-ACT-003/GH-ACT-009).
-    const userCompany = await getUserCompany(req.user.uid);
+    const userCompany = await getUserCompanyForRequest(req, req.user.uid);
     const companyId = userCompany && userCompany.companyId;
 
     if (!companyId) {
@@ -124,7 +124,7 @@ const getCompanySubscriptions = async (req, res) => {
   try {
     // Confirm the caller actually belongs to companyId rather than
     // trusting the query param directly. STITCH/security fix (GH-ACT-009).
-    const userCompany = await getUserCompany(req.user.uid);
+    const userCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (!userCompany || userCompany.companyId !== companyId) {
       return res.status(403).send("Forbidden");
     }

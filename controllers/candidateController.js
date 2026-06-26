@@ -1,7 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
-import { getUserCompany } from "./companiesController";
+import { getUserCompanyForRequest } from "./companiesController";
 
 import {
   addCandidates,
@@ -19,7 +19,7 @@ const createCandidate = async (req, res) => {
     // QA10 FIX-5 BOLA: derive companyId from JWT, never from req.body —
     // any employer could otherwise create a candidate attributed to a
     // different company by supplying a spoofed companyId.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -41,7 +41,7 @@ const multipleCandidate = async (req, res) => {
   try {
     // QA10 FIX-5 BOLA: derive companyId from JWT; override any companyId
     // in individual candidate objects so callers can't spoof company ownership.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -90,7 +90,7 @@ const deleteCandidate = async (req, res) => {
     }
 
     // Derive company from JWT — never trust caller-supplied companyId.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -117,7 +117,7 @@ const updateCandidate = async (req, res) => {
   try {
     // QA10 FIX-6 BOLA: derive companyId from JWT and fold into the UPDATE WHERE
     // so an employer can only update candidates belonging to their own company.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -140,7 +140,7 @@ const list = async (req, res) => {
     // QA10 FIX-4 BOLA: derive companyId from JWT, never from query param —
     // any authenticated employer could read another company's candidate list
     // by supplying a different companyId.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }

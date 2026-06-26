@@ -24,7 +24,7 @@ import {
 } from "../services/job.service";
 
 import { listOfJobAppliedByApplicant } from "../services/applicant.service";
-import { getUserCompany } from "./companiesController";
+import { getUserCompanyForRequest } from "./companiesController";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
@@ -83,7 +83,7 @@ const createJobs = async (req, res) => {
     // QA8 FIX-2 BOLA: derive companyId from the authenticated caller's JWT,
     // never from req.body.companyId — any employer could otherwise post a job
     // attributed to a different company by supplying a spoofed companyId.
-    const callerCompany = await getUserCompany(uid);
+    const callerCompany = await getUserCompanyForRequest(req, uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -169,7 +169,7 @@ const getJobApplicantDetails = async (req, res) => {
     // returning applicant details. Without this check, any authenticated
     // employer from any company could read any applicant's details by
     // supplying a jobId from a different company.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -189,7 +189,7 @@ const getJobApplicantDetails = async (req, res) => {
 
 const getJobBasicListOfCompany = async (req, res) => {
   try {
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     const list = await getBasicJobList(callerCompany.companyId, 0);
     return res.status(status.success).json(successResponse(list));
   } catch (error) {
@@ -200,7 +200,7 @@ const getJobBasicListOfCompany = async (req, res) => {
 
 const getExpiredJobListOfCompany = async (req, res) => {
   try {
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     const list = await getBasicJobList(callerCompany.companyId, 10);
     return res.status(status.success).json(successResponse(list));
   } catch (error) {
@@ -220,7 +220,7 @@ const deleteJob = async (req, res) => {
     // Caller identity: derive company from the authenticated Firebase JWT.
     // Never trust req.body.companyId, req.query.companyId, or any other
     // caller-supplied scope claim.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "Job not found or you do not have access." });
     }
@@ -310,7 +310,7 @@ const updateJob = async (req, res) => {
     // verified Firebase token, never from caller-supplied data.
     // OPT-01: separate ownership SELECT removed — company_id=$20 in the
     // UPDATE WHERE clause enforces ownership in a single query.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to update this job." });
     }
@@ -395,7 +395,7 @@ const updateStatusOfJob = async (req, res) => {
     // OPT-01 (QA7): separate ownership SELECT eliminated — company_id=$3
     // constraint folds the ownership check into the UPDATE itself (same
     // pattern already applied to updateJob and deleteJob). 2 DB calls, not 3.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -691,7 +691,7 @@ const getAllApplicantOfJob = async (req, res) => {
     // all and returned full applicant PII for any job to any caller.
     // Confirm the authenticated caller's company owns this job.
     const jobCompanyId = await getJobCompanyId(id);
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     // QA8 FIX-9: return JSON 403 instead of bare string "Forbidden" for
     // consistent error response shape across all employer endpoints.
     if (!jobCompanyId || !callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobCompanyId) {
@@ -733,7 +733,7 @@ const deleteInterviewQuestion = async (req, res) => {
   try {
     // QA9 FIX-6 BOLA: verify the question belongs to the caller's company
     // before deleting. Join through job_interview_template for company_id.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
@@ -772,7 +772,7 @@ const getSubscriptionRestrictions = async (req, res) => {
     // QA10 FIX-11 BOLA: derive companyId from JWT, never from query param —
     // any authenticated employer could read another company's subscription
     // metadata by supplying a different companyId.
-    const callerCompany = await getUserCompany(req.user.uid);
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }

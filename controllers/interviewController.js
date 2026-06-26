@@ -10,25 +10,24 @@ import {
   createQuestion,
   // getInterviewsOfUser
 } from '../services/interview.service'
-import { getUserCompany } from './companiesController'
+import { getUserCompanyForRequest } from './companiesController'
 import dbQuery from '../db/dbQuery'
 
 import env from '../env'
 
 const dbSchema = env.schema
 
-// Confirms the authenticated caller actually belongs to companyId, rather
-// than trusting the client-supplied query param directly.
-// STITCH/security fix (GH-ACT-008 -- object-level authorization).
-const callerBelongsToCompany = async (uid, companyId) => {
-  const userCompany = await getUserCompany(uid)
+// Confirms the authenticated caller actually belongs to companyId.
+// STITCH/security fix (GH-ACT-008); PERF-01: uses request-scoped cache.
+const callerBelongsToCompanyForRequest = async (req, uid, companyId) => {
+  const userCompany = await getUserCompanyForRequest(req, uid)
   return userCompany && userCompany.companyId === companyId
 }
 
 const getAllInterviewsOfCompanies = async (req, res) => {
   const { companyId } = req.query
   try {
-    if (!(await callerBelongsToCompany(req.user.uid, companyId))) {
+    if (!(await callerBelongsToCompanyForRequest(req, req.user.uid, companyId))) {
       // QA10 FIX-12: consistent JSON 403 shape instead of bare string.
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -43,7 +42,7 @@ const getAllInterviewsOfCompanies = async (req, res) => {
 const getAllInterviewsTemplatesOfCompanies = async (req, res) => {
   const { companyId } = req.query
   try {
-    if (!(await callerBelongsToCompany(req.user.uid, companyId))) {
+    if (!(await callerBelongsToCompanyForRequest(req, req.user.uid, companyId))) {
       // QA10 FIX-12: consistent JSON 403 shape instead of bare string.
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -58,7 +57,7 @@ const getAllInterviewsTemplatesOfCompanies = async (req, res) => {
 const getAllInterviewRecipientsByCompanyId = async (req, res) => {
   const { companyId } = req.query
   try {
-    if (!(await callerBelongsToCompany(req.user.uid, companyId))) {
+    if (!(await callerBelongsToCompanyForRequest(req, req.user.uid, companyId))) {
       // QA10 FIX-12: consistent JSON 403 shape instead of bare string.
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -74,7 +73,7 @@ const getInterviewTemplateQuestions = async (req, res) => {
   const { templateId } = req.query
   try {
     const templateCompanyId = await getTemplateCompanyId(templateId)
-    if (!templateCompanyId || !(await callerBelongsToCompany(req.user.uid, templateCompanyId))) {
+    if (!templateCompanyId || !(await callerBelongsToCompanyForRequest(req, req.user.uid, templateCompanyId))) {
       // QA10 FIX-12: consistent JSON 403 shape instead of bare string.
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -94,7 +93,7 @@ const saveGroupInterview = async (req, res) => {
     // any authenticated user could otherwise create a group interview
     // attributed to a different company by supplying a spoofed companyId.
     // Mirrors the pattern in saveQuestionTemplate() directly below.
-    const callerCompany = await getUserCompany(uid)
+    const callerCompany = await getUserCompanyForRequest(req, uid)
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -115,7 +114,7 @@ const saveQuestionTemplate = async (req, res) => {
     // QA9 FIX-4 BOLA: derive companyId from JWT, never from req.body —
     // any employer could otherwise create a template attributed to a
     // different company by supplying a spoofed companyId.
-    const callerCompany = await getUserCompany(uid)
+    const callerCompany = await getUserCompanyForRequest(req, uid)
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -162,7 +161,7 @@ const updateJobInterviewQuestion = async (req, res) => {
     // QA9 FIX-5 BOLA: verify the question belongs to the caller's company
     // before allowing an update. interview_template_question has no company_id
     // directly — join through job_interview_template to check ownership.
-    const callerCompany = await getUserCompany(req.user.uid)
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid)
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
@@ -235,7 +234,7 @@ const getListByUser = async (req, res) => {
  */
 const getInterviewHub = async (req, res) => {
   try {
-    const callerCompany = await getUserCompany(req.user.uid)
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid)
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
