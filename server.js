@@ -185,6 +185,17 @@ app.get("/sitemap.xml", async (req, res) => {
       []
     );
 
+    // Company pages: one URL per company that has at least one published job.
+    // Uses MAX(updated_at) across that company's active listings as lastmod.
+    const { rows: companyRows } = await dbQuery.query(
+      `SELECT j.company_id, MAX(j.updated_at) AS last_updated
+       FROM ${schema}.jobs j
+       WHERE j.job_status_id = 2 AND j.company_id IS NOT NULL
+       GROUP BY j.company_id
+       ORDER BY last_updated DESC;`,
+      []
+    );
+
     const staticPages = [
       { loc: `${BASE_URL}/home`, changefreq: "weekly", priority: "1.0" },
       { loc: `${BASE_URL}/jobs`, changefreq: "daily", priority: "0.9" },
@@ -193,26 +204,30 @@ app.get("/sitemap.xml", async (req, res) => {
     ];
 
     const jobUrls = rows.map(row => {
-      // SECURE-V3 S3 FIX: apply xmlEscape to lastmod as defensive belt-and-
-      // suspenders. In practice new Date().toISOString() always produces a
-      // safe YYYY-MM-DD string; xmlEscape ensures no edge-case DB value can
-      // corrupt the XML even if toISOString() somehow returns an odd string.
       const lastmod = xmlEscape(
         row.updated_at
           ? new Date(row.updated_at).toISOString().split("T")[0]
           : today
       );
-      // xmlEscape: job_id is a varchar with no server-enforced format,
-      // so a malformed value must not corrupt the XML document.
       const safeJobId = xmlEscape(row.job_id);
       return `  <url>\n    <loc>${BASE_URL}/jobs/details/${safeJobId}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>`;
+    });
+
+    const companyUrls = companyRows.map(row => {
+      const lastmod = xmlEscape(
+        row.last_updated
+          ? new Date(row.last_updated).toISOString().split("T")[0]
+          : today
+      );
+      const safeCompanyId = xmlEscape(row.company_id);
+      return `  <url>\n    <loc>${BASE_URL}/companies/details?id=${safeCompanyId}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`;
     });
 
     const staticUrls = staticPages.map(p =>
       `  <url>\n    <loc>${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`
     );
 
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${staticUrls.join("\n")}\n${jobUrls.join("\n")}\n</urlset>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${staticUrls.join("\n")}\n${jobUrls.join("\n")}\n${companyUrls.join("\n")}\n</urlset>`;
 
     // Store in process-level cache for SITEMAP_TTL_MS
     _sitemapCache = { xml, builtAt: Date.now() };
