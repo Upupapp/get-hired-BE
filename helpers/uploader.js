@@ -1,6 +1,7 @@
 import firebase from "firebase/compat";
 import { firebaseConfig } from "../middleware/firebaseApp";
 import { matchesDeclaredType } from "./fileSignature";
+import { validateVideoUpload } from "./videoValidator";
 
 const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
   new Promise((resolve, reject) => {
@@ -29,8 +30,17 @@ const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
       let result = uploadedFile.substring(uploadedFile.indexOf(";") + 1);
       let result2 = result.substring(result.indexOf(";") + 1);
       img = result2.slice(result2.indexOf(",") + 1);
-      console.log(img);
 
+      // SEC-03: validate actual video container bytes before uploading to Storage.
+      // Never trust declared MIME, file extension, or RecordRTC Blob MIME alone.
+      const videoValidation = validateVideoUpload(img);
+      if (!videoValidation.valid) {
+        const validationErr = new Error(videoValidation.message || "Video validation failed");
+        validationErr.code = videoValidation.code || "VIDEO_SIGNATURE_MISMATCH";
+        reject(validationErr);
+        return;
+      }
+      console.log("Video validated:", videoValidation.container);
     }
 
     const app = firebase.initializeApp(firebaseConfig);

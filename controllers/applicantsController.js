@@ -497,10 +497,25 @@ const saveDocuments = async (req, res) => {
   }
 };
 
+const VIDEO_REJECTION_CODES = ['VIDEO_EMPTY', 'VIDEO_DISALLOWED', 'VIDEO_SIGNATURE_MISMATCH', 'VIDEO_TOO_LARGE'];
+
 const saveVideoCV = async (req, res) => {
   const { video, applicantProfileId } = req.body;
   const { uid } = req.user;
   try {
+    // SEC-03: reject oversized payloads before ownership check or Firebase upload.
+    // base64 encodes 3 bytes as 4 chars, so length * 0.75 ≈ decoded byte count.
+    if (video && video.videoCVFile) {
+      const estimatedBytes = Math.ceil(video.videoCVFile.length * 0.75);
+      if (estimatedBytes > 100 * 1024 * 1024) {
+        return res.status(status.bad).json({
+          status: 'rejected',
+          code: 'VIDEO_TOO_LARGE',
+          message: 'This video is too large (max 100 MB). Please record a shorter video.',
+        });
+      }
+    }
+
     // QA9 FIX-2 BOLA: verify the caller's JWT-derived uid owns this applicant
     // profile before allowing a storage write keyed to applicantProfileId.
     // The service enforces WHERE user_id=$3, but the storage bucket path uses
@@ -521,6 +536,16 @@ const saveVideoCV = async (req, res) => {
     );
     return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
+    // SEC-03: surface video rejection codes as 400 with user-readable message
+    // rather than swallowing them into a generic 500.
+    const errCode = error && error.code ? error.code : null;
+    if (errCode && VIDEO_REJECTION_CODES.indexOf(errCode) !== -1) {
+      return res.status(status.bad).json({
+        status: 'rejected',
+        code: errCode,
+        message: (error && error.message) || 'Video validation failed.',
+      });
+    }
     console.error('[applicantsController] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
