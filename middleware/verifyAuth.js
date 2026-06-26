@@ -36,7 +36,7 @@ const validateFirebaseIdToken = async (req, res, next) => {
       res.status(403).send("Token Expired. Login again.");
       return;
     }
-    res.status(403).send(error);
+    res.status(403).send('Authentication failed.');
     return;
   }
 };
