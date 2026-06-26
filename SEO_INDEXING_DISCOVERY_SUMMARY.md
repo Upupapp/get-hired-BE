@@ -48,12 +48,14 @@
 |------|--------|
 | `services/googleIndexing.service.js` | Created — no-op unless `GOOGLE_INDEXING_API_ENABLED=true` |
 | `.env.example` updated | `GOOGLE_INDEXING_API_ENABLED=false` + credentials fields added |
-| Trigger in `createJobs` | Added — `notifyJobUrlUpdated` (fire-and-forget) |
-| Trigger in `deleteJob` | Added — `notifyJobUrlDeleted` (fire-and-forget) |
-| Trigger in `updateStatusOfJob` | Added — `URL_UPDATED` if status=2, `URL_DELETED` otherwise |
+| Trigger in `createJobs` | Added in local/GitHub repo — pending full BE server update (see deploy note) |
+| Trigger in `deleteJob` | Added in local/GitHub repo — pending full BE server update |
+| Trigger in `updateStatusOfJob` | Added in local/GitHub repo — pending full BE server update |
 | `googleapis` package | Already in `package.json` — no new install needed |
 | `SEO_GOOGLE_INDEXING_API_RUNBOOK.md` | Created in BE root |
 | API enabled in committed code | NO — `GOOGLE_INDEXING_API_ENABLED` is always `false` in `.env.example` |
+
+**Deploy note:** The production BE server is running an older codebase (commit `d321447`, local is at `cbd9120`). The `jobsController.js` trigger additions are in git but NOT yet deployed to production because the server codebase has ESM compatibility gaps and module export mismatches with newer controller versions. The `server.js` (sitemap) and `services/googleIndexing.service.js` (no-op) ARE deployed. The controller triggers will deploy as part of a full BE catch-up, not this SCP-only session.
 
 ### Phase 5 — SVG Width/Height for CLS ✓
 
