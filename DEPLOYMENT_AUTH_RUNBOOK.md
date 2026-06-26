@@ -12,56 +12,59 @@ The workflow currently uses an SSH key stored as `LINODE_SSH_KEY` in GitHub
 Secrets. If that secret has expired or the key was rotated, `git pull` /
 `git fetch` on the server will fail.
 
-**Current fallback while the auth issue is unresolved:** SCP individual changed
-files to the Linode server, then restart PM2:
+**Status (2026-06-26): Option A COMPLETE.** SSH deploy key `gethired-deploy-linode` is active.
+Normal deploy flow is now:
 
 ```bash
-# Example: push only the files that changed
-scp middleware/firebaseApp.js root@139.162.11.242:/var/www/_work/get-hired-BE/middleware/
-scp middleware/verifyAuth.js  root@139.162.11.242:/var/www/_work/get-hired-BE/middleware/
-ssh root@139.162.11.242 "pm2 restart all"
+ssh root@139.162.11.242 "cd /var/www/_work/get-hired-BE && git pull --ff-only && pm2 restart gethired --update-env"
 ```
+
+**PM2 entry point:** Always use `start.js`, not `server.js`.
+`server.js` uses ES module `import` syntax handled by the `esm` npm package (v3.2.25).
+Starting `server.js` directly causes `ERR_MODULE_NOT_FOUND`; `start.js` wraps it correctly.
+
+**ESM v3.2.25 compat:** `esm`'s bundled Acorn parser does NOT support `?.` (optional chaining)
+or `??` (nullish coalescing). Never use these operators in BE source files — use `&&` and `||` guards.
 
 ---
 
-## Option A — SSH Deploy Key (Preferred)
+## Option A — SSH Deploy Key (DONE — 2026-06-26)
 
 An SSH Deploy Key gives the Linode server read-only access to the specific
 GitHub repository without requiring a personal account credential.
 
 ### Steps
 
-**1. Generate a dedicated SSH key on the Linode server:**
+**1. Generate a dedicated SSH key on the Linode server (DONE):**
 
 ```bash
-ssh root@139.162.11.242 "ssh-keygen -t ed25519 -C 'deploy@get-hired-BE' \
-  -f /root/.ssh/deploy_get_hired -N ''"
+ssh root@139.162.11.242 "ssh-keygen -t ed25519 -C 'gethired-deploy@linode' \
+  -f /root/.ssh/gethired_deploy -N ''"
 ```
+Key stored at: `/root/.ssh/gethired_deploy` (private), `/root/.ssh/gethired_deploy.pub` (public)
 
-**2. Print the public key:**
+**2. Print the public key (DONE):**
 
 ```bash
-ssh root@139.162.11.242 "cat /root/.ssh/deploy_get_hired.pub"
+ssh root@139.162.11.242 "cat /root/.ssh/gethired_deploy.pub"
 ```
+Public key fingerprint: `SHA256:v5IkKn+0P9OaAkprMZm41qCu2VsZr4+JGsCeOM64HHQ`
 
-**3. Add the public key to GitHub:**
+**3. Add the public key to GitHub (DONE — 2026-06-26):**
 
 1. Go to https://github.com/Upupapp/get-hired-BE/settings/keys
-2. Click **Add deploy key**
-3. Title: `Linode production deploy`
-4. Key: paste the output from step 2
-5. **Do NOT check "Allow write access"** — read-only is sufficient
-6. Click **Add key**
+2. Key name: `gethired-deploy-linode`
+3. **Allow write access: NO** (read-only)
 
-**4. Configure SSH on Linode to use the deploy key for GitHub:**
+**4. Configure SSH on Linode to use the deploy key for GitHub (DONE):**
 
-```bash
-ssh root@139.162.11.242 "cat >> /root/.ssh/config" << 'EOF'
+`/root/.ssh/config` contains:
+```
 Host github.com
-  IdentityFile /root/.ssh/deploy_get_hired
+  HostName github.com
+  User git
+  IdentityFile /root/.ssh/gethired_deploy
   IdentitiesOnly yes
-  StrictHostKeyChecking accept-new
-EOF
 ```
 
 **5. Set the remote to SSH (if currently using HTTPS):**
