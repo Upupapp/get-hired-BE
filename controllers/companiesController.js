@@ -243,8 +243,12 @@ const getSpecificCompany = async (req, res) => {
 
   try {
     if (!id || id == "") {
+      // Public route (/company/details without ?id) has no verifyAuth middleware.
+      // Guard against crash when req.user is absent.
+      if (!req.user || !req.user.uid) {
+        return res.status(401).json(errorResponse("Authentication required."));
+      }
       const { uid } = req.user;
-
       company = await getUserCompanyForRequest(req, uid);
     } else {
       company = await companyDetailsById(id);
