@@ -431,7 +431,7 @@ const jobDetails = async (jobId) => {
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId]);
     if (rows && rows.length != 0) {
-      console.log(rows[0]);
+      // SECURE-RECENT-4-FIX-02: removed console.log(rows[0]) — logged full job DB row including internal fields
       return await mappedJob(rows[0]);
     } else {
       return [];

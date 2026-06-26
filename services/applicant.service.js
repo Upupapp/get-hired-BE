@@ -894,7 +894,7 @@ const uploadAndSaveAttachment = async (
   let dbResponse = {};
 
   const { id, file, fileUrl, size, type, filename } = attachment;
-  console.log(filename);
+  // SECURE-RECENT-4-FIX-01: removed console.log(filename) — logged applicant document filename in plain text
   try {
     if (file && file != "") {
       rawUrl = await uploadInStorage("Applicant-Documents", filename, file);
