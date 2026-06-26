@@ -336,11 +336,15 @@ const updateApplicationStatus = async (applicationId, newStatusId, callerCompany
     const job = await jobDetails(app.job_id);
     const applicant = await getUserProfileById(app.candidate_id);
     if (applicant && applicant.email) {
+      const oldStatusLabel = APPLICANT_SAFE_STATUS_MAP[oldStatusId] || 'Application received';
       const emailData = {
         job_name: job.jobTitle,
         company_name: job.companyName,
         first_name: applicant.firstName || '',
         status_label: newStatusLabel,
+        old_status_label: oldStatusLabel,
+        is_selected: newStatusIdInt === 6,
+        is_rejected: newStatusIdInt === 5,
         app_url: env.app_url + '/user/applications',
       };
       send(applicant.email, 'application_status_changed', emailData).catch(function(err) {
