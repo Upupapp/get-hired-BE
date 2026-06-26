@@ -177,8 +177,9 @@ const charts = async (companyId) => {
                       group by date_part('month', a.updated_at);`;
   const searchQuery3 = `SELECT count(a.interview_answer_id) as interviews, date_part('month', a.created_at) as month
                         FROM ${dbSchema}.interview_answers a
-                        left join ${dbSchema}.jobs j on j.job_id = a.job_id 
+                        left join ${dbSchema}.jobs j on j.job_id = a.job_id
                         where j.company_id = $1 and j.job_status_id = '2'
+                        and date_part('month', CURRENT_DATE) = date_part('month', a.created_at)
                         group by date_part('month', a.created_at);`;
 
   try {
