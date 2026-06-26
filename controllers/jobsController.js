@@ -28,6 +28,10 @@ import { getUserCompany } from "./companiesController";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
+// SEO: Google Indexing API — fire-and-forget notifications on job lifecycle
+// events. The service is a no-op unless GOOGLE_INDEXING_API_ENABLED=true.
+// Import is always safe; actual HTTP calls only happen when enabled.
+import { notifyJobUrlUpdated, notifyJobUrlDeleted } from "../services/googleIndexing.service";
 
 import { companySubscriptions } from "../controllers/subscriptionController";
 
@@ -147,6 +151,9 @@ const createJobs = async (req, res) => {
     }
 
     const dbResponse = await mappedJob(rows[0]);
+    // SEO: notify Google the new job URL is available (fire-and-forget).
+    // No-op unless GOOGLE_INDEXING_API_ENABLED=true in the environment.
+    notifyJobUrlUpdated(dbResponse);
     return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[createJobs] error:', error);
@@ -233,6 +240,10 @@ const deleteJob = async (req, res) => {
       const notFoundMsg = { error: "Job not found or you do not have access." };
       return res.status(status.notfound).send(notFoundMsg);
     }
+
+    // SEO: notify Google the deleted job URL should be removed from the index.
+    // Fire-and-forget — no-op unless GOOGLE_INDEXING_API_ENABLED=true.
+    notifyJobUrlDeleted({ job_id: jobId });
 
     // Refresh the caller's own job list — scoped to callerCompany.companyId,
     // never to any caller-supplied ID. Empty array is a valid success response
@@ -390,6 +401,15 @@ const updateStatusOfJob = async (req, res) => {
     }
 
     const updateJob = await updateJobStatus(statusId, jobId, callerCompany.companyId);
+
+    // SEO: notify Google when a job is published (status 2 = active/published)
+    // or removed from public view (any other status). Fire-and-forget.
+    // No-op unless GOOGLE_INDEXING_API_ENABLED=true in the environment.
+    if (statusId == 2) {
+      notifyJobUrlUpdated(updateJob);
+    } else {
+      notifyJobUrlDeleted(updateJob);
+    }
 
     return res.status(status.success).json(successResponse(updateJob));
   } catch (error) {
