@@ -622,7 +622,9 @@ const getJobDetails = async (req, res) => {
   // SEC-02 FIX: viewer identity comes only from the verified Firebase token
   // attached by optionalVerifyAuth — never from req.query.uid or any other
   // caller-supplied parameter.
-  const viewerUid = req.user?.uid ?? null;
+  // ESM 3.x compat: avoid optional chaining (?.) and nullish coalescing (??)
+  // which are not supported by esm@3.2.25 used on the Linode server.
+  const viewerUid = (req.user && req.user.uid) ? req.user.uid : null;
 
   // SEC-02 FIX: if caller supplied a uid/userId/applicantId query param,
   // enforce mismatch policy:
