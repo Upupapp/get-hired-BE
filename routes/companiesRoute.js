@@ -50,6 +50,6 @@ router.get("/company/details", getSpecificCompany);
 router.get("/company/featured", getFeaturedCompanies);
 router.get("/company/sharelink", getCompanyShareableLink);
 
-router.get("/company/getAllCompanies", getAllCompanies);
+router.get("/company/getAllCompanies", verifyAuth, getAllCompanies);
 
 export default router;

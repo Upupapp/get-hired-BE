@@ -693,7 +693,7 @@ const getAllCompanies = async (req, res) => {
     const dbResponse = rows.map((row) => {
       return {
         companyId: row.company_id,
-        companyName: row.companyName,
+        companyName: row.company_name,
       };
     });
     return res.status(status.success).json(successResponse(dbResponse));
