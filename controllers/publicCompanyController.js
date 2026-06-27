@@ -2,7 +2,7 @@
 // Safe public endpoints — no auth required.
 // Strips all private fields (email, phone, billing) before responding.
 
-import db from "../db";
+import dbQuery from "../db/dbQuery";
 
 // --- Constants ---
 
@@ -97,25 +97,25 @@ export var getPublicCompanyProfile = async function(req, res) {
       return res.status(404).json({ message: 'Company not found.' });
     }
 
-    var companyRows = await db.query(
+    var companyResult = await dbQuery.query(
       'SELECT c.company_id, c.company_name, c.company_slug, c.company_logo, c.company_banner, c.company_details, c.company_city, c.company_country, c.number_of_employee, c.work_setup_id, c.updated_at, i.industry_name AS company_industry_name FROM gethired.companies c LEFT JOIN gethired.industry i ON i.industry_id = c.industry_id WHERE c.company_slug = $1 LIMIT 1',
       [slug]
     );
 
-    if (!companyRows || !companyRows.rows || companyRows.rows.length === 0) {
+    if (!companyResult || !companyResult.rows || companyResult.rows.length === 0) {
       return res.status(404).json({ message: 'Company not found.' });
     }
 
-    var raw = companyRows.rows[0];
+    var raw = companyResult.rows[0];
 
-    var jobCountRows = await db.query(
+    var jobCountResult = await dbQuery.query(
       'SELECT COUNT(*) AS open_jobs_count FROM gethired.jobs WHERE company_id = $1 AND job_status_id = 2',
       [raw.company_id]
     );
 
     var openJobsCount = 0;
-    if (jobCountRows && jobCountRows.rows && jobCountRows.rows[0]) {
-      openJobsCount = parseInt(jobCountRows.rows[0].open_jobs_count, 10) || 0;
+    if (jobCountResult && jobCountResult.rows && jobCountResult.rows[0]) {
+      openJobsCount = parseInt(jobCountResult.rows[0].open_jobs_count, 10) || 0;
     }
 
     var profile = toPublicProfileDto(raw, openJobsCount);
@@ -139,25 +139,25 @@ export var getPublicCompanyJobs = async function(req, res) {
       return res.status(404).json({ message: 'Company not found.' });
     }
 
-    var companyRows = await db.query(
+    var companyResult = await dbQuery.query(
       'SELECT company_id FROM gethired.companies WHERE company_slug = $1 LIMIT 1',
       [slug]
     );
 
-    if (!companyRows || !companyRows.rows || companyRows.rows.length === 0) {
+    if (!companyResult || !companyResult.rows || companyResult.rows.length === 0) {
       return res.status(404).json({ message: 'Company not found.' });
     }
 
-    var companyId = companyRows.rows[0].company_id;
+    var companyId = companyResult.rows[0].company_id;
 
-    var jobRows = await db.query(
+    var jobResult = await dbQuery.query(
       'SELECT j.job_id, j.job_title, j.work_setup_id, j.job_type_id, j.salary_min, j.salary_max, j.currency, j.salary_rate, j.job_city, j.job_country, j.created_at FROM gethired.jobs j WHERE j.company_id = $1 AND j.job_status_id = 2 ORDER BY j.created_at DESC LIMIT 50',
       [companyId]
     );
 
     var jobs = [];
-    if (jobRows && jobRows.rows) {
-      jobs = jobRows.rows.map(function(j) {
+    if (jobResult && jobResult.rows) {
+      jobs = jobResult.rows.map(function(j) {
         var cityParts = [j.job_city, j.job_country].filter(Boolean);
         var location  = cityParts.length > 0 ? cityParts.join(', ') : null;
         return {
@@ -195,16 +195,16 @@ export var resolveCompanyIdToSlug = async function(req, res) {
       return res.status(400).json({ message: 'Company ID is required.' });
     }
 
-    var rows = await db.query(
+    var result = await dbQuery.query(
       'SELECT company_id, company_slug FROM gethired.companies WHERE company_id = $1 LIMIT 1',
       [companyId]
     );
 
-    if (!rows || !rows.rows || rows.rows.length === 0) {
+    if (!result || !result.rows || result.rows.length === 0) {
       return res.status(404).json({ message: 'Company not found.' });
     }
 
-    var row  = rows.rows[0];
+    var row  = result.rows[0];
     var slug = row.company_slug || null;
 
     if (!slug) {
