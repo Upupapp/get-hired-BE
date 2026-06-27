@@ -41,13 +41,22 @@ const whitelist = ["http://localhost:4200", "http://localhost:3000"];
 // scaling to multiple nodes.
 // ---------------------------------------------------------------------------
 
-// Tier 1 — Global catch-all (every route, generous)
+// Tier 1 — Global catch-all (every route, generous).
+// Authenticated requests (Authorization header present) bypass this ceiling —
+// they are already covered by writeLimiter + sensitiveLimiter per endpoint.
+// The global limit exists to stop unauthenticated scrapers/DDoS, not to
+// gate logged-in employers who may be on shared office NAT IPs.
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500,
-  standardHeaders: true,  // RFC 6585 RateLimit-* headers
-  legacyHeaders: false,   // suppress deprecated X-RateLimit-* headers
+  max: 2000,               // raised from 500 — handles multi-user NAT + refresh storms
+  standardHeaders: true,   // RFC 6585 RateLimit-* headers
+  legacyHeaders: false,    // suppress deprecated X-RateLimit-* headers
   message: { message: "Too many requests. Please try again later." },
+  skip: function(req) {
+    // Authenticated sessions bypass the global cap; per-endpoint tiers
+    // (writeLimiter, sensitiveLimiter) still apply to their routes.
+    return !!(req.headers && req.headers['authorization']);
+  },
 });
 
 // Tier 2 — Auth endpoints: signin, signup, password reset, email verify
