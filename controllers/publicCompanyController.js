@@ -236,6 +236,66 @@ export var getPublicCompanyJobs = async function(req, res) {
   }
 };
 
+// --- getPublicCompaniesList ---
+// GET /api/public/companies
+// No auth. Returns paginated list of all companies with a public slug.
+// Uses &&/|| guards — never ?. or ?? (Acorn 6/7 incompatibility).
+
+export var getPublicCompaniesList = async function(req, res) {
+  try {
+    var page = parseInt(req.query && req.query.page ? req.query.page : '1', 10);
+    if (!page || page < 1) { page = 1; }
+    var limit = 24;
+    var offset = (page - 1) * limit;
+
+    var sql = 'SELECT c.company_id, c.company_name, c.company_slug, c.company_logo, c.company_city, c.company_country, c.number_of_employee, c.work_setup_id, i.industry_name AS company_industry_name, (SELECT COUNT(*) FROM gethired.jobs j2 WHERE j2.company_id = c.company_id AND j2.job_status_id = 2) AS open_jobs FROM gethired.companies c LEFT JOIN gethired.industry i ON i.industry_id = c.industry_id WHERE c.company_slug IS NOT NULL AND c.company_slug <> \'\' ORDER BY open_jobs DESC, c.company_name ASC LIMIT $1 OFFSET $2';
+
+    var companiesResult = await dbQuery.query(sql, [limit, offset]);
+
+    var countResult = await dbQuery.query(
+      'SELECT COUNT(*) AS total FROM gethired.companies WHERE company_slug IS NOT NULL AND company_slug <> \'\'',
+      []
+    );
+
+    var companies = [];
+    if (companiesResult && companiesResult.rows) {
+      companies = companiesResult.rows.map(function(c) {
+        var city    = c.company_city || '';
+        var country = c.company_country || '';
+        var location = null;
+        if (city && country) { location = city + ', ' + country; }
+        else if (city)       { location = city; }
+        else if (country)    { location = country; }
+
+        return {
+          companyId:     c.company_id,
+          displayName:   c.company_name || '',
+          slug:          c.company_slug || '',
+          logoUrl:       c.company_logo || null,
+          industry:      c.company_industry_name || null,
+          location:      location,
+          workSetup:     c.work_setup_id ? (WORK_SETUP_MAP[c.work_setup_id] || null) : null,
+          employeeCount: c.number_of_employee || null,
+          openJobs:      parseInt(c.open_jobs, 10) || 0,
+        };
+      });
+    }
+
+    var total = 0;
+    if (countResult && countResult.rows && countResult.rows[0]) {
+      total = parseInt(countResult.rows[0].total, 10) || 0;
+    }
+
+    return res.status(200).json({
+      data: { companies: companies, total: total, page: page, limit: limit }
+    });
+
+  } catch (err) {
+    console.error('[publicCompanyController] getPublicCompaniesList error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
 // --- resolveCompanyIdToSlug ---
 // GET /api/public/company/id/:companyId/resolve
 // No auth. Resolves legacy ?id=COM-XX-YYYYYY to slug for redirect.

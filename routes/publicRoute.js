@@ -7,6 +7,7 @@
 import { Router } from "express";
 import verifyAuth from "../middleware/verifyAuth";
 import {
+  getPublicCompaniesList,
   getPublicCompanyProfile,
   getPublicCompanyJobs,
   resolveCompanyIdToSlug,
@@ -16,6 +17,10 @@ import {
 } from "../controllers/publicCompanyController";
 
 const router = Router();
+
+// ─── Company list (no auth) ──────────────────────────────────────────────────
+// Must come before /company/:slug to prevent "companies" matching as a slug.
+router.get("/public/companies", getPublicCompaniesList);
 
 // ─── Company profile & jobs (no auth) ────────────────────────────────────────
 router.get("/public/company/id/:companyId/resolve", resolveCompanyIdToSlug);
