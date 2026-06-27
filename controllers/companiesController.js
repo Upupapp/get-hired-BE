@@ -562,10 +562,14 @@ const removeCompanyUser = async (req, res) => {
 };
 
 const getAllCompanyUser = async (req, res) => {
-  const { id } = req.query;
-
+  const { uid } = req.user;
   try {
-    const users = await companyUsers(id);
+    // BOLA guard: derive authoritative companyId from the JWT, never from req.query
+    const callerCompany = await getUserCompanyForRequest(req, uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const users = await companyUsers(callerCompany.companyId);
     return res.status(status.success).json(successResponse(users));
   } catch (error) {
     console.error('[companiesController] error:', error);
