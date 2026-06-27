@@ -1,8 +1,10 @@
-﻿// GETHIRED_PUBLIC_COMPANY_PROFILE_REDESIGN_TRUST_JOBS_SEO_FULLSTACK_V3
-// Safe public endpoints — no auth required.
+// GETHIRED_PUBLIC_COMPANY_PROFILE_REDESIGN_TRUST_JOBS_SEO_FULLSTACK_V3
+// V3 ADDENDUM: Sticky subnav + Follow Company + enhanced DTO
+// Safe public endpoints — no auth required (except follow/unfollow).
 // Strips all private fields (email, phone, billing) before responding.
 
 import dbQuery from "../db/dbQuery";
+import { firebaseAdmin } from "../middleware/firebaseApp";
 
 // --- Constants ---
 
@@ -25,6 +27,30 @@ var JOB_TYPE_MAP = {
   3: 'Contract',
   4: 'Internship',
   5: 'Freelance',
+};
+
+var DEFAULT_HIRING_STEPS = [
+  { step: 1, title: 'Apply',     description: 'Submit your application through GetHired.' },
+  { step: 2, title: 'Screening', description: 'The hiring team reviews your application and qualifications.' },
+  { step: 3, title: 'Interview', description: 'Selected candidates are invited to interview with the team.' },
+  { step: 4, title: 'Offer',     description: 'Successful candidates receive an offer.' },
+];
+
+// --- Helper: parse optional Firebase token (never throws) ---
+// Returns decoded token payload or null.
+// Uses &&/|| guards — never ?. or ?? (Acorn 6/7 incompatibility).
+
+var tryDecodeToken = async function(req) {
+  var authHeader = req.headers && req.headers.authorization ? req.headers.authorization : '';
+  if (!authHeader || !authHeader.startsWith('Bearer ')) { return null; }
+  var idToken = authHeader.split('Bearer ')[1];
+  if (!idToken) { return null; }
+  try {
+    var decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
+    return decoded;
+  } catch (e) {
+    return null;
+  }
 };
 
 // --- Safe DTO builder ---
@@ -54,6 +80,7 @@ var toPublicProfileDto = function(raw, openJobsCount) {
   var workSetupId = raw.work_setup_id || null;
   var companySize = raw.number_of_employee ? String(raw.number_of_employee) : null;
   var openJobs    = openJobsCount || 0;
+  var hasAbout    = !!(about && about.trim().length > 0);
 
   var seoTitle = displayName + ' Careers and Jobs | GetHired';
   var seoDesc  = about
@@ -81,6 +108,32 @@ var toPublicProfileDto = function(raw, openJobsCount) {
       description: seoDesc,
       canonical:   seoCanon,
       ogImage:     seoOgImg,
+    },
+    snapshot: {
+      industry:         industry,
+      companySize:      companySize,
+      workSetup:        workSetup,
+      location:         location,
+      openRoles:        openJobs,
+      lastUpdated:      raw.updated_at || null,
+      hiringOnGetHired: true,
+    },
+    whyJoinUs: {
+      about:      about,
+      hasContent: hasAbout,
+    },
+    hiringProcess: {
+      steps:     DEFAULT_HIRING_STEPS,
+      isDefault: true,
+    },
+    benefits: {
+      items:      [],
+      hasContent: false,
+    },
+    navigation: {
+      tabs: hasAbout
+        ? ['snapshot', 'whyJoinUs', 'jobs', 'hiringProcess']
+        : ['snapshot', 'jobs', 'hiringProcess'],
     },
   };
 };
@@ -215,6 +268,142 @@ export var resolveCompanyIdToSlug = async function(req, res) {
 
   } catch (err) {
     console.error('[publicCompanyController] resolveCompanyIdToSlug error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+// --- getPublicCompanyFollowState ---
+// GET /api/public/companies/:slug/follow-state
+// Optional auth. Returns follow state for the calling user (or unavailable if not logged in).
+
+export var getPublicCompanyFollowState = async function(req, res) {
+  try {
+    var slug = (req.params.slug || '').toLowerCase().trim();
+    if (!slug || RESERVED_SLUGS.has(slug)) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+
+    var companyResult = await dbQuery.query(
+      'SELECT company_id FROM gethired.companies WHERE company_slug = $1 LIMIT 1',
+      [slug]
+    );
+    if (!companyResult || !companyResult.rows || companyResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+    var companyId = companyResult.rows[0].company_id;
+
+    var decoded = await tryDecodeToken(req);
+    if (!decoded || !decoded.uid) {
+      return res.status(200).json({ data: { following: false, available: false, message: 'Sign in to follow' } });
+    }
+    var uid = decoded.uid;
+
+    // Anti-self-follow: employer cannot follow their own company
+    var empCheck = await dbQuery.query(
+      'SELECT 1 FROM gethired.company_employees WHERE employee_uuid = $1 AND company_id = $2 LIMIT 1',
+      [uid, companyId]
+    );
+    if (empCheck && empCheck.rows && empCheck.rows.length > 0) {
+      return res.status(200).json({ data: { following: false, available: false, message: 'Employers cannot follow their own company' } });
+    }
+
+    var followResult = await dbQuery.query(
+      "SELECT status FROM gethired.company_followers WHERE company_id = $1 AND follower_uid = $2 LIMIT 1",
+      [companyId, uid]
+    );
+
+    var following = false;
+    if (followResult && followResult.rows && followResult.rows.length > 0) {
+      following = followResult.rows[0].status === 'active';
+    }
+
+    return res.status(200).json({ data: { following: following, available: true } });
+
+  } catch (err) {
+    console.error('[publicCompanyController] getPublicCompanyFollowState error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+// --- followCompany ---
+// POST /api/public/companies/:slug/follow
+// Requires auth. Idempotent — safe to call multiple times.
+
+export var followCompany = async function(req, res) {
+  try {
+    var slug = (req.params.slug || '').toLowerCase().trim();
+    if (!slug || RESERVED_SLUGS.has(slug)) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+
+    var uid = req.user && req.user.uid ? req.user.uid : null;
+    if (!uid) { return res.status(403).json({ message: 'Unauthorized.' }); }
+
+    var companyResult = await dbQuery.query(
+      'SELECT company_id FROM gethired.companies WHERE company_slug = $1 LIMIT 1',
+      [slug]
+    );
+    if (!companyResult || !companyResult.rows || companyResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+    var companyId = companyResult.rows[0].company_id;
+
+    // Anti-self-follow
+    var empCheck = await dbQuery.query(
+      'SELECT 1 FROM gethired.company_employees WHERE employee_uuid = $1 AND company_id = $2 LIMIT 1',
+      [uid, companyId]
+    );
+    if (empCheck && empCheck.rows && empCheck.rows.length > 0) {
+      return res.status(403).json({ message: 'Employers cannot follow their own company.' });
+    }
+
+    // Upsert: if row exists set active, else insert
+    await dbQuery.query(
+      "INSERT INTO gethired.company_followers (company_id, follower_uid, status, updated_at) VALUES ($1, $2, 'active', NOW()) ON CONFLICT (company_id, follower_uid) DO UPDATE SET status = 'active', updated_at = NOW()",
+      [companyId, uid]
+    );
+
+    return res.status(200).json({ data: { following: true } });
+
+  } catch (err) {
+    console.error('[publicCompanyController] followCompany error:', err && err.message ? err.message : err);
+    return res.status(500).json({ message: 'Something went wrong.' });
+  }
+};
+
+// --- unfollowCompany ---
+// DELETE /api/public/companies/:slug/follow
+// Requires auth. Idempotent — safe to call when not following.
+
+export var unfollowCompany = async function(req, res) {
+  try {
+    var slug = (req.params.slug || '').toLowerCase().trim();
+    if (!slug || RESERVED_SLUGS.has(slug)) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+
+    var uid = req.user && req.user.uid ? req.user.uid : null;
+    if (!uid) { return res.status(403).json({ message: 'Unauthorized.' }); }
+
+    var companyResult = await dbQuery.query(
+      'SELECT company_id FROM gethired.companies WHERE company_slug = $1 LIMIT 1',
+      [slug]
+    );
+    if (!companyResult || !companyResult.rows || companyResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Company not found.' });
+    }
+    var companyId = companyResult.rows[0].company_id;
+
+    // Soft-delete: set status to 'inactive' (preserves follow history for analytics)
+    await dbQuery.query(
+      "UPDATE gethired.company_followers SET status = 'inactive', updated_at = NOW() WHERE company_id = $1 AND follower_uid = $2",
+      [companyId, uid]
+    );
+
+    return res.status(200).json({ data: { following: false } });
+
+  } catch (err) {
+    console.error('[publicCompanyController] unfollowCompany error:', err && err.message ? err.message : err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }
 };
