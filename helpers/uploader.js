@@ -3,6 +3,20 @@ import { firebaseConfig } from "../middleware/firebaseApp";
 import { matchesDeclaredType } from "./fileSignature";
 import { validateVideoUpload } from "./videoValidator";
 
+// Initialise (or reuse) the compat Firebase app exactly once so that
+// repeated calls to uploadInStorage do not throw "Firebase App named
+// '[DEFAULT]' already exists".
+let _compatApp;
+function getCompatApp() {
+  if (!_compatApp) {
+    // firebase.apps is the compat SDK's app registry.
+    _compatApp = firebase.apps.length
+      ? firebase.app()
+      : firebase.initializeApp(firebaseConfig);
+  }
+  return _compatApp;
+}
+
 const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
   new Promise((resolve, reject) => {
     let img = "";
@@ -43,7 +57,7 @@ const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
       console.log("Video validated:", videoValidation.container);
     }
 
-    const app = firebase.initializeApp(firebaseConfig);
+    const app = getCompatApp();
 
     const uploadTask = app
       .storage()
