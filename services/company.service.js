@@ -51,26 +51,31 @@ const companyDetailsById = async (companyId) => {
 };
 
 const companyUsers = async (companyId) => {
-  const searchQuery = `SELECT ce.*, u.firstname, u.lastname, u.email 
-    FROM ${dbSchema}.company_employees ce 
-    LEFT JOIN ${dbSchema}.users u 
-    ON ce.employee_uuid = u.uid 
+  const searchQuery = `SELECT ce.employee_id, ce.company_id, ce.employee_uuid, ce.assigned_at,
+    u.firstname, u.lastname, u.email, u.photo_url, u.uid, u.role_title
+    FROM ${dbSchema}.company_employees ce
+    LEFT JOIN ${dbSchema}.users u ON ce.employee_uuid = u.uid
     WHERE ce.company_id = $1;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [companyId]);
     if (rows && rows.length != 0) {
-      return await Promise.all(
-        rows.map(async (row) => {
-          return {
-            employeeId: row.employee_id,
-            companyId: row.company_id,
-            assignedAt: row.assigned_at,
-            email: row.email,
-            fullName: row.firstname + " " + row.lastname,
-          };
-        })
-      );
+      return rows.map(function(row) {
+        var firstName = row.firstname || '';
+        var lastName = row.lastname || '';
+        var initials = (firstName.charAt(0) || '') + (lastName.charAt(0) || '');
+        return {
+          employeeId: row.employee_id,
+          companyId: row.company_id,
+          uid: row.uid || row.employee_uuid || null,
+          assignedAt: row.assigned_at,
+          email: row.email,
+          fullName: (firstName + ' ' + lastName).trim(),
+          photoUrl: row.photo_url || null,
+          roleTitle: row.role_title || null,
+          initials: initials.toUpperCase(),
+        };
+      });
     } else {
       return [];
     }

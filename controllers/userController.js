@@ -338,8 +338,6 @@ const getUserCredentials = async (req, res) => {
 };
 
 const updateProfile = async (user) => {
-  let rawUrl = "";
-
   const {
     uid,
     firstName,
@@ -354,40 +352,73 @@ const updateProfile = async (user) => {
     dateOfBirth,
     gender,
     avatar,
+    roleTitle,
+    department,
+    shortBio,
+    linkedinUrl,
+    publicProfileEnabled,
+    showPhotoPublicly,
+    showTitlePublicly,
+    showBioPublicly,
+    showLinkedinPublicly,
+    showEmailPublicly,
+    showPhonePublicly,
   } = user;
 
   const updateQuery = `UPDATE ${dbSchema}.users
     SET firstname=$1, middlename=$2, lastname=$3, address=$4, city=$5, zip=$6,
-    phone_number=$7, cell_number=$8, photo_url=$9, date_of_birth=$10, is_profile_updated=true,
-    updated_at = $11, gender=$12
-    WHERE uid=$13 returning *`;
+    phone_number=$7, cell_number=$8,
+    photo_url=CASE WHEN $9 != '' THEN $9::text ELSE photo_url END,
+    date_of_birth=$10, is_profile_updated=true, updated_at=$11, gender=$12,
+    role_title=$13, department=$14, short_bio=$15, linkedin_url=$16,
+    public_profile_enabled=$17, show_photo_publicly=$18, show_title_publicly=$19,
+    show_bio_publicly=$20, show_linkedin_publicly=$21, show_email_publicly=$22,
+    show_phone_publicly=$23
+    WHERE uid=$24 returning *`;
 
   try {
-    if (avatar && avatar != "" && !photoUrl) {
-      rawUrl = await uploadInStorage("profile", `${uid}-thumb`, avatar);
+    var finalPhotoUrl = (photoUrl && photoUrl !== '') ? photoUrl : '';
+
+    if (avatar && avatar !== '') {
+      var rawUrl = await uploadInStorage('profile', uid + '-thumb', avatar);
+      if (rawUrl) {
+        finalPhotoUrl = rawUrl;
+      }
     }
 
-    const profileInFirebase = await updateUserProfileInFirebase(user);
+    await updateUserProfileInFirebase(user);
+
     const { rows } = await dbQuery.query(updateQuery, [
-      firstName,
-      middleName,
-      lastName,
-      address,
-      city,
-      zip,
-      phoneNumber,
-      cellNumber,
-      rawUrl,
-      dateOfBirth,
+      firstName || null,
+      middleName || null,
+      lastName || null,
+      address || null,
+      city || null,
+      zip || null,
+      phoneNumber || null,
+      cellNumber || null,
+      finalPhotoUrl,
+      dateOfBirth || null,
       new Date(),
-      gender,
+      gender || null,
+      roleTitle || null,
+      department || null,
+      shortBio || null,
+      linkedinUrl || null,
+      publicProfileEnabled || false,
+      showPhotoPublicly || false,
+      showTitlePublicly || false,
+      showBioPublicly || false,
+      showLinkedinPublicly || false,
+      showEmailPublicly || false,
+      showPhonePublicly || false,
       uid,
     ]);
 
-    const dbResponse = userMap({ uid, ...rows[0] });
+    const dbResponse = userMap({ uid: uid, ...rows[0] });
     return dbResponse;
   } catch (error) {
-    throw "Failed to update User profile. " + error;
+    throw 'Failed to update User profile. ' + error;
   }
 };
 
