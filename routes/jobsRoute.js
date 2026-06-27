@@ -22,6 +22,11 @@ import {
 
 import verifyAuth from "../middleware/verifyAuth";
 import optionalVerifyAuth from "../middleware/optionalVerifyAuth";
+import {
+  sanitizeJobContent,
+  validateJobPublishPayload,
+  auditJobChange,
+} from "../middleware/jobMiddleware";
 
 const router = express.Router();
 
@@ -33,9 +38,11 @@ const router = express.Router();
 // getUserCompany(req.user.uid) + AND company_id=$2 in the WHERE clause.
 router.delete("/job/delete", verifyAuth, deleteJob);
 
-// job
-router.post("/job/create", verifyAuth, createJobs);
-router.put("/job/updatejobs", verifyAuth, updateJob);
+// job — REVAMP v2: sanitizeJobContent + validateJobPublishPayload + auditJobChange
+// added inline. Draft saves skip validateJobPublishPayload (statusId check inside).
+// Controller still enforces company ownership via getUserCompanyForRequest (BOLA fix).
+router.post("/job/create", verifyAuth, sanitizeJobContent, validateJobPublishPayload, auditJobChange, createJobs);
+router.put("/job/updatejobs", verifyAuth, sanitizeJobContent, validateJobPublishPayload, auditJobChange, updateJob);
 router.get("/job/basiclist", verifyAuth, getJobBasicListOfCompany);
 router.get("/job/expiredlist", verifyAuth, getExpiredJobListOfCompany);
 router.get("/job/categories", verifyAuth, getCategoryList);
