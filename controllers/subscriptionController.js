@@ -391,8 +391,16 @@ const getSubscriptionSummary = async (req, res) => {
     if (latestSub) {
       jobPostIncluded = latestSub.job_post < 0 ? 'unlimited' : latestSub.job_post;
       adminIncluded = latestSub.admin < 0 ? 'unlimited' : latestSub.admin;
-      videoResponseIncluded = latestSub.video_response < 0 ? 'unlimited' : (latestSub.video_response || null);
-      videoResponseBool = !!(latestSub.video_response > 0 || latestSub.video_response < 0);
+      // video_response column may be boolean (legacy) or numeric. Boolean true/false
+      // maps to a BooleanEntitlement (null = not included), not a numeric meter.
+      var vrRaw = latestSub.video_response;
+      if (typeof vrRaw === 'boolean') {
+        videoResponseIncluded = vrRaw ? null : null; // boolean: no numeric limit tracked; FE reads videoResponseBool
+        videoResponseBool = vrRaw;
+      } else {
+        videoResponseIncluded = vrRaw < 0 ? 'unlimited' : (vrRaw || null);
+        videoResponseBool = !!(vrRaw > 0 || vrRaw < 0);
+      }
     }
 
     // --- Billing actions ---
@@ -471,6 +479,8 @@ const getSubscriptionSummary = async (req, res) => {
         startedAt: planStartedAt,
         currentPeriodStart: planStartedAt,
         currentPeriodEnd: planPeriodEnd,
+        // trialEndsAt = period end for trial plans; null for paid plans.
+        trialEndsAt: (planStatus === 'trialing' || planStatus === 'trial_ending_soon') ? planPeriodEnd : null,
         cancelAtPeriodEnd: false,
         paymentProvider: paymentProvider,
         planHealth: planHealth,
@@ -489,7 +499,10 @@ const getSubscriptionSummary = async (req, res) => {
           },
           videoResponses: {
             used: videoResponseCount,
+            // When DB column is boolean, included is null — FE falls back to
+            // videoResponseBool to decide whether to show "Included"/"Not included".
             included: videoResponseIncluded,
+            booleanIncluded: videoResponseBool,
             period: 'plan',
           },
           interviewQuestions: { included: true },
