@@ -76,8 +76,8 @@ const createJobs = async (req, res) => {
   } = req.body;
 
   const insertQuery = `INSERT INTO ${dbSchema}.jobs
-  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, job_status_id, job_city, job_category_id, job_country, salary_currency)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18, $19, $20) returning *;`;
+  (job_id, job_banner, job_title, company_id, industry_id, job_role_id, job_type_id, job_level_id, job_description, job_duties, work_setup_id, salary_minimum, salary_maximum, rate, job_address, created_at, job_status_id, job_city, job_category_id, job_country, salary_currency, expiration_date)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, current_timestamp, $16, $17, $18, $19, $20, $21) returning *;`;
 
   try {
     // QA8 FIX-2 BOLA: derive companyId from the authenticated caller's JWT,
@@ -118,6 +118,7 @@ const createJobs = async (req, res) => {
       jobCategoryId,
       jobCountry,
       salaryCurrency,
+      expirationDate || null,
     ]);
 
     if (!rows || rows.length == 0) {
@@ -269,8 +270,9 @@ const updateJob = async (req, res) => {
       job_description=$7, job_duties=$8, work_setup_id=$9,
       salary_minimum=$10, salary_maximum=$11, rate=$12,
       job_address=$13, job_city=$14, job_category_id=$15,
-      job_country= $16, job_status_id = $17, salary_currency=$18
-      WHERE job_id=$19 AND company_id=$20 returning *;`;
+      job_country=$16, job_status_id=$17, salary_currency=$18,
+      expiration_date=$19
+      WHERE job_id=$20 AND company_id=$21 returning *;`;
 
   const {
     jobBanner,
@@ -293,6 +295,7 @@ const updateJob = async (req, res) => {
     jobCategoryId,
     jobStatusId,
     jobId,
+    expirationDate,
     badges,
     requirements,
     goodToHave,
@@ -344,8 +347,9 @@ const updateJob = async (req, res) => {
       jobCountry,
       jobStatusId,
       salaryCurrency,
+      expirationDate || null,
       jobId,
-      callerCompany.companyId,  // $20 — ownership enforced in WHERE
+      callerCompany.companyId,  // $21 — ownership enforced in WHERE
     ]);
 
     // Zero rows: either job not found or company_id mismatch — 403 either way

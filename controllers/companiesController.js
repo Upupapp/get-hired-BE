@@ -98,8 +98,8 @@ const createCompanyFull = async (req, res) => {
 const updateCompany = async (req, res) => {
   const updateQuery = `UPDATE ${dbSchema}.companies
   SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11,
-  company_state=$12, company_mapurl=$13, company_suburb=$14, company_zip=$15, company_address_one=$16
-  WHERE company_id=$17 returning *;`;
+  company_state=$12, company_mapurl=$13, company_suburb=$14, company_zip=$15, company_address_one=$16, shown_publicly=$17
+  WHERE company_id=$18 returning *;`;
 
   let rawUrl = "";
 
@@ -122,6 +122,7 @@ const updateCompany = async (req, res) => {
     companyZip,
     companyMapUrl,
     companyAddressOne,
+    shownPublicly,
   } = req.body;
 
   try {
@@ -164,6 +165,7 @@ const updateCompany = async (req, res) => {
       companyZip,
       companyMapUrl,
       companyAddressOne,
+      shownPublicly === true || shownPublicly === 'true',
       companyId,
     ]);
 
@@ -465,6 +467,7 @@ const mappedCompany = (raw) => {
     companyZip: raw.company_zip,
     companyAddressOne: raw.company_address_one,
     withActiveSubscription: raw.with_active_subscription,
+    shownPublicly: raw.shown_publicly === true,
   };
 };
 
