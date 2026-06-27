@@ -95,6 +95,10 @@ const createCompanyFull = async (req, res) => {
   }
 };
 
+const _isValidEmail = function(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+};
+
 const updateCompany = async (req, res) => {
   const updateQuery = `UPDATE ${dbSchema}.companies
   SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11,
@@ -126,16 +130,58 @@ const updateCompany = async (req, res) => {
   } = req.body;
 
   try {
-    // SECURE fix (BOLA): this route previously had no auth middleware AND
-    // trusted companyId straight from the request body, letting any caller
-    // update any company's profile. Confirm the authenticated caller
-    // actually belongs to the company being updated.
-    // QA8 FIX-8: added Array.isArray guard — getUserCompany returns [] (not null)
-    // when no company row exists, so the prior !userCompany check alone would
-    // have passed for a caller with no company ([] is truthy).
+    // BOLA guard: derive authoritative companyId from the JWT, never from
+    // the request body. Array.isArray guard: getUserCompany returns [] (not
+    // null) when no company row exists, and [] is truthy.
     const userCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(userCompany) || !userCompany || userCompany.companyId !== companyId) {
-      return res.status(403).json({ message: "You don't have permission to do that." });
+      return res.status(403).json({
+        status: 'error',
+        error: "You don't have permission to update this company profile.",
+        code: 'forbidden',
+      });
+    }
+
+    // Field validation
+    var fieldErrors = {};
+    var trimmedName  = (companyName && typeof companyName === 'string')  ? companyName.trim()  : '';
+    var trimmedEmail = (companyEmail && typeof companyEmail === 'string') ? companyEmail.trim() : '';
+
+    if (!trimmedName) {
+      fieldErrors.companyName = 'Company name is required.';
+    } else if (trimmedName.length > 200) {
+      fieldErrors.companyName = 'Company name must be 200 characters or fewer.';
+    }
+
+    if (!trimmedEmail) {
+      fieldErrors.companyEmail = 'Contact email is required.';
+    } else if (!_isValidEmail(trimmedEmail)) {
+      fieldErrors.companyEmail = 'Enter a valid email address.';
+    }
+
+    if (companyDetails && typeof companyDetails === 'string' && companyDetails.length > 1000) {
+      fieldErrors.companyDetails = 'About section must be 1000 characters or fewer.';
+    }
+
+    if (numberOfEmployee !== undefined && numberOfEmployee !== null && numberOfEmployee !== '') {
+      var numEmp = parseInt(numberOfEmployee, 10);
+      if (isNaN(numEmp) || numEmp < 0 || numEmp > 1000000) {
+        fieldErrors.numberOfEmployee = 'Enter a valid number of employees (0 – 1,000,000).';
+      }
+    }
+
+    if (Object.keys(fieldErrors).length > 0) {
+      return res.status(400).json({
+        status: 'error',
+        error: 'Please review the highlighted fields.',
+        fieldErrors: fieldErrors,
+        feedback: {
+          state: 'validation_error',
+          title: 'Some details need a quick check',
+          body: 'We found fields that need to be fixed before saving.',
+          primaryCta: 'Review fields',
+        },
+      });
     }
 
     if (companyLogoFile && companyLogoFile != "") {
@@ -150,12 +196,12 @@ const updateCompany = async (req, res) => {
 
     const { rows } = await dbQuery.query(updateQuery, [
       rawUrl,
-      companyName,
+      trimmedName,
       companyDetails,
       industryId,
       workSetupId,
       numberOfEmployee,
-      companyEmail,
+      trimmedEmail,
       companyCity,
       companyContactNumber,
       companyCountry,
@@ -169,14 +215,25 @@ const updateCompany = async (req, res) => {
       companyId,
     ]);
 
-    if (!rows && rows.length == 0) {
-      throw "Failed to Update";
+    if (!rows || rows.length === 0) {
+      throw new Error("Failed to Update");
     }
 
     const dbResponse = mappedCompany(rows[0]);
-    return res.status(status.success).json(successResponse(dbResponse));
+    console.log('[company.update] success | actor=' + (req.user && req.user.uid || 'unknown') + ' | companyId=' + companyId);
+
+    return res.status(status.success).json(Object.assign({}, successResponse(dbResponse), {
+      feedback: {
+        state: 'success',
+        title: 'Company profile updated',
+        body: 'Your company details are saved and ready for your hiring workspace.',
+        syncNote: 'Changes synced across your recruiter dashboard and company profile.',
+        primaryCta: 'Continue editing',
+        secondaryCta: 'Back to dashboard',
+      },
+    }));
   } catch (error) {
-    console.error('[companiesController] error:', error);
+    console.error('[company.update] error | companyId=' + companyId + ' |', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
