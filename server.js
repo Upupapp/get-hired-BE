@@ -102,7 +102,7 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
-app.enable("trust proxy");
+app.set("trust proxy", 1);
 
 // QA11 FIX-04 HEADERS: add baseline security headers.
 // Closes the long-open nosniff item (tracked across QA8-QA10 as SEC-03).
