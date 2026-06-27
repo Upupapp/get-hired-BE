@@ -208,8 +208,9 @@ app.get("/sitemap.xml", async (req, res) => {
     const staticPages = [
       { loc: `${BASE_URL}/home`, changefreq: "weekly", priority: "1.0" },
       { loc: `${BASE_URL}/jobs`, changefreq: "daily", priority: "0.9" },
-      { loc: `${BASE_URL}/job-seekers`, changefreq: "monthly", priority: "0.7" },
-      { loc: `${BASE_URL}/employers`, changefreq: "monthly", priority: "0.7" },
+      { loc: `${BASE_URL}/companies`, changefreq: "weekly", priority: "0.7" },
+      { loc: `${BASE_URL}/job-seekers`, changefreq: "monthly", priority: "0.6" },
+      { loc: `${BASE_URL}/employers`, changefreq: "monthly", priority: "0.6" },
     ];
 
     const jobUrls = rows.map(row => {
