@@ -166,6 +166,10 @@ const disabledUserInFirebase = async (userId) => {
   }
 };
 
+const updateUserPasswordInFirebase = async (uid, newPassword) => {
+  return firebaseAdmin.auth().updateUser(uid, { password: newPassword });
+};
+
 const verifyFCMToken = async (token) => {
   try {
     const checker = await firebaseAdmin.messaging().send(
@@ -277,5 +281,6 @@ export {
   firebaseSendGroupNotif,
   registerNewUserInFirebaseWithEmail,
   deleteUserAccountInFirebaseById,
-  createDynamicLink
+  createDynamicLink,
+  updateUserPasswordInFirebase
 };

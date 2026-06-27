@@ -134,6 +134,7 @@ app.use("/api", writeLimiter);
 app.use("/api/auth/changepassword", sensitiveLimiter);
 app.use("/api/auth/getpwresetlink", sensitiveLimiter);
 app.use("/api/auth/archive", sensitiveLimiter);
+app.use("/api/auth/account/change-password", sensitiveLimiter);
 
 // --- Route mounting ---
 app.use("/api", userRoutes);

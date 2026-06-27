@@ -11,9 +11,11 @@ import {
   updateUserProfile,
   getVerificationLink,
   verifyEmailFileManually,
-  deleteAccountById
+  deleteAccountById,
+  changePasswordInSession
 } from "../controllers/userController";
 import verifyAuth from '../middleware/verifyAuth';
+import verifyRoles from '../middleware/verifyRoles';
 
 const router = express.Router();
 
@@ -29,5 +31,6 @@ router.post("/auth/changepassword", changePw);
 router.get("/auth/getprofile", verifyAuth, getUserProfile);
 router.put("/auth/updateprofile", verifyAuth, updateUserProfile);
 router.put("/auth/archive", verifyAuth, deleteAccountById);
+router.post("/auth/account/change-password", verifyAuth, verifyRoles([2, 3]), changePasswordInSession);
 
 export default router;

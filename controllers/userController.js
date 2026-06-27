@@ -34,6 +34,7 @@ import {
   updateUserProfileInFirebase,
   registerNewUserInFirebaseWithEmail,
   deleteUserAccountInFirebaseById,
+  updateUserPasswordInFirebase,
 } from "../helpers/firebaseFunctions";
 import env from "../env";
 
@@ -554,6 +555,160 @@ const userMap = (raw) => {
   };
 };
 
+const COMMON_PW_BLOCKLIST = [
+  'password', 'password1', 'password12', 'password123', 'password1234',
+  'qwerty123456', '123456789012', 'abcdefghijkl', 'letmein123456',
+  'welcome12345', 'gethired123456', 'gethiredonline'
+];
+
+const changePasswordInSession = async (req, res) => {
+  const uid = (req.user && req.user.uid) ? req.user.uid : null;
+  if (!uid) {
+    return res.status(403).json(errorResponse('Authentication required.'));
+  }
+
+  const currentPassword = (req.body && req.body.currentPassword) ? String(req.body.currentPassword) : '';
+  const newPassword = (req.body && req.body.newPassword) ? String(req.body.newPassword) : '';
+  const signOutOtherSessions = (req.body && req.body.signOutOtherSessions) ? true : false;
+  const clientEventId = (req.body && req.body.clientEventId) ? String(req.body.clientEventId).substring(0, 64) : '';
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'missing_fields', message: 'Current and new password are required.' },
+      feedback: { state: 'weak_password', title: 'Missing fields', body: 'Please enter your current and new password.', primaryCta: 'Try again' }
+    });
+  }
+
+  if (newPassword.length < 12) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'weak_password', message: 'Use at least 12 characters.' },
+      feedback: { state: 'weak_password', title: 'Choose a stronger password', body: 'Use at least 12 characters and avoid common passwords.', primaryCta: 'Review password' }
+    });
+  }
+
+  if (newPassword.length > 128) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'weak_password', message: 'Password is too long. Use fewer than 128 characters.' },
+      feedback: { state: 'weak_password', title: 'Password is too long', body: 'Please use a password with fewer than 128 characters.', primaryCta: 'Review password' }
+    });
+  }
+
+  try {
+    const credResult = await dbQuery.query(
+      'SELECT uc.email, uc.password AS pw_hash, u.firstname FROM ' + dbSchema + '.user_credentials uc LEFT JOIN ' + dbSchema + '.users u ON u.uid = uc.uid WHERE uc.uid = $1',
+      [uid]
+    );
+
+    if (!credResult || !credResult.rows || !credResult.rows[0]) {
+      return res.status(404).json(errorResponse('User not found.'));
+    }
+
+    const userRecord = credResult.rows[0];
+    const userEmail = userRecord.email || '';
+    const storedHash = userRecord.pw_hash || '';
+    const firstName = userRecord.firstname || '';
+
+    if (!comparePassword(storedHash, currentPassword)) {
+      console.error('[changePasswordInSession] wrong-current-password uid=' + uid.substring(0, 8));
+      return res.status(401).json({
+        success: false,
+        error: { code: 'wrong_current_password', message: "We couldn't confirm your current password. Please check it and try again." },
+        feedback: { state: 'wrong_current_password', title: "We couldn't confirm your current password", body: "Please check your current password and try again.", primaryCta: 'Try again', secondaryCta: 'Forgot password?' }
+      });
+    }
+
+    const lowerNew = newPassword.toLowerCase();
+    const isCommon = COMMON_PW_BLOCKLIST.some(function(b) { return lowerNew === b.toLowerCase(); });
+    if (isCommon) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'weak_password', message: 'Choose a password that is harder to guess.' },
+        feedback: { state: 'weak_password', title: 'Choose a stronger password', body: 'Use at least 12 characters and avoid common passwords or passwords used on other sites.', primaryCta: 'Review password' }
+      });
+    }
+
+    const emailLocal = (userEmail.indexOf('@') > 0) ? userEmail.split('@')[0] : '';
+    if (emailLocal.length > 3 && lowerNew.indexOf(emailLocal.toLowerCase()) !== -1) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'weak_password', message: 'Avoid using your email address in your password.' },
+        feedback: { state: 'weak_password', title: 'Choose a stronger password', body: 'Avoid using your email address in your password.', primaryCta: 'Review password' }
+      });
+    }
+
+    if (comparePassword(storedHash, newPassword)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'same_as_old', message: 'Your new password must be different from your current password.' },
+        feedback: { state: 'same_as_old', title: 'Choose a different password', body: 'Your new password must be different from your current password.', primaryCta: 'Try again' }
+      });
+    }
+
+    await updateUserPasswordInFirebase(uid, newPassword);
+
+    const newHash = hashPassword(newPassword);
+    await dbQuery.query(
+      'UPDATE ' + dbSchema + '.user_credentials SET password = $1 WHERE uid = $2',
+      [newHash, uid]
+    );
+
+    let otherSessionsRevoked = false;
+    if (signOutOtherSessions) {
+      try {
+        await revokeTokenInFirebase(uid);
+        otherSessionsRevoked = true;
+      } catch (revokeErr) {
+        console.error('[changePasswordInSession] token revocation failed uid=' + uid.substring(0, 8));
+      }
+    }
+
+    let notificationSent = false;
+    try {
+      const mailResult = await send(userEmail, 'pw_changed', { name: (firstName || 'there'), email: userEmail });
+      notificationSent = (mailResult && mailResult.sent) ? true : false;
+    } catch (mailErr) {
+      console.error('[changePasswordInSession] notification email error uid=' + uid.substring(0, 8));
+    }
+
+    console.log('[changePasswordInSession] success uid=' + uid.substring(0, 8) + ' revoked=' + otherSessionsRevoked + ' notified=' + notificationSent + ' eventId=' + clientEventId);
+
+    return res.status(200).json({
+      success: true,
+      copyKey: 'account.password.change.success',
+      feedback: {
+        state: 'success',
+        title: 'Password updated',
+        body: 'Your GetHired password has been changed.',
+        primaryCta: 'Done'
+      },
+      security: {
+        notificationQueued: notificationSent,
+        otherSessionsRevoked: otherSessionsRevoked
+      },
+      audit: { requestId: clientEventId }
+    });
+
+  } catch (err) {
+    const errCode = (err && err.code) ? err.code : '';
+    if (errCode === 'auth/id-token-expired' || errCode === 'auth/user-token-expired') {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'reauth_required', message: 'Sign in again before changing your password.' },
+        feedback: { state: 'recent_login_required', title: 'Sign in again to change your password', body: 'For your security, please sign in again before changing your password.', primaryCta: 'Sign in again' }
+      });
+    }
+    console.error('[changePasswordInSession] error uid=' + (uid ? uid.substring(0, 8) : 'unknown'));
+    return res.status(500).json({
+      success: false,
+      error: { code: 'server_error', message: 'Please try again in a moment.' },
+      feedback: { state: 'server_error', title: "Password wasn't updated", body: 'Your account is safe. Please try again in a moment.', primaryCta: 'Try again' }
+    });
+  }
+};
+
 export {
   loginUser,
   registerUser,
@@ -571,5 +726,6 @@ export {
   registerUserInDB,
   getVerification,
   getVerificationLink,
-  verifyEmailFileManually
+  verifyEmailFileManually,
+  changePasswordInSession
 };
