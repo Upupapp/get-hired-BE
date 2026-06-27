@@ -344,7 +344,9 @@ const getSubscriptionSummary = async (req, res) => {
       priceAmount = latestSub.price || 0;
       priceCurrency = latestSub.price_currency || 'PHP';
 
-      var daysForPlan = latestSub.subscription_id === 1 ? 7 : 30;
+      var daysForPlan = latestSub.subscription_id === 1 ? 7
+                       : latestSub.payment_occurence === 'annually' ? 365
+                       : 30;
       var createdAt = latestSub.created_at ? new Date(latestSub.created_at) : null;
       planStartedAt = createdAt ? createdAt.toISOString() : null;
       planPeriodEnd = createdAt
