@@ -130,6 +130,17 @@ const getCompanyIdByUserId = async (uid) => {
   }
 };
 
+const generateSlug = (name) => {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+};
+
 const mappedCompanyBasicInfo = async (raw) => {
   return {
     companyId: raw.company_id,
@@ -138,6 +149,7 @@ const mappedCompanyBasicInfo = async (raw) => {
     companyIndustry: raw.company_industry_name,
     companyJobsOpening:
       (await getCompanyPublishedJobsCount(raw.company_id)) || 0,
+    slug: raw.company_slug || generateSlug(raw.company_name),
   };
 };
 
@@ -159,7 +171,22 @@ const mappedCompany = (raw) => {
     createdAt: raw.created_at,
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
+    slug: raw.company_slug || generateSlug(raw.company_name),
   };
+};
+
+const companyDetailsBySlug = async (slug) => {
+  const searchQuery = `SELECT c.*, i.industry_name as company_industry_name
+    FROM ${dbSchema}.companies c
+    LEFT JOIN ${dbSchema}.industry i ON c.industry_id = i.industry_id
+    WHERE c.company_slug = $1;`;
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [slug]);
+    if (!rows || rows.length === 0) return null;
+    return mappedCompany(rows[0]);
+  } catch (error) {
+    throw error;
+  }
 };
 
 const charts = async (companyId) => {
@@ -376,6 +403,8 @@ const pipelineOverview = async (companyId) => {
 export {
   companyList,
   companyDetailsById,
+  companyDetailsBySlug,
+  generateSlug,
   companyUsers,
   assignEmployeeToCompany,
   getCompanyNameByCompanyId,

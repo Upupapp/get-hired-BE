@@ -24,6 +24,8 @@ import { registerUserInDB, getVerification } from "./userController";
 import {
   companyList,
   companyDetailsById,
+  companyDetailsBySlug,
+  generateSlug,
   companyUsers,
   assignEmployeeToCompany,
   getCompanyNameByCompanyId,
@@ -102,8 +104,8 @@ const _isValidEmail = function(email) {
 const updateCompany = async (req, res) => {
   const updateQuery = `UPDATE ${dbSchema}.companies
   SET company_logo=$1, company_name=$2, company_details=$3, industry_id=$4, work_setup_id=$5, number_of_employee=$6, company_email=$7, company_city=$8, company_contact_number=$9, company_country=$10, company_address=$11,
-  company_state=$12, company_mapurl=$13, company_suburb=$14, company_zip=$15, company_address_one=$16, shown_publicly=$17
-  WHERE company_id=$18 returning *;`;
+  company_state=$12, company_mapurl=$13, company_suburb=$14, company_zip=$15, company_address_one=$16, shown_publicly=$17, company_slug=$18
+  WHERE company_id=$19 returning *;`;
 
   let rawUrl = "";
 
@@ -212,6 +214,7 @@ const updateCompany = async (req, res) => {
       companyZip,
       companyAddressOne,
       shownPublicly === true || shownPublicly === 'true',
+      generateSlug(trimmedName),
       companyId,
     ]);
 
@@ -322,9 +325,10 @@ const getSpecificCompany = async (req, res) => {
 
 const createBasicCompany = async (companyName, companyEmail, userId) => {
   const companyId = idGenerator(6, "COM");
+  const slug = generateSlug(companyName);
   const insertQuery = `INSERT INTO ${dbSchema}.companies
-  (company_id, company_name, company_email, created_at, created_by)
-  VALUES($1, $2, $3, $4, $5) returning *;`;
+  (company_id, company_name, company_email, created_at, created_by, company_slug)
+  VALUES($1, $2, $3, $4, $5, $6) returning *;`;
 
   try {
     const { rows } = await dbQuery.query(insertQuery, [
@@ -333,6 +337,7 @@ const createBasicCompany = async (companyName, companyEmail, userId) => {
       companyEmail,
       new Date(),
       userId,
+      slug,
     ]);
 
     if (!rows && rows.length == 0) {
@@ -360,9 +365,9 @@ const createCompany = async (company, uid) => {
   const companyId = idGenerator(6, "COM");
 
   const insertQuery = `INSERT INTO ${dbSchema}.companies
-  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_at, created_by, 
-  company_state, company_mapurl, company_suburb, company_zip, company_address_one)
-  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) returning *;`;
+  (company_id, company_logo, company_name, company_details, industry_id, work_setup_id, number_of_employee, company_email, company_city, company_contact_number, company_country, company_address, created_at, created_by,
+  company_state, company_mapurl, company_suburb, company_zip, company_address_one, company_slug)
+  VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning *;`;
 
   const {
     companyLogoFile,
@@ -412,6 +417,7 @@ const createCompany = async (company, uid) => {
       companyTown,
       companyZip,
       companyAddressOne,
+      generateSlug(companyName),
     ]);
 
     if (!rows && rows.length == 0) {
@@ -525,6 +531,7 @@ const mappedCompany = (raw) => {
     companyAddressOne: raw.company_address_one,
     withActiveSubscription: raw.with_active_subscription,
     shownPublicly: raw.shown_publicly === true,
+    slug: raw.company_slug || generateSlug(raw.company_name),
   };
 };
 
@@ -703,12 +710,30 @@ const getFeaturedCompanies = async (req, res) => {
   }
 };
 
+const getCompanyBySlug = async (req, res) => {
+  const { slug } = req.params;
+  if (!slug) {
+    return res.status(400).json(errorResponse("Slug is required."));
+  }
+  try {
+    const company = await companyDetailsBySlug(slug);
+    if (!company) {
+      return res.status(404).json(errorResponse("Company not found."));
+    }
+    return res.status(status.success).json(successResponse(company));
+  } catch (error) {
+    console.error('[companiesController] getCompanyBySlug error:', error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
 const getCompanyShareableLink = async (req, res) => {
   const { id } = req.query;
 
   try {
     const company = await companyDetailsById(id);
-    const postLink = `/companies/details?id=${id}`;
+    const slug = (company && company.slug) ? company.slug : null;
+    const postLink = slug ? `/companies/${slug}` : `/companies/details?id=${id}`;
     const link = await createDynamicLink(
       company.companyName,
       "View all job posted by visiting this link",
@@ -816,6 +841,7 @@ export {
   getUserCompany,
   getUserCompanyForRequest,
   getSpecificCompany,
+  getCompanyBySlug,
   updateCompany,
   getDashboard,
   getDashboardPipelineOverview,

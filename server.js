@@ -196,11 +196,13 @@ app.get("/sitemap.xml", async (req, res) => {
 
     // Company pages: one URL per company that has at least one published job.
     // Uses MAX(updated_at) across that company's active listings as lastmod.
+    // Joins companies table to get company_slug for clean URLs.
     const { rows: companyRows } = await dbQuery.query(
-      `SELECT j.company_id, MAX(j.updated_at) AS last_updated
+      `SELECT j.company_id, c.company_slug, MAX(j.updated_at) AS last_updated
        FROM ${schema}.jobs j
+       JOIN ${schema}.companies c ON c.company_id = j.company_id
        WHERE j.job_status_id = 2 AND j.company_id IS NOT NULL
-       GROUP BY j.company_id
+       GROUP BY j.company_id, c.company_slug
        ORDER BY last_updated DESC;`,
       []
     );
@@ -229,8 +231,10 @@ app.get("/sitemap.xml", async (req, res) => {
           ? new Date(row.last_updated).toISOString().split("T")[0]
           : today
       );
-      const safeCompanyId = xmlEscape(row.company_id);
-      return `  <url>\n    <loc>${BASE_URL}/companies/details?id=${safeCompanyId}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`;
+      const companyPath = row.company_slug
+        ? xmlEscape(row.company_slug)
+        : 'details?id=' + xmlEscape(row.company_id);
+      return `  <url>\n    <loc>${BASE_URL}/companies/${companyPath}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`;
     });
 
     const staticUrls = staticPages.map(p =>

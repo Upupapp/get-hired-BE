@@ -2,7 +2,7 @@ import express from "express";
 import {
   createInitialCompany,
   getSpecificCompany,
-  //   getSpecificCompany,
+  getCompanyBySlug,
   //   getAllCreatedCompanies,
   //   deleteCompany,
   updateCompany,
@@ -47,6 +47,7 @@ router.get("/company/usercompany", verifyAuth, getSpecificCompany);
 router.get("/company/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestrictions);
 
 router.get("/company/details", getSpecificCompany);
+router.get("/company/slug/:slug", getCompanyBySlug);
 router.get("/company/featured", getFeaturedCompanies);
 router.get("/company/sharelink", getCompanyShareableLink);
 
