@@ -207,9 +207,9 @@ const updateCompany = async (req, res) => {
       companyCountry,
       companyAddress,
       companyState,
+      companyMapUrl,
       companyTown,
       companyZip,
-      companyMapUrl,
       companyAddressOne,
       shownPublicly === true || shownPublicly === 'true',
       companyId,
@@ -408,9 +408,9 @@ const createCompany = async (company, uid) => {
       new Date(),
       uid,
       companyState,
+      companyMapUrl,
       companyTown,
       companyZip,
-      companyMapUrl,
       companyAddressOne,
     ]);
 
