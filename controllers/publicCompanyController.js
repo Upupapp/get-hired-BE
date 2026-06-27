@@ -151,7 +151,7 @@ export var getPublicCompanyJobs = async function(req, res) {
     var companyId = companyResult.rows[0].company_id;
 
     var jobResult = await dbQuery.query(
-      'SELECT j.job_id, j.job_title, j.work_setup_id, j.job_type_id, j.salary_min, j.salary_max, j.currency, j.salary_rate, j.job_city, j.job_country, j.created_at FROM gethired.jobs j WHERE j.company_id = $1 AND j.job_status_id = 2 ORDER BY j.created_at DESC LIMIT 50',
+      'SELECT j.job_id, j.job_title, j.work_setup_id, j.job_type_id, j.salary_minimum, j.salary_maximum, j.salary_currency, j.rate, j.job_city, j.job_country, j.created_at FROM gethired.jobs j WHERE j.company_id = $1 AND j.job_status_id = 2 ORDER BY j.created_at DESC LIMIT 50',
       [companyId]
     );
 
@@ -165,10 +165,10 @@ export var getPublicCompanyJobs = async function(req, res) {
           jobTitle:  j.job_title,
           workSetup: WORK_SETUP_MAP[j.work_setup_id] || null,
           jobType:   JOB_TYPE_MAP[j.job_type_id] || null,
-          salaryMin: j.salary_min ? parseFloat(j.salary_min) : null,
-          salaryMax: j.salary_max ? parseFloat(j.salary_max) : null,
-          currency:  j.currency || null,
-          rate:      j.salary_rate || null,
+          salaryMin: j.salary_minimum ? parseFloat(j.salary_minimum) : null,
+          salaryMax: j.salary_maximum ? parseFloat(j.salary_maximum) : null,
+          currency:  j.salary_currency || null,
+          rate:      j.rate || null,
           location:  location,
           postedAt:  j.created_at || null,
         };
