@@ -14,6 +14,7 @@ import {
   getUserNameByEmail,
   getUserCredentialsByEmail,
   getUserProfileById,
+  userMap,
 } from "../helpers/userDetails";
 
 import { getUserCompany } from "./companiesController";
@@ -563,28 +564,10 @@ const deleteUserAccount = async (uid) => {
   }
 };
 
-const userMap = (raw) => {
-  return {
-    uid: raw.uid,
-    firstName: raw.firstname,
-    middleName: raw.middlename,
-    lastName: raw.lastname,
-    createdDate: raw.createddate,
-    dateOfBirth: raw.date_of_birth,
-    age: raw.age,
-    email: raw.email,
-    gender: raw.gender,
-    phoneNumber: raw.phone_number,
-    cellNumber: raw.cellnumber,
-    photoURL: raw.photourl,
-    address: raw.address,
-    zip: raw.zip,
-    city: raw.city,
-    isProfileUpdated: raw.is_profile_updated,
-    lastUpdate: raw.last_update,
-    addressB: raw.address_b,
-  };
-};
+// userMap is imported from helpers/userDetails.js — the single source of truth
+// for the user response shape. The stale local copy was removed (STITCH fix):
+// it omitted the 11 new employer-profile fields (roleTitle/department/shortBio/
+// linkedinUrl/6 visibility booleans), causing updateProfile to return stale data.
 
 const COMMON_PW_BLOCKLIST = [
   'password', 'password1', 'password12', 'password123', 'password1234',

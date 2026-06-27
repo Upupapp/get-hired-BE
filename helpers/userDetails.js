@@ -155,4 +155,5 @@ export {
   getUserCredentialsByEmail,
   getBasicInfoByEmail,
   getIdByEmail,
+  userMap,
 };
