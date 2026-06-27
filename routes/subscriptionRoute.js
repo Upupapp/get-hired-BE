@@ -4,6 +4,7 @@ import {
   createPaymentIntent,
   getAllSubscription,
   getCompanySubscriptions,
+  getSubscriptionSummary,
 } from "../controllers/subscriptionController";
 
 const router = express.Router();
@@ -20,4 +21,8 @@ router.get(
   verifyAuth,
   getCompanySubscriptions
 );
+
+// PlanOS V6: full subscription summary for employer billing command center
+router.get("/recruiter/subscription-summary", verifyAuth, getSubscriptionSummary);
+
 export default router;
