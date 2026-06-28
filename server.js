@@ -22,6 +22,7 @@ import cvBuilderRoutes from "./routes/cvBuilderRoutes";
 import messageRoutes from "./routes/messageRoutes";
 import publicRoutes from "./routes/publicRoute";
 import imageRoutes from "./routes/imageRoutes";
+import searchRoutes from "./routes/searchRoutes";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -155,6 +156,7 @@ app.use("/api", cvBuilderRoutes);
 app.use("/api", messageRoutes);
 app.use("/api", publicRoutes);
 app.use("/api/images", imageRoutes);
+app.use("/api/search", searchRoutes);
 
 
 // SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.
