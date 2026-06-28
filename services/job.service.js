@@ -118,7 +118,7 @@ const getJobInterviewQuestions = async (jobId, templateName) => {
       left join ${dbSchema}.interview_template_question i
       on i.job_interview_template_id = j.job_interview_template_id
       WHERE j.job_id = $1 and j.job_interview_template_name = $2 
-      ORDER BY i.job_interview_template_id, i.sequence ASC;`;
+      ORDER BY i.job_interview_template_id, i.created_at ASC;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId, templateName]);
