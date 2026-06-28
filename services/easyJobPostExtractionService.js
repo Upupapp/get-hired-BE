@@ -192,18 +192,35 @@ export async function extractTextFromUrl(urlStr) {
 
   if (isPrivateIp(address)) throw new Error('The URL resolves to a private network address.');
 
-  // Fetch with strict limits
+  // Fetch with strict limits.
+  // Use a realistic browser UA — custom bot strings get 403'd by Cloudflare
+  // and similar protections on public job-board sites.
   var response = await axios.get(urlStr, {
-    timeout: 8000,
+    timeout: 15000,
     maxContentLength: 5 * 1024 * 1024,
-    maxRedirects: 3,
+    maxRedirects: 5,
     headers: {
-      'User-Agent': 'GetHired-JobImporter/1.0',
-      'Accept': 'text/html,text/plain',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
     },
     responseType: 'text',
-    validateStatus: function(status) { return status >= 200 && status < 400; },
+    // Accept all responses — check status below so we can give specific messages
+    validateStatus: function(status) { return status >= 200 && status < 500; },
   });
+
+  if (response.status === 403 || response.status === 429) {
+    throw new Error('BLOCKED');
+  }
+  if (response.status === 404) {
+    throw new Error('NOT_FOUND');
+  }
+  if (response.status < 200 || response.status >= 400) {
+    throw new Error('HTTP_' + response.status);
+  }
 
   var contentType = (response.headers && response.headers['content-type']) || '';
   var bodyStr = typeof response.data === 'string' ? response.data : String(response.data);

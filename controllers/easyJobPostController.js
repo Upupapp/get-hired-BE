@@ -125,10 +125,22 @@ export async function linkAndExtract(req, res) {
     try {
       rawText = await extractTextFromUrl(urlStr);
     } catch (fetchErr) {
-      var msg = (fetchErr && fetchErr.message) || 'Could not fetch the URL.';
-      // Sanitize internal messages before returning
-      if (msg.includes('private network') || msg.includes('resolve')) {
+      var msg = (fetchErr && fetchErr.message) || '';
+      if (msg === 'BLOCKED') {
+        return res.status(422).json({
+          message: 'This website blocked our request. Try copying the job description and pasting it into the manual form instead.',
+        });
+      }
+      if (msg === 'NOT_FOUND') {
+        return res.status(422).json({
+          message: 'The URL was not found (404). Please check the link and try again.',
+        });
+      }
+      if (msg.includes('private network') || msg.includes('resolve') || msg.includes('NOT_ALLOWED')) {
         return res.status(422).json({ message: 'The URL could not be reached or is not allowed.' });
+      }
+      if (msg.includes('timeout') || msg.includes('ECONNABORTED') || msg.includes('ETIMEDOUT')) {
+        return res.status(422).json({ message: 'The website took too long to respond. Please try again or paste the job text manually.' });
       }
       return res.status(422).json({ message: 'Could not fetch the URL. Please check the link and try again.' });
     }
