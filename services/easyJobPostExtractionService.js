@@ -352,11 +352,14 @@ function extractJobLevelHint(text) {
 function extractCity(text) {
   var t = text.toLowerCase();
 
+  // Country/region names that are not cities — skip these even if under a location label
+  var NOT_A_CITY = /^(philippines|pilipinas|ph|metro manila|ncr|luzon|visayas|mindanao|asia|southeast asia|sea)$/i;
+
   // Look for explicit location label first
-  var locMatch = text.match(/(?:location|based in|work location|office location|city)[:\s]+([A-Z][^\n,;.]+)/i);
+  var locMatch = text.match(/(?:location|based in|work location|office location|city)[:\s]+([A-Za-z][^\n,;.]+)/i);
   if (locMatch) {
     var loc = locMatch[1].trim().split(/[,\n;]/)[0].trim();
-    if (loc.length > 1 && loc.length < 60) return loc;
+    if (loc.length > 1 && loc.length < 60 && !NOT_A_CITY.test(loc)) return loc;
   }
 
   // Scan for known PH cities
@@ -372,17 +375,25 @@ function extractCity(text) {
   return null;
 }
 
+// Single-word document metadata labels that should never be picked up as a job title
+var TITLE_BLACKLIST = /^(company|department|division|team|date|location|city|country|address|reference|ref|from|to|by|budget|headcount|salary|contact|email|phone|fax|website|url|name|signed|approved|version|revision|status|type|category|industry|function|level|grade|band|scope|region|territory|zone|market|client|customer|account|project|program|initiative|subject|re|re:|cc|bcc)[:.]?$/i;
+
 function extractJobTitle(lines) {
-  // Strategy: first non-empty line if short enough, otherwise look for explicit labels
-  for (var i = 0; i < Math.min(lines.length, 8); i++) {
+  // Strategy: look for an explicit label first, then the first plausible title line
+  for (var i = 0; i < Math.min(lines.length, 10); i++) {
     var line = lines[i].trim();
     if (!line) continue;
 
-    // Explicit label
-    var match = line.match(/^(?:job title|position|role|opening|vacancy)[:\s]+(.+)/i);
+    // Explicit label takes priority: "Job Title: Senior Events Manager"
+    var match = line.match(/^(?:job title|position|role|opening|vacancy|title)[:\s]+(.+)/i);
     if (match) return match[1].trim();
 
-    // First line that looks like a title: < 80 chars, no URL, not a company address
+    // Skip single-word metadata labels ("Company", "Department", "Location", …)
+    if (TITLE_BLACKLIST.test(line)) continue;
+    // Skip lines that look like "Label: Value" doc metadata
+    if (/^[A-Za-z ]{2,25}:\s+\S/.test(line)) continue;
+
+    // First remaining line that looks like a title: < 80 chars, no URL, not a section header
     if (line.length < 80 && line.length > 3 && !detectSectionHeader(line) &&
         !/https?:\/\//.test(line) && !/^(apply|about|we are|we're)/i.test(line)) {
       return line;
@@ -528,15 +539,14 @@ export function mapTextToJobFields(rawText) {
   }
 
   // --- Missing required fields check ---
-  // Required for publish: jobTypeId, jobLevelId, jobCity, jobCountry, jobDescription, workSetupId, jobBanner
+  // Only flag fields that have no detected value — if a hint was found the
+  // form will be pre-filled with a suggestion, so the recruiter just confirms.
   if (!result.jobTitle) result.missingRequiredFields.push('jobTitle');
   if (!result.jobCity) result.missingRequiredFields.push('jobCity');
   if (!result.jobDescription || result.jobDescription.length < 20) result.missingRequiredFields.push('jobDescription');
-  // These can only be selected by recruiter — always flag as "needs selection"
-  result.missingRequiredFields.push('jobTypeId');
-  result.missingRequiredFields.push('jobLevelId');
-  result.missingRequiredFields.push('workSetupId');
-  result.missingRequiredFields.push('jobBanner');
+  if (!result.jobTypeHint) result.missingRequiredFields.push('jobTypeId');
+  if (!result.jobLevelHint) result.missingRequiredFields.push('jobLevelId');
+  if (!result.workSetupHint) result.missingRequiredFields.push('workSetupId');
 
   // --- Warnings ---
   if (result.jobTitle && result.jobTitle.length > 100) {
