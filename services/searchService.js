@@ -132,21 +132,51 @@ async function searchPublicJobs(params) {
 // ---------- PUBLIC COMPANY SEARCH ----------
 
 async function searchPublicCompanies(params) {
+  return searchPublicCompaniesRanked(params);
+}
+
+async function searchPublicCompaniesRanked(params) {
   var q = params.q ? expandSynonyms(params.q) : '';
+  var sort = params.sort || 'relevance';
+  var location = params.location || '';
   var limit = params.pagination.limit;
   var offset = params.pagination.offset;
 
   var values = [];
   var paramIdx = 1;
-  var where = ['c.company_slug IS NOT NULL'];
+  // Only show companies that have at least one active published job — safe public fallback
+  var where = [
+    'c.company_slug IS NOT NULL',
+    `EXISTS (SELECT 1 FROM ${dbSchema}.jobs jv WHERE jv.company_id = c.company_id AND jv.job_status_id = 2)`
+  ];
+
+  var orderBy = 'open_jobs_count DESC, c.company_name ASC';
 
   if (q) {
     values.push(q);
     where.push(`(
       to_tsvector('english', coalesce(c.company_name, '')) @@ plainto_tsquery('english', $${paramIdx})
+      OR to_tsvector('english', coalesce(i.industry_name, '')) @@ plainto_tsquery('english', $${paramIdx})
       OR lower(c.company_name) LIKE lower($${paramIdx}) || '%'
     )`);
+    if (sort === 'relevance') {
+      orderBy = `ts_rank_cd(to_tsvector('english', coalesce(c.company_name, '')), plainto_tsquery('english', $${paramIdx})) DESC, open_jobs_count DESC, c.company_name ASC`;
+    }
     paramIdx++;
+  }
+
+  if (location) {
+    values.push('%' + location + '%');
+    where.push(`(lower(c.company_city) LIKE lower($${paramIdx}) OR lower(c.company_country) LIKE lower($${paramIdx}))`);
+    paramIdx++;
+  }
+
+  if (sort === 'most_open_roles') {
+    orderBy = 'open_jobs_count DESC, c.company_name ASC';
+  } else if (sort === 'name_asc') {
+    orderBy = 'c.company_name ASC';
+  } else if (sort === 'newest_posted') {
+    orderBy = `(SELECT MAX(jnp.created_at) FROM ${dbSchema}.jobs jnp WHERE jnp.company_id = c.company_id AND jnp.job_status_id = 2) DESC NULLS LAST`;
   }
 
   values.push(limit);
@@ -165,12 +195,69 @@ async function searchPublicCompanies(params) {
     FROM ${dbSchema}.companies c
     LEFT JOIN ${dbSchema}.industry i ON c.industry_id = i.industry_id
     WHERE ${where.join(' AND ')}
-    ORDER BY c.company_name ASC
+    ORDER BY ${orderBy}
     LIMIT $${limitParam} OFFSET $${offsetParam}
   `;
 
   var result = await db.query(sql, values);
   return result.rows;
+}
+
+// ---------- COMPANY SPOTLIGHT ----------
+// Returns the single best company match for a spotlight card.
+// Only triggered for short specific queries.
+
+async function getCompanySpotlight(q) {
+  if (!q || q.length < 2 || q.length > 80) return null;
+  var words = q.trim().split(/\s+/);
+  if (words.length > 5) return null;
+
+  var sql = `
+    SELECT
+      c.company_id, c.company_name, c.company_logo, c.company_slug,
+      c.company_city, c.company_country, c.number_of_employee,
+      i.industry_name,
+      (SELECT COUNT(*) FROM ${dbSchema}.jobs j2
+       WHERE j2.company_id = c.company_id AND j2.job_status_id = 2) AS open_jobs_count,
+      CASE
+        WHEN lower(c.company_name) = lower($1) THEN 100
+        WHEN lower(c.company_name) LIKE lower($1) || '%' THEN 60
+        ELSE 30
+      END AS match_score
+    FROM ${dbSchema}.companies c
+    LEFT JOIN ${dbSchema}.industry i ON c.industry_id = i.industry_id
+    WHERE c.company_slug IS NOT NULL
+      AND EXISTS (SELECT 1 FROM ${dbSchema}.jobs js WHERE js.company_id = c.company_id AND js.job_status_id = 2)
+      AND (
+        lower(c.company_name) = lower($1)
+        OR lower(c.company_name) LIKE lower($1) || '%'
+        OR to_tsvector('english', coalesce(c.company_name,'')) @@ plainto_tsquery('english', $1)
+      )
+    ORDER BY match_score DESC, open_jobs_count DESC
+    LIMIT 1
+  `;
+
+  var result = await db.query(sql, [q]);
+  if (!result.rows || result.rows.length === 0) return null;
+  var company = result.rows[0];
+  var score = parseInt(company.match_score, 10) || 0;
+  // Only return spotlight for exact or strong prefix matches
+  if (score < 60) return null;
+
+  // Get top matching jobs from that company
+  var jobSql = `
+    SELECT j.job_id, j.job_title, j.job_city, j.job_country, jt.job_type_name, ws.work_setup_name
+    FROM ${dbSchema}.jobs j
+    LEFT JOIN ${dbSchema}.job_type jt ON j.job_type_id = jt.job_type_id
+    LEFT JOIN ${dbSchema}.work_setup ws ON j.work_setup_id = ws.work_setup_id
+    WHERE j.company_id = $1 AND j.job_status_id = 2
+    ORDER BY j.updated_at DESC
+    LIMIT 3
+  `;
+  var jobResult = await db.query(jobSql, [company.company_id]);
+  company.topJobs = jobResult.rows || [];
+  delete company.match_score;
+  return company;
 }
 
 // ---------- AUTOCOMPLETE ----------
@@ -192,11 +279,14 @@ async function getJobTitleSuggestions(prefix) {
 async function getCompanySuggestions(prefix) {
   if (!prefix || prefix.length < 2) return [];
   var sql = `
-    SELECT company_name, company_slug
-    FROM ${dbSchema}.companies
-    WHERE lower(company_name) LIKE lower($1) || '%'
-      AND company_slug IS NOT NULL
-    ORDER BY company_name
+    SELECT
+      c.company_name, c.company_slug, c.company_logo,
+      (SELECT COUNT(*) FROM ${dbSchema}.jobs j2 WHERE j2.company_id = c.company_id AND j2.job_status_id = 2) AS open_jobs_count
+    FROM ${dbSchema}.companies c
+    WHERE lower(c.company_name) LIKE lower($1) || '%'
+      AND c.company_slug IS NOT NULL
+      AND EXISTS (SELECT 1 FROM ${dbSchema}.jobs jv WHERE jv.company_id = c.company_id AND jv.job_status_id = 2)
+    ORDER BY c.company_name
     LIMIT 5
   `;
   var result = await db.query(sql, [prefix]);
@@ -368,6 +458,8 @@ async function searchApplicantSavedJobs(userId, params) {
 export {
   searchPublicJobs,
   searchPublicCompanies,
+  searchPublicCompaniesRanked,
+  getCompanySpotlight,
   getJobTitleSuggestions,
   getCompanySuggestions,
   getLocationSuggestions,

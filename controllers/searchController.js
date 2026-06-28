@@ -9,6 +9,8 @@ import { parsePublicSearchParams, parsePage, sanitiseString } from '../services/
 import {
   searchPublicJobs,
   searchPublicCompanies,
+  searchPublicCompaniesRanked,
+  getCompanySpotlight,
   getJobTitleSuggestions,
   getCompanySuggestions,
   getLocationSuggestions,
@@ -132,57 +134,139 @@ async function getCompanyForUser(uid) {
   return (result.rows && result.rows.length > 0) ? result.rows[0].company_id : null;
 }
 
-// ── Public search ─────────────────────────────────────────────────────────────
+// ── Public search — federated response ───────────────────────────────────────
 
 export async function publicSearch(req, res) {
   try {
     var start = Date.now();
     var params = parsePublicSearchParams(req.query);
-    var scope = params.scope; // 'jobs', 'companies', 'all'
+    var scope = params.scope; // 'all', 'jobs', 'companies'
 
-    var results = [];
-    var pagination = null;
+    // Pagination limits per group in All mode
+    var JOB_LIMIT_ALL = 12;
+    var COMPANY_LIMIT_ALL = 4;
 
+    var jobGroup = null;
+    var companyGroup = null;
+    var spotlightData = null;
+
+    // ── Fetch jobs ──
     if (scope === 'jobs' || scope === 'all') {
-      var jobRows = await searchPublicJobs(params);
-      var jobPage = buildPagination(jobRows, params.pagination.limit, params.pagination.offset, params.pagination.page);
-      var jobs = stripTotalCount(jobRows).map(presentPublicJob);
-
-      if (scope === 'jobs') {
-        results = jobs;
-        pagination = jobPage;
+      var jobPagination;
+      if (scope === 'all') {
+        jobPagination = { page: params.pagination.page, limit: JOB_LIMIT_ALL, offset: (params.pagination.page - 1) * JOB_LIMIT_ALL };
       } else {
-        results = results.concat(jobs);
-        pagination = jobPage;
+        jobPagination = params.pagination;
       }
+      var jobParams = Object.assign({}, params, { pagination: jobPagination });
+      var jobRows = await searchPublicJobs(jobParams);
+      var jobTotal = (jobRows && jobRows.length > 0 && jobRows[0].total_count) ? parseInt(jobRows[0].total_count, 10) : 0;
+      var jobItems = stripTotalCount(jobRows).map(presentPublicJob);
+      var jobHasMore = jobPagination.offset + jobPagination.limit < jobTotal;
+      jobGroup = {
+        items: jobItems,
+        total: jobTotal,
+        hasMore: jobHasMore,
+        page: jobPagination.page,
+        limit: jobPagination.limit,
+      };
     }
 
+    // ── Fetch companies ──
     if (scope === 'companies' || scope === 'all') {
-      var companyRows = await searchPublicCompanies(params);
-      var companyPage = buildPagination(companyRows, params.pagination.limit, params.pagination.offset, params.pagination.page);
-      var companies = stripTotalCount(companyRows).map(presentPublicCompany);
-
-      if (scope === 'companies') {
-        results = companies;
-        pagination = companyPage;
+      var compPagination;
+      if (scope === 'all') {
+        compPagination = { page: 1, limit: COMPANY_LIMIT_ALL, offset: 0 };
       } else {
-        results = results.concat(companies);
-        if (!pagination) pagination = companyPage;
+        compPagination = params.pagination;
       }
+      var compParams = Object.assign({}, params, { pagination: compPagination });
+      var compRows = await searchPublicCompaniesRanked(compParams);
+      var compTotal = (compRows && compRows.length > 0 && compRows[0].total_count) ? parseInt(compRows[0].total_count, 10) : 0;
+      var compItems = stripTotalCount(compRows).map(presentPublicCompany);
+      var compHasMore = compPagination.offset + compPagination.limit < compTotal;
+      companyGroup = {
+        items: compItems,
+        total: compTotal,
+        hasMore: compHasMore,
+        page: compPagination.page,
+        limit: compPagination.limit,
+      };
+    }
+
+    // ── Company spotlight (only in All mode with a meaningful query) ──
+    if (scope === 'all' && params.q && params.q.length >= 2) {
+      spotlightData = await getCompanySpotlight(params.q);
+    }
+
+    // ── Counts ──
+    var jobCount = jobGroup ? jobGroup.total : 0;
+    var companyCount = companyGroup ? companyGroup.total : 0;
+    var counts = {
+      all: jobCount + companyCount,
+      jobs: jobCount,
+      companies: companyCount,
+    };
+
+    // ── Empty recovery ──
+    var emptyRecovery = null;
+    if (jobCount === 0 && companyCount > 0) {
+      emptyRecovery = {
+        type: 'jobs_missing',
+        message: 'No open jobs matched this search, but these companies may be relevant.',
+      };
+    } else if (companyCount === 0 && jobCount > 0) {
+      emptyRecovery = {
+        type: 'companies_missing',
+        message: 'No matching companies found for this search.',
+      };
+    } else if (jobCount === 0 && companyCount === 0) {
+      emptyRecovery = {
+        type: 'empty',
+        message: 'No jobs or companies found for this search.',
+      };
+    }
+
+    // ── Company spotlight presenter ──
+    var spotlight = null;
+    if (spotlightData) {
+      spotlight = {
+        companyId: spotlightData.company_id,
+        companyName: spotlightData.company_name,
+        companyLogoUrl: spotlightData.company_logo || null,
+        companySlug: spotlightData.company_slug,
+        industry: spotlightData.industry_name || null,
+        location: [spotlightData.company_city, spotlightData.company_country].filter(Boolean).join(', '),
+        openJobsCount: parseInt(spotlightData.open_jobs_count, 10) || 0,
+        topJobs: (spotlightData.topJobs || []).map(function(j) {
+          return {
+            jobId: j.job_id,
+            title: j.job_title,
+            location: [j.job_city, j.job_country].filter(Boolean).join(', '),
+            workSetup: j.work_setup_name || null,
+            employmentType: j.job_type_name || null,
+          };
+        }),
+      };
     }
 
     return res.json({
       query: params.q || '',
-      scope: scope,
-      filters: {
+      type: scope,
+      counts: counts,
+      groups: {
+        jobs: jobGroup,
+        companies: companyGroup,
+      },
+      companySpotlight: spotlight,
+      appliedFilters: {
         location: params.location || null,
         workSetup: params.workSetup || null,
         employmentType: params.employmentType || null,
         salary: params.salary,
         sort: params.sort,
       },
-      results: results,
-      pagination: pagination || { page: 1, limit: params.pagination.limit, total: 0, hasMore: false },
+      emptyRecovery: emptyRecovery,
       latencyMs: Date.now() - start,
     });
   } catch (err) {
@@ -221,11 +305,15 @@ export async function autocomplete(req, res) {
       });
     });
 
+    // Companies: grouped with open job count context
     companies.forEach(function(c) {
       suggestions.push({
         type: 'company',
         label: c.company_name,
+        sublabel: c.open_jobs_count > 0 ? (c.open_jobs_count + ' open role' + (c.open_jobs_count === 1 ? '' : 's')) : null,
+        logoUrl: c.company_logo || null,
         url: '/companies/' + (c.company_slug || ''),
+        slug: c.company_slug || null,
       });
     });
 
@@ -237,8 +325,8 @@ export async function autocomplete(req, res) {
       });
     });
 
-    // CV Doctor shortcut if query sounds career-related
-    var careerKeywords = ['cv', 'resume', 'job', 'career', 'apply'];
+    // Shortcuts
+    var careerKeywords = ['cv', 'resume', 'career', 'apply', 'health'];
     var isCareerQuery = careerKeywords.some(function(kw) {
       return q.toLowerCase().indexOf(kw) !== -1;
     });
@@ -251,7 +339,35 @@ export async function autocomplete(req, res) {
       });
     }
 
-    return res.json({ query: q, suggestions: suggestions });
+    // Always offer a browse-companies shortcut if companies were found
+    if (companies.length > 0) {
+      suggestions.push({
+        type: 'shortcut',
+        label: 'See all companies on GetHired',
+        url: '/jobs?q=' + encodeURIComponent(q) + '&type=companies',
+        icon: 'companies',
+      });
+    }
+
+    // Grouped response for better FE rendering
+    return res.json({
+      query: q,
+      groups: {
+        jobs: titles.map(function(t) { return { type: 'job_title', label: t, url: '/jobs?q=' + encodeURIComponent(t) }; }),
+        companies: companies.map(function(c) {
+          return {
+            type: 'company',
+            label: c.company_name,
+            sublabel: c.open_jobs_count > 0 ? (c.open_jobs_count + ' open role' + (c.open_jobs_count === 1 ? '' : 's')) : null,
+            logoUrl: c.company_logo || null,
+            url: '/companies/' + (c.company_slug || ''),
+            slug: c.company_slug || null,
+          };
+        }),
+        locations: locations.map(function(l) { return { type: 'location', label: l, url: '/jobs?location=' + encodeURIComponent(l) }; }),
+      },
+      suggestions: suggestions,
+    });
   } catch (err) {
     console.error('[searchController] autocomplete error:', err.message);
     return res.json({ query: req.query.q || '', suggestions: [] });

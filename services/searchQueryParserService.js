@@ -8,7 +8,7 @@ var MAX_QUERY_LENGTH = 200;
 var MAX_FILTER_STRING_LENGTH = 100;
 var MAX_PAGE_SIZE = 50;
 var DEFAULT_PAGE_SIZE = 20;
-var ALLOWED_SORT_FIELDS = ['relevance', 'newest', 'salary_high'];
+var ALLOWED_SORT_FIELDS = ['relevance', 'newest', 'salary_high', 'most_open_roles', 'newest_posted', 'name_asc'];
 var ALLOWED_WORK_SETUPS = ['remote', 'onsite', 'hybrid'];
 var ALLOWED_EMPLOYMENT_TYPES = ['full-time', 'part-time', 'contractor', 'freelance'];
 var ALLOWED_SCOPES = ['jobs', 'companies', 'all'];
@@ -66,6 +66,8 @@ function parseScope(raw) {
 }
 
 function parsePublicSearchParams(query) {
+  // Accept 'type' as alias for 'scope' (add-on: /jobs?q=...&type=companies)
+  var rawScope = query.type || query.scope;
   return {
     q: parseQuery(query.q),
     location: sanitiseString(query.location, 100),
@@ -73,7 +75,7 @@ function parsePublicSearchParams(query) {
     employmentType: parseEmploymentType(query.employmentType),
     salary: parseSalary(query.salaryMin, query.salaryMax),
     sort: parseSort(query.sort),
-    scope: parseScope(query.scope),
+    scope: parseScope(rawScope),
     pagination: parsePage(query.page, query.limit),
   };
 }
