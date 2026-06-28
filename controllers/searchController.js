@@ -53,6 +53,19 @@ function stripTotalCount(rows) {
 
 // ── Public job presenter — never expose private fields ────────────────────────
 
+// Strip web-scraper artifact from titles — "Finance Analyst Job Details | Corp"
+// comes from scrapers that read <title> tag instead of the actual posting title.
+function sanitizeJobTitle(raw) {
+  if (!raw) return raw;
+  var s = String(raw).trim();
+  var pipeIdx = s.indexOf(' | ');
+  if (pipeIdx !== -1) {
+    var before = s.substring(0, pipeIdx).replace(/\s*(Job Details?|Job Post)\s*$/i, '').trim();
+    return before || s;
+  }
+  return s;
+}
+
 function presentPublicJob(row) {
   var salary = null;
   if (row.salary_minimum || row.salary_maximum) {
@@ -66,7 +79,7 @@ function presentPublicJob(row) {
   return {
     type: 'job',
     jobId: row.job_id,
-    title: row.job_title,
+    title: sanitizeJobTitle(row.job_title),
     companyName: row.company_name,
     companyLogoUrl: row.company_logo || null,
     companySlug: row.company_slug || null,
