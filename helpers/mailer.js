@@ -25,8 +25,9 @@ const gethiredSendgrid = {
   // LAUNCH-02: status-change email reuses the application template for P0.
   // Create a dedicated SendGrid dynamic template and update this ID post-launch.
   application_status_changed: "d-9775084a27d44a36834f0b43c8abe1fc",
-  // BACKLOG: create a dedicated pw_changed SendGrid dynamic template.
-  // Null causes send() to log a warning and return {sent:false} — non-fatal.
+  // TODO: paste your SendGrid template ID here after creating it.
+  // Template HTML is at: docs/email-template-pw_changed.html
+  // Variables: {{name}}, {{email}}. Set subject: "Your GetHired password has been changed"
   pw_changed: null,
 };
 
