@@ -239,6 +239,10 @@ const getJobCertificationRequirements = async (jobId) => {
       canonicalKey: row.canonical_key,
     }));
   } catch (error) {
+    // Table may not exist in all environments — return empty array gracefully
+    if (error && error.message && error.message.includes('does not exist')) {
+      return [];
+    }
     throw error;
   }
 };
