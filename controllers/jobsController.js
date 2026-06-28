@@ -2,7 +2,7 @@ import dbQuery from "../db/dbQuery";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
-import uploadInStorage from "../helpers/uploader";
+import uploadInStorage, { uploadImageWithOptimization } from "../helpers/uploader";
 import {
   createInterviewTemplateQuestions,
   createQuestion,
@@ -90,10 +90,12 @@ const createJobs = async (req, res) => {
     const companyId = callerCompany.companyId;
 
     if (bannerFile && bannerFile.length != 0) {
-      rawUrl = await uploadInStorage(
+      rawUrl = await uploadImageWithOptimization(
         "Job-Banner",
-        `${jobId}-Banner`,
-        bannerFile[0].file
+        jobId + "-Banner",
+        bannerFile[0].file,
+        "job_banner",
+        { ownerType: "job", ownerId: jobId, companyId: companyId, jobId: jobId, createdBy: uid }
       );
     }
 

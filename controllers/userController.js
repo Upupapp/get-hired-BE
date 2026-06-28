@@ -18,7 +18,7 @@ import {
 } from "../helpers/userDetails";
 
 import { getUserCompany } from "./companiesController";
-import uploadInStorage from "../helpers/uploader";
+import uploadInStorage, { uploadImageWithOptimization } from "../helpers/uploader";
 
 import { companySubscriptions } from "./subscriptionController";
 
@@ -381,7 +381,9 @@ const updateProfile = async (user) => {
     var finalPhotoUrl = (photoUrl && photoUrl !== '') ? photoUrl : '';
 
     if (avatar && avatar !== '') {
-      var rawUrl = await uploadInStorage('profile', uid + '-thumb', avatar);
+      // role_id 2 = employer/recruiter, 3 = applicant; default to applicant_avatar
+      var avatarPurpose = (user.roleId == 2 || user.role_id == 2) ? 'recruiter_avatar' : 'applicant_avatar';
+      var rawUrl = await uploadImageWithOptimization('profile', uid + '-thumb', avatar, avatarPurpose, { ownerType: 'user', ownerId: uid, createdBy: uid });
       if (rawUrl) {
         finalPhotoUrl = rawUrl;
       }

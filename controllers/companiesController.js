@@ -1,5 +1,5 @@
 import { successResponse, errorResponse, status } from "../helpers/status";
-import uploadInStorage from "../helpers/uploader";
+import uploadInStorage, { uploadImageWithOptimization } from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
 import { industryList } from "./jobsController";
@@ -187,10 +187,12 @@ const updateCompany = async (req, res) => {
     }
 
     if (companyLogoFile && companyLogoFile != "") {
-      rawUrl = await uploadInStorage(
+      rawUrl = await uploadImageWithOptimization(
         "Company-Logo",
-        `${companyId}-Logo`,
-        companyLogoFile
+        companyId + "-Logo",
+        companyLogoFile,
+        "company_logo",
+        { ownerType: "company", ownerId: companyId, companyId: companyId, createdBy: req.user.uid }
       );
     } else {
       rawUrl = companyLogoUrl;
