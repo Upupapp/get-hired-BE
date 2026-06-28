@@ -23,6 +23,7 @@ import messageRoutes from "./routes/messageRoutes";
 import publicRoutes from "./routes/publicRoute";
 import imageRoutes from "./routes/imageRoutes";
 import searchRoutes from "./routes/searchRoutes";
+import easyJobPostRoutes from "./routes/easyJobPostRoutes";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -157,6 +158,7 @@ app.use("/api", messageRoutes);
 app.use("/api", publicRoutes);
 app.use("/api/images", imageRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api", easyJobPostRoutes);
 
 
 // SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.
