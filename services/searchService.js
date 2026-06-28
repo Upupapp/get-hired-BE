@@ -36,7 +36,8 @@ var PUBLIC_JOB_SELECT = `
 // ---------- PUBLIC JOB SEARCH ----------
 
 async function searchPublicJobs(params) {
-  var q = params.q ? expandSynonyms(params.q) : '';
+  var rawQ = params.q || '';
+  var q = rawQ ? expandSynonyms(rawQ) : '';
   var location = params.location || '';
   var workSetup = params.workSetup || null;
   var employmentType = params.employmentType || null;
@@ -50,18 +51,22 @@ async function searchPublicJobs(params) {
   var where = [`j.job_status_id = 2`];
   var orderBy = 'j.updated_at DESC';
 
-  // Full-text search condition
-  if (q) {
+  // Expanded query for FTS, raw for LIKE — synonym expansion (e.g. lgu→local government unit)
+  // would break prefix LIKE matching against company/job names that contain the acronym literally.
+  if (rawQ) {
     values.push(q);
+    var ftsIdx = paramIdx++;
+    values.push(rawQ);
+    var likeIdx = paramIdx++;
     where.push(`(
-      to_tsvector('english', coalesce(j.job_title, '')) @@ plainto_tsquery('english', $${paramIdx})
-      OR to_tsvector('english', coalesce(c.company_name, '')) @@ plainto_tsquery('english', $${paramIdx})
-      OR lower(j.job_title) LIKE lower($${paramIdx}) || '%'
+      to_tsvector('english', coalesce(j.job_title, '')) @@ plainto_tsquery('english', $${ftsIdx})
+      OR to_tsvector('english', coalesce(c.company_name, '')) @@ plainto_tsquery('english', $${ftsIdx})
+      OR lower(j.job_title) LIKE lower($${likeIdx}) || '%'
+      OR lower(c.company_name) LIKE lower($${likeIdx}) || '%'
     )`);
-    paramIdx++;
 
     if (sort === 'relevance' || sort === 'newest') {
-      orderBy = `ts_rank_cd(to_tsvector('english', coalesce(j.job_title, '')), plainto_tsquery('english', $1)) DESC, j.updated_at DESC`;
+      orderBy = `ts_rank_cd(to_tsvector('english', coalesce(j.job_title, '')), plainto_tsquery('english', $${ftsIdx})) DESC, j.updated_at DESC`;
     }
   } else {
     if (sort === 'newest' || sort === 'relevance') {
@@ -136,7 +141,8 @@ async function searchPublicCompanies(params) {
 }
 
 async function searchPublicCompaniesRanked(params) {
-  var q = params.q ? expandSynonyms(params.q) : '';
+  var rawQ = params.q || '';
+  var q = rawQ ? expandSynonyms(rawQ) : '';
   var sort = params.sort || 'relevance';
   var location = params.location || '';
   var limit = params.pagination.limit;
@@ -152,17 +158,19 @@ async function searchPublicCompaniesRanked(params) {
 
   var orderBy = 'open_jobs_count DESC, c.company_name ASC';
 
-  if (q) {
+  if (rawQ) {
     values.push(q);
+    var ftsIdx = paramIdx++;
+    values.push(rawQ);
+    var likeIdx = paramIdx++;
     where.push(`(
-      to_tsvector('english', coalesce(c.company_name, '')) @@ plainto_tsquery('english', $${paramIdx})
-      OR to_tsvector('english', coalesce(i.industry_name, '')) @@ plainto_tsquery('english', $${paramIdx})
-      OR lower(c.company_name) LIKE lower($${paramIdx}) || '%'
+      to_tsvector('english', coalesce(c.company_name, '')) @@ plainto_tsquery('english', $${ftsIdx})
+      OR to_tsvector('english', coalesce(i.industry_name, '')) @@ plainto_tsquery('english', $${ftsIdx})
+      OR lower(c.company_name) LIKE lower($${likeIdx}) || '%'
     )`);
     if (sort === 'relevance') {
-      orderBy = `ts_rank_cd(to_tsvector('english', coalesce(c.company_name, '')), plainto_tsquery('english', $${paramIdx})) DESC, open_jobs_count DESC, c.company_name ASC`;
+      orderBy = `ts_rank_cd(to_tsvector('english', coalesce(c.company_name, '')), plainto_tsquery('english', $${ftsIdx})) DESC, open_jobs_count DESC, c.company_name ASC`;
     }
-    paramIdx++;
   }
 
   if (location) {
