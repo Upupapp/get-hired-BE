@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node start.js",
+    "postinstall": "node scripts/patch-sharp.js",
     "security:secrets": "bash tools/check-secrets.sh",
     "deploy-gethired": "gcloud app deploy app.yaml --project get-hired-363107",
     "deploy-jobhunt": "gcloud app deploy app.yaml --project jobhunt-375218",
