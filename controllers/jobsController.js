@@ -34,7 +34,7 @@ import { insertLogs } from "../services/user.service";
 import { notifyJobUrlUpdated, notifyJobUrlDeleted } from "../services/googleIndexing.service";
 
 import { companySubscriptions } from "../controllers/subscriptionController";
-
+import { getSavedJobStatus, toggleSavedJob } from "../services/savedJobsService";
 
 const dbSchema = env.schema;
 
@@ -651,11 +651,13 @@ const getJobDetails = async (req, res) => {
     return res.status(403).json({ message: "Unable to load this job for the current session." });
   }
 
+  let isSaved = false;
   try {
     if (viewerUid) {
       const applied = await listOfJobAppliedByApplicant(viewerUid);
       const filtered = applied.filter((item) => item.jobId == id);
       isApplied = filtered.length != 0;
+      isSaved = await getSavedJobStatus(viewerUid, id);
     }
 
     const details = await jobDetails(id);
@@ -663,6 +665,7 @@ const getJobDetails = async (req, res) => {
     return res.status(status.success).json(successResponse({
       ...details,
       isApplied,
+      isSaved,
     }));
   } catch (error) {
     console.error('[jobsController] error:', error);
@@ -817,6 +820,24 @@ const mappedBasicJob = (raw) => {
   };
 };
 
+const toggleSaveJobHandler = async (req, res) => {
+  const viewerUid = (req.user && req.user.uid) ? req.user.uid : null;
+  if (!viewerUid) {
+    return res.status(401).json(errorResponse("Authentication required."));
+  }
+  const jobId = req.body && req.body.jobId;
+  if (!jobId) {
+    return res.status(400).json(errorResponse("jobId is required."));
+  }
+  try {
+    const isSaved = await toggleSavedJob(viewerUid, String(jobId));
+    return res.status(status.success).json(successResponse({ isSaved }));
+  } catch (error) {
+    console.error("[jobsController] toggleSaveJob error:", error);
+    return res.status(status.error).json(errorResponse("Could not update saved status. Please try again."));
+  }
+};
+
 export {
   createJobs,
   deleteJob,
@@ -839,5 +860,6 @@ export {
   getJobApplicantDetails,
   deleteInterviewQuestion,
   getPublishedJobsWithinDateRange,
-  getSubscriptionRestrictions
+  getSubscriptionRestrictions,
+  toggleSaveJobHandler
 };

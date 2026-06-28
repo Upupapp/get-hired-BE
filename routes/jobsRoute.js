@@ -17,7 +17,8 @@ import {
   getJobApplicantFitSignals,
   getJobApplicantDetails,
   deleteInterviewQuestion,
-  getSubscriptionRestrictions
+  getSubscriptionRestrictions,
+  toggleSaveJobHandler
 } from "../controllers/jobsController";
 
 import verifyAuth from "../middleware/verifyAuth";
@@ -68,7 +69,7 @@ router.get("/job/published", getAllPublishedJobs);
 // Controller derives viewerContext from req.user.uid only — never from uid query.
 router.get("/job/details", optionalVerifyAuth, getJobDetails);
 router.get("/job/sharelink", optionalVerifyAuth, getJobShareableLink);
-
-
+// V6: save/unsave a job (authenticated applicants only; controller enforces role)
+router.post("/job/save", verifyAuth, toggleSaveJobHandler);
 
 export default router;
