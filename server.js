@@ -25,6 +25,7 @@ import imageRoutes from "./routes/imageRoutes";
 import searchRoutes from "./routes/searchRoutes";
 import easyJobPostRoutes from "./routes/easyJobPostRoutes";
 import subscriptionGuardrailsRoutesV4 from "./routes/subscriptionGuardrailsRoutesV4";
+import subscriptionLifecycleRoutesV4 from "./routes/subscriptionLifecycleRoutesV4";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -161,6 +162,7 @@ app.use("/api/images", imageRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api", easyJobPostRoutes);
 app.use("/api", subscriptionGuardrailsRoutesV4);
+app.use("/api", subscriptionLifecycleRoutesV4);
 
 
 // SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.

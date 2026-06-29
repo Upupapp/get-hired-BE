@@ -29,6 +29,24 @@ const gethiredSendgrid = {
   // Template HTML is at: docs/email-template-pw_changed.html
   // Variables: {{name}}, {{email}}. Set subject: "Your GetHired password has been changed"
   pw_changed: null,
+  // Subscription Lifecycle V4 templates — set IDs after creating SendGrid templates.
+  // Variables: recipient_name, company_name, plan_name, billing_cycle, is_annual,
+  //            amount_due_today, billing_summary, effective_monthly_label,
+  //            period_end_label, email_subject, email_headline, email_body,
+  //            cta_label, cta_url, data_preservation
+  // See services/subscriptionEmailTemplateServiceV4.js for full variable reference.
+  subscription_trial_started:   null,
+  subscription_trial_ending:    null,
+  subscription_trial_expired:   null,
+  subscription_renewal_reminder: null,
+  subscription_payment_pending:  null,
+  subscription_payment_link_expired: null,
+  subscription_payment_failed:   null,
+  subscription_payment_overdue:  null,
+  subscription_payment_grace_final: null,
+  subscription_payment_success:  null,
+  subscription_reactivated:      null,
+  subscription_expired:          null,
 };
 
 const eucannajobsSendgrid = {

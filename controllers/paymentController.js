@@ -6,6 +6,9 @@ import env from "../env";
 const dbSchema = env.schema;
 
 import { createCompanySubscription } from "./subscriptionController";
+import { activateSubscriptionLifecycle } from "../services/subscriptionLifecycleServiceV4";
+import { notifyPaymentSuccess, notifyPaymentFailed } from "../services/subscriptionNotificationServiceV4";
+import { getPlanByDbId } from "../services/planCatalogServiceV4";
 
 const axios = require("axios").default;
 const token = `${env.paymongo_sk}:''`;
@@ -341,6 +344,49 @@ const paymongoWebhook = async (req, res) => {
         // createCompanySubscription is now idempotent (see subscriptionController.js)
         await createCompanySubscription(companyId, subscriptionId);
         console.log('[paymentController] PAYMONGO_SUBSCRIPTION_STATE_TRANSITIONED companyId=[REDACTED]');
+
+        // V4 Lifecycle: look up billing_cycle from cart_table, then activate period dates
+        var cartBillingCycle = 'monthly';
+        try {
+          var cartRow = await dbQuery.query(
+            'SELECT billing_cycle FROM ' + dbSchema + '.cart_table WHERE cart_id = $1 LIMIT 1',
+            [cartId]
+          );
+          if (cartRow.rows && cartRow.rows.length > 0 && cartRow.rows[0].billing_cycle) {
+            cartBillingCycle = cartRow.rows[0].billing_cycle;
+          }
+        } catch (cartLookupErr) {
+          console.warn('[paymentController] cart billing_cycle lookup non-blocking error:', cartLookupErr && cartLookupErr.code);
+        }
+
+        var subDbId = parseInt(subscriptionId, 10);
+        var planInfo = getPlanByDbId ? getPlanByDbId(subDbId) : null;
+        var planSlug = planInfo ? planInfo.slug : null;
+        var amountPaidPhp = amount ? amount / 100 : null;
+
+        // Non-blocking lifecycle activation — never throws
+        activateSubscriptionLifecycle({
+          companyId: companyId,
+          subscriptionId: subDbId,
+          billingCycle: cartBillingCycle,
+          amountPaid: amountPaidPhp,
+          providerReference: id,
+          planSlug: planSlug,
+        }).catch(function(lifecycleErr) {
+          console.warn('[paymentController] activateSubscriptionLifecycle non-blocking error:', lifecycleErr && lifecycleErr.code);
+        });
+
+        // Non-blocking payment success notification
+        notifyPaymentSuccess({
+          companyId: companyId,
+          subscriptionId: subDbId,
+          billingCycle: cartBillingCycle,
+          planSlug: planSlug,
+          planName: planInfo ? planInfo.name : '',
+          amountPaid: amountPaidPhp,
+        }).catch(function(notifErr) {
+          console.warn('[paymentController] notifyPaymentSuccess non-blocking error:', notifErr && notifErr.code);
+        });
       }
 
       await tryMarkProcessed(eventId, id);
@@ -400,6 +446,16 @@ const paymongoWebhook = async (req, res) => {
     } else if (webhookEvent == "payment.failed") {
       // NOTIFY-FIX-01 LOGGING: log only event type, not PII from the payload.
       console.log('[paymentController] PAYMONGO_WEBHOOK_PROCESSED payment.failed');
+
+      // V4 Lifecycle: non-blocking failure notification
+      var failedObjectId = data.attributes.data && data.attributes.data.id;
+      if (failedObjectId) {
+        notifyPaymentFailed({
+          companyId: null, // Cannot derive companyId from payment.failed without remarks lookup
+          billingCycle: 'monthly', // Default — will be dedupe-skipped if companyId is null
+        }).catch(function() {});
+      }
+
       await tryMarkProcessed(eventId, null);
       return res.status(200).json({ received: true, provider: 'paymongo', status: 'processed' });
 
