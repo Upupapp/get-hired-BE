@@ -18,7 +18,8 @@ import {
   getJobApplicantDetails,
   deleteInterviewQuestion,
   getSubscriptionRestrictions,
-  toggleSaveJobHandler
+  toggleSaveJobHandler,
+  getJobActionSummary
 } from "../controllers/jobsController";
 
 import verifyAuth from "../middleware/verifyAuth";
@@ -71,5 +72,9 @@ router.get("/job/details", optionalVerifyAuth, getJobDetails);
 router.get("/job/sharelink", optionalVerifyAuth, getJobShareableLink);
 // V6: save/unsave a job (authenticated applicants only; controller enforces role)
 router.post("/job/save", verifyAuth, toggleSaveJobHandler);
+
+// Employer job action modal: lightweight action-summary DTO (counts + availability)
+// verifyAuth + company-ownership check inside the controller — no PII returned.
+router.get("/job/action-summary", verifyAuth, getJobActionSummary);
 
 export default router;

@@ -838,6 +838,145 @@ const toggleSaveJobHandler = async (req, res) => {
   }
 };
 
+// Lightweight action-summary DTO for the employer job action modal.
+// Returns job metadata + applicant count + computed action availability.
+// No applicant PII is returned — counts only.
+// No optional chaining (?.) or nullish coalescing (??) — Node 14 safe.
+const getJobActionSummary = async (req, res) => {
+  const jobId = req.query && req.query.jobId;
+  if (!jobId) {
+    return res.status(400).json(errorResponse("jobId is required."));
+  }
+
+  try {
+    // Verify job belongs to the authenticated caller's company.
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
+    if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You do not have access to this job." });
+    }
+
+    // Fetch job row — must match company_id to prevent cross-company leakage.
+    const jobQuery = `
+      SELECT j.job_id, j.job_title, j.job_status_id, j.work_setup_id,
+             ws.work_setup_name, jt.job_type_name, j.job_type_id,
+             j.salary_minimum, j.salary_maximum, j.salary_currency, j.rate,
+             j.job_city, j.job_country, j.created_at, j.updated_at
+      FROM ${dbSchema}.jobs j
+      LEFT JOIN ${dbSchema}.work_setup ws ON ws.work_setup_id = j.work_setup_id
+      LEFT JOIN ${dbSchema}.job_type jt ON jt.job_type_id = j.job_type_id
+      WHERE j.job_id = $1 AND j.company_id = $2
+    `;
+    const jobResult = await dbQuery.query(jobQuery, [jobId, callerCompany.companyId]);
+    if (!jobResult.rows || jobResult.rows.length === 0) {
+      return res.status(404).json({ message: "Job not found or you do not have access." });
+    }
+    const row = jobResult.rows[0];
+
+    // Applicant COUNT only — no names, emails, or any PII.
+    const countResult = await dbQuery.query(
+      `SELECT COUNT(*) AS total FROM ${dbSchema}.job_applicants WHERE job_id = $1`,
+      [jobId]
+    );
+    const totalApplicants = (countResult.rows && countResult.rows[0])
+      ? parseInt(countResult.rows[0].total, 10) || 0
+      : 0;
+
+    // Interview questions count — tells the employer whether the job has
+    // application questions set up, without returning any question content.
+    const qCount = await dbQuery.query(
+      `SELECT COUNT(*) AS total
+       FROM ${dbSchema}.interview_template_question itq
+       JOIN ${dbSchema}.job_interview_template jit ON jit.template_id = itq.template_id
+       WHERE jit.job_id = $1`,
+      [jobId]
+    );
+    const interviewQuestionsCount = (qCount.rows && qCount.rows[0])
+      ? parseInt(qCount.rows[0].total, 10) || 0
+      : 0;
+
+    const statusId = row.job_status_id;
+
+    // Map status ID to label and key.
+    const statusMap = { 1: 'Draft', 2: 'Published', 3: 'Expired', 4: 'Archived' };
+    const statusKeyMap = { 1: 'draft', 2: 'published', 3: 'expired', 4: 'archived' };
+    const statusLabel = statusMap[statusId] || 'Draft';
+    const statusKey = statusKeyMap[statusId] || 'draft';
+
+    // Public URL is only valid for published jobs.
+    const publicUrl = (statusId === 2) ? ('/jobs/details/' + jobId) : null;
+    const previewUrl = '/recruiter/jobs/view?id=' + jobId;
+    const editUrl = '/recruiter/jobs/edit?id=' + jobId;
+    const applicantsUrl = '/recruiter/jobs/applicants?id=' + jobId;
+
+    // Salary label — handles min-only, max-only, or range.
+    const salaryCurrency = row.salary_currency || 'PHP';
+    const salaryMin = row.salary_minimum;
+    const salaryMax = row.salary_maximum;
+    let salaryLabel = null;
+    if (salaryMin && salaryMax) {
+      salaryLabel = salaryCurrency + ' ' + Number(salaryMin).toLocaleString() + ' - ' + Number(salaryMax).toLocaleString();
+    } else if (salaryMin) {
+      salaryLabel = salaryCurrency + ' ' + Number(salaryMin).toLocaleString();
+    } else if (salaryMax) {
+      salaryLabel = salaryCurrency + ' ' + Number(salaryMax).toLocaleString();
+    }
+
+    // Action availability is determined server-side based on job status.
+    // Frontend must not override these flags — they are authoritative.
+    const canView = (statusId === 2);             // published only shows public page
+    const canPreview = true;                       // employer can always preview their job
+    const canEdit = (statusId === 1 || statusId === 2);  // draft or published
+    const canReviewApplicants = true;              // always accessible
+    const canCreateInterview = true;               // always accessible
+    const canShare = (statusId === 2);             // only published jobs have shareable link
+    const canDelete = true;                        // always available with confirmation
+
+    const dto = {
+      job: {
+        id: row.job_id,
+        title: row.job_title,
+        statusId: statusId,
+        status: {
+          key: statusKey,
+          label: statusLabel
+        },
+        workSetupName: row.work_setup_name || null,
+        jobTypeName: row.job_type_name || null,
+        jobCity: row.job_city || null,
+        jobCountry: row.job_country || null,
+        salary: {
+          label: salaryLabel,
+          isVisible: (salaryLabel !== null)
+        },
+        publicUrl: publicUrl,
+        previewUrl: previewUrl,
+        editUrl: editUrl,
+        applicantsUrl: applicantsUrl,
+        updatedAt: row.updated_at || row.created_at || null
+      },
+      summary: {
+        totalApplicants: totalApplicants,
+        interviewQuestionsCount: interviewQuestionsCount
+      },
+      actions: {
+        canView: canView,
+        canPreview: canPreview,
+        canEdit: canEdit,
+        canReviewApplicants: canReviewApplicants,
+        canCreateInterview: canCreateInterview,
+        canShare: canShare,
+        canDelete: canDelete
+      },
+      permissionNotice: "Actions are based on your workspace access."
+    };
+
+    return res.status(status.success).json(successResponse(dto));
+  } catch (error) {
+    console.error('[getJobActionSummary] error:', error);
+    return res.status(status.error).json(errorResponse("Could not load job summary. Please try again."));
+  }
+};
+
 export {
   createJobs,
   deleteJob,
@@ -861,5 +1000,6 @@ export {
   deleteInterviewQuestion,
   getPublishedJobsWithinDateRange,
   getSubscriptionRestrictions,
-  toggleSaveJobHandler
+  toggleSaveJobHandler,
+  getJobActionSummary
 };
