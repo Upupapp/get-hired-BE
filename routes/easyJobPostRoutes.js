@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import verifyAuth from '../middleware/verifyAuth';
 import { uploadAndExtract, linkAndExtract } from '../controllers/easyJobPostController';
+import { generateJobAdIntent } from '../controllers/instantJobAdController';
 
 const router = express.Router();
 
@@ -27,6 +28,15 @@ router.post(
   '/recruiter/job-post-assistant/link',
   verifyAuth,
   linkAndExtract
+);
+
+// POST /api/recruiter/job-post-assistant/generate-intent
+// V4: Generate a structured job draft from minimal inputs (title, location, work setup, etc.)
+// Company resolved from JWT — never from request body.
+router.post(
+  '/recruiter/job-post-assistant/generate-intent',
+  verifyAuth,
+  generateJobAdIntent
 );
 
 export default router;
