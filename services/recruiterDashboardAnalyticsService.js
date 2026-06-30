@@ -33,25 +33,42 @@ function parseDateRange(rangeKey) {
   var days = key === '7d' ? 7 : key === '90d' ? 90 : 30;
 
   var endDate = new Date();
-  endDate.setHours(23, 59, 59, 999);
+  endDate.setUTCHours(23, 59, 59, 999);
 
   var startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
-  startDate.setHours(0, 0, 0, 0);
+  startDate.setUTCHours(0, 0, 0, 0);
 
   var prevEnd = new Date(startDate.getTime() - 1);
-  prevEnd.setHours(23, 59, 59, 999);
+  prevEnd.setUTCHours(23, 59, 59, 999);
   var prevStart = new Date(prevEnd.getTime() - days * 24 * 60 * 60 * 1000);
-  prevStart.setHours(0, 0, 0, 0);
+  prevStart.setUTCHours(0, 0, 0, 0);
 
   return {
     key: key,
     days: days,
-    label: 'Last ' + days + ' days',
+    label: 'Last ' + key,
     startDate: startDate.toISOString(),
     endDate: endDate.toISOString(),
     prevStart: prevStart.toISOString(),
     prevEnd: prevEnd.toISOString(),
   };
+}
+
+/**
+ * Convert a pg DATE value (string or Date object) to a "YYYY-MM-DD" key in UTC.
+ * pg driver can return DATE columns as JS Date objects or ISO strings depending
+ * on driver version — handle both so series lookup never silently zeros out.
+ */
+function toDateKey(d) {
+  if (!d) return null;
+  if (d instanceof Date) {
+    var y = d.getUTCFullYear();
+    var mo = d.getUTCMonth() + 1;
+    var dy = d.getUTCDate();
+    return y + '-' + (mo < 10 ? '0' + mo : '' + mo) + '-' + (dy < 10 ? '0' + dy : '' + dy);
+  }
+  // String: take first 10 chars ("2026-06-28" or "2026-06-28T00:00:00.000Z")
+  return String(d).substring(0, 10);
 }
 
 /**
@@ -64,12 +81,12 @@ function buildDateSeries(startDate, endDate, viewsRows, appsRows) {
 
   for (var i = 0; i < viewsRows.length; i++) {
     var vrow = viewsRows[i];
-    var vkey = vrow.date ? String(vrow.date).substring(0, 10) : null;
+    var vkey = toDateKey(vrow.date);
     if (vkey) { viewsMap[vkey] = safeInt(vrow.count); }
   }
   for (var j = 0; j < appsRows.length; j++) {
     var arow = appsRows[j];
-    var akey = arow.date ? String(arow.date).substring(0, 10) : null;
+    var akey = toDateKey(arow.date);
     if (akey) { appsMap[akey] = safeInt(arow.count); }
   }
 
@@ -77,13 +94,14 @@ function buildDateSeries(startDate, endDate, viewsRows, appsRows) {
   var current = new Date(startDate);
   var end = new Date(endDate);
   while (current <= end) {
+    // Use UTC methods throughout to stay consistent with toDateKey() above
     var dateStr = current.toISOString().substring(0, 10);
     series.push({
       date: dateStr,
       views: viewsMap[dateStr] || 0,
       applications: appsMap[dateStr] || 0,
     });
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
   return series;
 }
