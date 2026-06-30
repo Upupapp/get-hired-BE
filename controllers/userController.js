@@ -143,9 +143,7 @@ const registerUser = async (req, res) => {
     }
     const isVerified = await getVerification(email, user.firstName);
     if (!isVerified) {
-      return res
-        .status(status.error)
-        .send("Failed to generate Verification link");
+      return res.status(status.error).json(errorResponse("Failed to generate verification link. Please try again."));
     }
 
     return res.status(status.created).json(successResponse(dbRegister));
