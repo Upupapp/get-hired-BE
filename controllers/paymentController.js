@@ -9,6 +9,7 @@ import { createCompanySubscription } from "./subscriptionController";
 import { activateSubscriptionLifecycle } from "../services/subscriptionLifecycleServiceV4";
 import { notifyPaymentSuccess, notifyPaymentFailed } from "../services/subscriptionNotificationServiceV4";
 import { getPlanByDbId } from "../services/planCatalogServiceV4";
+import invoiceService from "../services/invoiceService.js";
 
 const axios = require("axios").default;
 const token = `${env.paymongo_sk}:''`;
@@ -386,6 +387,33 @@ const paymongoWebhook = async (req, res) => {
           amountPaid: amountPaidPhp,
         }).catch(function(notifErr) {
           console.warn('[paymentController] notifyPaymentSuccess non-blocking error:', notifErr && notifErr.code);
+        });
+
+        // Non-blocking invoice creation — idempotent on transactionId
+        var paymentMethodLabel = type === 'gcash' ? 'GCash (PayMongo)' : type === 'card' ? 'Credit/Debit Card (PayMongo)' : 'PayMongo';
+        invoiceService.createFromPayment({
+          companyId: companyId,
+          subscriptionId: subDbId,
+          cartId: cartId,
+          transactionId: id,
+          planName: planInfo ? planInfo.name : 'GetHired Subscription',
+          planSlug: planSlug,
+          billingCycle: cartBillingCycle,
+          amount: amountPaidPhp,
+          currency: currency || 'PHP',
+          customerEmail: email || null,
+          customerName: name || null,
+          paidAt: new Date(),
+          paymentReference: external_reference_number || null,
+          paymentMethodLabel: paymentMethodLabel,
+          periodStart: null,
+          periodEnd: null,
+        }).then(function(invoiceResult) {
+          if (invoiceResult && invoiceResult.created) {
+            console.log('[paymentController] INVOICE_CREATED invoice=[REDACTED]');
+          }
+        }).catch(function(invoiceErr) {
+          console.warn('[paymentController] invoice creation non-blocking error:', invoiceErr && invoiceErr.message);
         });
       }
 

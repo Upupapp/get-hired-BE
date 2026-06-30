@@ -47,6 +47,10 @@ const gethiredSendgrid = {
   subscription_payment_success:  null,
   subscription_reactivated:      null,
   subscription_expired:          null,
+  // Invoice Vault — set ID after creating SendGrid template.
+  // Variables: invoice_number, plan_name, billing_cycle, total_amount, paid_at,
+  //            customer_name, billing_period, download_link
+  invoice_issued:                null,
 };
 
 const eucannajobsSendgrid = {
