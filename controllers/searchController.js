@@ -83,6 +83,7 @@ function presentPublicJob(row) {
     companyName: row.company_name,
     companyLogoUrl: row.company_logo || null,
     companySlug: row.company_slug || null,
+    hasPublicProfile: !!(row.company_slug),
     location: [row.job_city, row.job_country].filter(Boolean).join(', '),
     workSetup: row.work_setup_name || null,
     employmentType: row.job_type_name || null,
@@ -240,6 +241,17 @@ export async function publicSearch(req, res) {
       };
     }
 
+    // ── Low-result recovery (1–3 job results) ──
+    var lowResultRecovery = null;
+    if (jobCount > 0 && jobCount <= 3) {
+      var lrLabel = jobCount === 1 ? '1 job found' : (jobCount + ' jobs found');
+      lowResultRecovery = {
+        enabled: true,
+        title: 'Only ' + lrLabel,
+        suggestions: ['Broaden your search', 'Clear filters', 'Browse companies', 'Check your CV Health'],
+      };
+    }
+
     // ── Company spotlight presenter ──
     var spotlight = null;
     if (spotlightData) {
@@ -280,6 +292,7 @@ export async function publicSearch(req, res) {
         sort: params.sort,
       },
       emptyRecovery: emptyRecovery,
+      lowResultRecovery: lowResultRecovery,
       latencyMs: Date.now() - start,
     });
   } catch (err) {
