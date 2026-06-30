@@ -417,7 +417,16 @@ const updateStatusOfJob = async (req, res) => {
       notifyJobUrlDeleted(updateJob);
     }
 
-    return res.status(status.success).json(successResponse(updateJob));
+    // Attach canonical public URL server-side when publishing so the FE never
+    // has to trust a client-supplied path.  Only present on publish (status 2).
+    var responseData = updateJob;
+    if (statusId == 2 && updateJob && updateJob.jobId) {
+      responseData = Object.assign({}, updateJob, {
+        postPublish: { publicJobUrl: '/jobs/details/' + updateJob.jobId }
+      });
+    }
+
+    return res.status(status.success).json(successResponse(responseData));
   } catch (error) {
     if (error === "FORBIDDEN") {
       return res.status(403).json({ message: "You don't have permission to update this job." });
