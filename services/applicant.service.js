@@ -894,10 +894,20 @@ const uploadAndSaveAttachment = async (
   let dbResponse = {};
 
   const { id, file, fileUrl, size, type, filename } = attachment;
-  // SECURE-RECENT-4-FIX-01: removed console.log(filename) — logged applicant document filename in plain text
   try {
     if (file && file != "") {
-      rawUrl = await uploadInStorage("Applicant-Documents", filename, file);
+      // Scoped storage path prevents path collisions and confines each document
+      // to its owner's prefix so Firebase Storage security rules can restrict
+      // by path (applicants/{uid}/...). Never use the original filename as the
+      // storage path — it is untrusted caller input and collides across users.
+      var rawExt = (filename && filename.indexOf('.') !== -1)
+        ? filename.split('.').pop().replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 10)
+        : '';
+      var safeExt = rawExt || 'bin';
+      var docId = idGenerator(8, 'DOC');
+      var storageFolder = 'applicants/' + applicantId + '/documents/' + docId;
+      var safeFileName = 'original.' + safeExt;
+      rawUrl = await uploadInStorage(storageFolder, safeFileName, file);
     }
 
     generalQuery = `INSERT INTO ${dbSchema}.${tableName}
