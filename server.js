@@ -30,6 +30,7 @@ import subscriptionUpgradeRecommendationRoutesV4 from "./routes/subscriptionUpgr
 import recruiterDashboardAnalyticsRoutes from "./routes/recruiterDashboardAnalyticsRoutes";
 import billingRoutes from "./routes/billingRoutes";
 import publicJobPreviewRoutes from "./routes/publicJobPreviewRoutes";
+import googleAuthRoutes from "./routes/googleAuthRoutes";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -171,6 +172,7 @@ app.use("/api", subscriptionUpgradeRecommendationRoutesV4);
 app.use("/api", recruiterDashboardAnalyticsRoutes);
 app.use("/api", billingRoutes);
 app.use("/api", publicJobPreviewRoutes);
+app.use("/api", googleAuthRoutes);
 
 
 // SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.
