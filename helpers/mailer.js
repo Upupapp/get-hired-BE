@@ -28,29 +28,22 @@ const gethiredSendgrid = {
   // TODO: paste your SendGrid template ID here after creating it.
   // Template HTML is at: docs/email-template-pw_changed.html
   // Variables: {{name}}, {{email}}. Set subject: "Your GetHired password has been changed"
-  pw_changed: null,
-  // Subscription Lifecycle V4 templates — set IDs after creating SendGrid templates.
-  // Variables: recipient_name, company_name, plan_name, billing_cycle, is_annual,
-  //            amount_due_today, billing_summary, effective_monthly_label,
-  //            period_end_label, email_subject, email_headline, email_body,
-  //            cta_label, cta_url, data_preservation
-  // See services/subscriptionEmailTemplateServiceV4.js for full variable reference.
-  subscription_trial_started:   null,
-  subscription_trial_ending:    null,
-  subscription_trial_expired:   null,
-  subscription_renewal_reminder: null,
-  subscription_payment_pending:  null,
-  subscription_payment_link_expired: null,
-  subscription_payment_failed:   null,
-  subscription_payment_overdue:  null,
-  subscription_payment_grace_final: null,
-  subscription_payment_success:  null,
-  subscription_reactivated:      null,
-  subscription_expired:          null,
-  // Invoice Vault — set ID after creating SendGrid template.
-  // Variables: invoice_number, plan_name, billing_cycle, total_amount, paid_at,
-  //            customer_name, billing_period, download_link
-  invoice_issued:                null,
+  pw_changed: "d-7c5d1e911776439dbbf43ef05ec5db9d",
+  // Subscription Lifecycle V4 — published 2026-06-30 via SendGrid API
+  subscription_trial_started:        "d-3d7b0fffbcc84328899381cb770655ff",
+  subscription_trial_ending:         "d-361de7d8d2fd45a691cced40b1530729",
+  subscription_trial_expired:        "d-4d3ca6cf577449e0b2ce087af64bcf8a",
+  subscription_renewal_reminder:     "d-19b3c4375f0848caa645a7455ec1c77c",
+  subscription_payment_pending:      "d-d2518aa0aaef4d66b907ae5813a2677d",
+  subscription_payment_link_expired: "d-bae872d08a5b433d8093572e26484cb2",
+  subscription_payment_failed:       "d-0f406231133b4957bad966cc1d57557a",
+  subscription_payment_overdue:      "d-e231ed316fde4d99a55392a66830f851",
+  subscription_payment_grace_final:  "d-befef97d222349908187b63e621c5460",
+  subscription_payment_success:      "d-548aa9946d004d88a1ec2f7d494ea54e",
+  subscription_reactivated:          "d-aafe4375a717449b9c8346dc916de365",
+  subscription_expired:              "d-761e40f9ed9e45548edba32f28a02d8b",
+  // Invoice Vault — published 2026-06-30 via SendGrid API
+  invoice_issued:                    "d-8584306d5098429490840e8d234ada89",
 };
 
 const eucannajobsSendgrid = {
