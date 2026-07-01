@@ -5,6 +5,7 @@
 // to prevent "id" being treated as a slug.
 
 import { Router } from "express";
+import { withCache } from "../middleware/simpleCache";
 import verifyAuth from "../middleware/verifyAuth";
 import {
   getPublicCompaniesList,
@@ -20,12 +21,12 @@ const router = Router();
 
 // ─── Company list (no auth) ──────────────────────────────────────────────────
 // Must come before /company/:slug to prevent "companies" matching as a slug.
-router.get("/public/companies", getPublicCompaniesList);
+router.get("/public/companies", withCache(180, 'public:companies'), getPublicCompaniesList);
 
 // ─── Company profile & jobs (no auth) ────────────────────────────────────────
 router.get("/public/company/id/:companyId/resolve", resolveCompanyIdToSlug);
-router.get("/public/company/:slug/jobs", getPublicCompanyJobs);
-router.get("/public/company/:slug", getPublicCompanyProfile);
+router.get("/public/company/:slug/jobs", withCache(120, function(req) { return 'public:company:jobs:' + req.params.slug; }), getPublicCompanyJobs);
+router.get("/public/company/:slug", withCache(300, function(req) { return 'public:company:' + req.params.slug; }), getPublicCompanyProfile);
 
 // ─── Follow Company ───────────────────────────────────────────────────────────
 // follow-state is optional-auth (handled inline; no middleware needed)

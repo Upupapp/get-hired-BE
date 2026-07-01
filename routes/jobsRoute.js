@@ -1,4 +1,5 @@
 import express from "express";
+import { withCache, cacheDeletePrefix } from "../middleware/simpleCache";
 import {
   createJobs,
   updateJob,
@@ -38,20 +39,25 @@ const router = express.Router();
 // rather than a true delete. Now registered as DELETE /job/delete with
 // mandatory auth middleware; controller enforces ownership via
 // getUserCompany(req.user.uid) + AND company_id=$2 in the WHERE clause.
-router.delete("/job/delete", verifyAuth, deleteJob);
+function bustPublishedCache(req, res, next) {
+  cacheDeletePrefix('jobs:published:');
+  next();
+}
+
+router.delete("/job/delete", verifyAuth, bustPublishedCache, deleteJob);
 
 // job — REVAMP v2: sanitizeJobContent + validateJobPublishPayload + auditJobChange
 // added inline. Draft saves skip validateJobPublishPayload (statusId check inside).
 // Controller still enforces company ownership via getUserCompanyForRequest (BOLA fix).
-router.post("/job/create", verifyAuth, sanitizeJobContent, validateJobPublishPayload, auditJobChange, createJobs);
-router.put("/job/updatejobs", verifyAuth, sanitizeJobContent, validateJobPublishPayload, auditJobChange, updateJob);
+router.post("/job/create", verifyAuth, sanitizeJobContent, validateJobPublishPayload, auditJobChange, bustPublishedCache, createJobs);
+router.put("/job/updatejobs", verifyAuth, sanitizeJobContent, validateJobPublishPayload, auditJobChange, bustPublishedCache, updateJob);
 router.get("/job/basiclist", verifyAuth, getJobBasicListOfCompany);
 router.get("/job/expiredlist", verifyAuth, getExpiredJobListOfCompany);
 router.get("/job/categories", verifyAuth, getCategoryList);
 router.get("/job/industries", verifyAuth, getIndustryList);
 router.get("/job/badges", verifyAuth, getBadgeList);
 router.get("/job/rolelist", verifyAuth, getJobRoleList);
-router.put("/job/changestatus", verifyAuth, updateStatusOfJob);
+router.put("/job/changestatus", verifyAuth, bustPublishedCache, updateStatusOfJob);
 // SECURE fix: had no auth middleware at all -- exposed full applicant PII
 // for any job to any caller. Controller now also verifies company ownership.
 router.get("/job/applicants", verifyAuth, getAllApplicantOfJob);
@@ -63,8 +69,8 @@ router.get("/job/applicantdetails", verifyAuth, getJobApplicantDetails);
 router.delete("/job/deleteinterviewquestion", verifyAuth, deleteInterviewQuestion);
 router.get("/job/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestrictions);
 
-// public api
-router.get("/job/published", getAllPublishedJobs);
+// public api — cached 2 min; cache busted on any job mutation below
+router.get("/job/published", withCache(120, function(req) { return 'jobs:published:' + (req.query.id || 'all'); }), getAllPublishedJobs);
 // SEC-02 FIX: optionalVerifyAuth verifies the token if present, passes
 // req.user=null for anonymous callers, and returns 401 for invalid tokens.
 // Controller derives viewerContext from req.user.uid only — never from uid query.
