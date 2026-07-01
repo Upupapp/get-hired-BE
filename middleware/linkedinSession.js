@@ -35,9 +35,10 @@ export function verifyLinkedinState(state) {
 
 // ─── One-time ticket (DB-backed for cross-worker safety) ────────────────────
 
-export function makeTicketJwt(uid, status, intent, returnTo, roleRequired) {
+export function makeTicketJwt(uid, status, intent, returnTo, roleRequired, extra) {
   var jti = crypto.randomBytes(24).toString('hex');
   var payload = { jti, uid, status, intent: intent || 'auto', rt: returnTo || '', rr: !!roleRequired };
+  if (extra && typeof extra === 'object') Object.assign(payload, extra);
   return jwt.sign(payload, env.secret, { algorithm: 'HS256', expiresIn: TICKET_TTL_SECONDS });
 }
 

@@ -404,8 +404,14 @@ export const linkedinComplete = async (req, res) => {
         googlePhotoUrl:     ticketData.photoUrl,
         inferredFirstName:  ticketData.firstName,
         inferredLastName:   ticketData.lastName,
-        // Pass a short-lived token for /auth/choose-role (signed separately with liSub embedded)
-        linkedinPendingToken: makeTicketJwt('pending:linkedin:' + ticketData.liSub, 'pending', intent, returnTo, true),
+        // Pass a short-lived token for /auth/choose-role (liSub + profile fields embedded)
+        linkedinPendingToken: makeTicketJwt('pending:linkedin:' + ticketData.liSub, 'pending', intent, returnTo, true, {
+          email:     ticketData.email     || '',
+          firstName: ticketData.firstName || '',
+          lastName:  ticketData.lastName  || '',
+          photoUrl:  ticketData.photoUrl  || '',
+          name:      ticketData.name      || '',
+        }),
         returnTo: returnTo || '',
         expiresInMinutes: 55,
       });
