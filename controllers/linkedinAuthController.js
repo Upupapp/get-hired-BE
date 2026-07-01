@@ -363,6 +363,21 @@ async function createLinkedinUser(liSub, email, emailVer, firstName, lastName, p
     [uid, liSub, email, emailVer, name || null, photoUrl || null]
   );
 
+  // Seed applicants_profile stub for job seekers (role 3) so completeness scoring
+  // works immediately after first login and the dashboard doesn't show an empty state.
+  if (roleId === 3) {
+    try {
+      var profileId = 'AP' + crypto.randomBytes(3).toString('hex').toUpperCase();
+      await dbQuery.query(
+        `INSERT INTO ${dbSchema}.applicants_profile
+         (applicant_profile_id, user_id, photo_url, is_profile_ready, created_at)
+         VALUES ($1,$2,$3,false,NOW())
+         ON CONFLICT (applicant_profile_id) DO NOTHING`,
+        [profileId, uid, photoUrl || null]
+      );
+    } catch (_) {}
+  }
+
   // Send welcome email (non-fatal)
   try { await send(email, 'welcome', { name: firstName || 'there', email }); } catch (_) {}
 
