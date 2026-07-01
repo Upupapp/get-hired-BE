@@ -147,6 +147,10 @@ app.use("/api/auth/archive", sensitiveLimiter);
 app.use("/api/auth/account/change-password", sensitiveLimiter);
 
 // --- Route mounting ---
+// googleAuthRoutes MUST be first — billingRoutes has router.use(validateFirebaseIdToken)
+// which acts as a catch-all auth gate; any route mounted after billingRoutes that
+// lacks its own auth middleware gets rejected 403 before its handlers run.
+app.use("/api", googleAuthRoutes);
 app.use("/api", userRoutes);
 app.use("/api", applicationRoutes);
 app.use("/api", cvRoutes);
@@ -172,7 +176,6 @@ app.use("/api", subscriptionUpgradeRecommendationRoutesV4);
 app.use("/api", recruiterDashboardAnalyticsRoutes);
 app.use("/api", billingRoutes);
 app.use("/api", publicJobPreviewRoutes);
-app.use("/api", googleAuthRoutes);
 
 
 // SEO: sitemap.xml endpoint — returns XML with all published jobs + static pages.
