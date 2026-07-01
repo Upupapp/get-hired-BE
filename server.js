@@ -32,6 +32,7 @@ import billingRoutes from "./routes/billingRoutes";
 import publicJobPreviewRoutes from "./routes/publicJobPreviewRoutes";
 import googleAuthRoutes from "./routes/googleAuthRoutes";
 import linkedinAuthRoutes from "./routes/linkedinAuthRoutes";
+import privacyRoutes from "./routes/privacyRoutes";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -153,6 +154,7 @@ app.use("/api/auth/account/change-password", sensitiveLimiter);
 // after billingRoutes without its own auth middleware gets rejected 403.
 app.use("/api", googleAuthRoutes);
 app.use("/api", linkedinAuthRoutes);
+app.use("/api", privacyRoutes);
 app.use("/api", userRoutes);
 app.use("/api", applicationRoutes);
 app.use("/api", cvRoutes);
@@ -241,6 +243,7 @@ app.get("/sitemap.xml", async (req, res) => {
       { loc: `${BASE_URL}/companies`, changefreq: "weekly", priority: "0.7" },
       { loc: `${BASE_URL}/job-seekers`, changefreq: "monthly", priority: "0.6" },
       { loc: `${BASE_URL}/employers`, changefreq: "monthly", priority: "0.6" },
+      { loc: `${BASE_URL}/privacy`, changefreq: "monthly", priority: "0.4" },
     ];
 
     const jobUrls = rows.map(row => {
