@@ -136,16 +136,17 @@ export const linkedinStart = async (req, res) => {
   var source   = req.query.source   ? String(req.query.source).substring(0, 64) : 'unknown';
   var returnTo = sanitizeReturn(req.query.returnTo);
 
-  var { state, codeChallenge } = createLinkedinState(intent, source, returnTo);
+  // createLinkedinState still generates a nonce for ID token replay protection.
+  // PKCE is omitted — LinkedIn confidential clients authenticate via client_secret,
+  // so the PKCE code_verifier causes token exchange to fail with invalid_client.
+  var { state } = createLinkedinState(intent, source, returnTo);
 
   var params = new URLSearchParams({
-    response_type:         'code',
-    client_id:             cfg.clientId,
-    redirect_uri:          cfg.redirectUri,
-    scope:                 'openid profile email',
-    state:                 state,
-    code_challenge:        codeChallenge,
-    code_challenge_method: 'S256',
+    response_type: 'code',
+    client_id:     cfg.clientId,
+    redirect_uri:  cfg.redirectUri,
+    scope:         'openid profile email',
+    state:         state,
   });
 
   return res.redirect(302, cfg.authEndpoint + '?' + params.toString());
@@ -179,7 +180,7 @@ export const linkedinCallback = async (req, res) => {
   var { codeVerifier, nonce, intent, returnTo } = transaction;
 
   try {
-    // Exchange authorization code for tokens
+    // Exchange authorization code for tokens (no code_verifier — confidential client)
     var tokenRes = await axios.post(cfg.tokenEndpoint,
       new URLSearchParams({
         grant_type:    'authorization_code',
@@ -187,7 +188,6 @@ export const linkedinCallback = async (req, res) => {
         redirect_uri:  cfg.redirectUri,
         client_id:     cfg.clientId,
         client_secret: cfg.clientSecret,
-        code_verifier: codeVerifier,
       }).toString(),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 15000 }
     );
