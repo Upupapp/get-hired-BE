@@ -13,7 +13,7 @@ const ALLOWED_ROLES = new Set(['job_seeker', 'employer', 'recruiter', 'visitor',
 
 const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,255}\.[^\s@]{2,}$/;
 
-const strip = (s) => String(s ?? '').replace(/<[^>]*>/g, '').replace(/[\r\n]{3,}/g, '\n\n').trim();
+const strip = (s) => String(s != null ? s : '').replace(/<[^>]*>/g, '').replace(/[\r\n]{3,}/g, '\n\n').trim();
 
 export const submitPrivacyRequest = async (req, res) => {
   try {
@@ -25,7 +25,7 @@ export const submitPrivacyRequest = async (req, res) => {
       message,
       related_account_email,
       consent_to_contact,
-    } = req.body ?? {};
+    } = req.body || {};
 
     // --- Validation ---
     if (!ALLOWED_REQUEST_TYPES.has(request_type)) {
@@ -93,7 +93,7 @@ export const submitPrivacyRequest = async (req, res) => {
       message: 'Your request was received. We will review it and contact you at the email you provided.',
     });
   } catch (err) {
-    console.error('[privacyController] submitPrivacyRequest:', err?.message ?? err);
+    console.error('[privacyController] submitPrivacyRequest:', (err && err.message) ? err.message : err);
     return res.status(500).json({ message: 'An error occurred. Please try again later.' });
   }
 };
