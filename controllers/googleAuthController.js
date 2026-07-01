@@ -52,7 +52,7 @@ async function exchangeGoogleTokenForFirebase(googleIdToken) {
   var apiKey = env.apiKey;
   var url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + apiKey;
   var response = await axios.post(url, {
-    requestUri: 'http://localhost',
+    requestUri: 'https://gethiredonline.app',
     postBody: 'id_token=' + encodeURIComponent(googleIdToken) + '&providerId=google.com',
     returnSecureToken: true,
     returnIdpCredential: false
@@ -216,7 +216,7 @@ const googleFirebaseSession = async (req, res) => {
       if (apiMsg === 'EMAIL_EXISTS') {
         // This email exists via a different provider (e.g. email+password)
         return res.status(409).json({
-          message: 'An account with this email already exists. Please sign in with your email and password, then link Google from your account settings.',
+          message: 'An account with this email already exists. Please sign in with your email and password instead.',
           errorCode: 'account_exists_different_provider'
         });
       }
