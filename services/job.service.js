@@ -228,15 +228,16 @@ const getJobCertificationRequirements = async (jobId) => {
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId]);
+    // Return public-safe fields only. id and canonicalKey are internal:
+    // save pattern is delete-then-reinsert so id is never used by FE for updates,
+    // and canonicalKey is reserved for future MATCH taxonomy work.
     return rows.map((row) => ({
-      id: row.id,
       name: row.name,
       type: row.type,
       importance: row.importance,
       issuingAuthority: row.issuing_authority,
       expiryRequired: row.expiry_required,
       verificationRequired: row.verification_required,
-      canonicalKey: row.canonical_key,
     }));
   } catch (error) {
     // Table may not exist in all environments — return empty array gracefully
