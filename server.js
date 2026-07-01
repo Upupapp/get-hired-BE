@@ -31,6 +31,7 @@ import recruiterDashboardAnalyticsRoutes from "./routes/recruiterDashboardAnalyt
 import billingRoutes from "./routes/billingRoutes";
 import publicJobPreviewRoutes from "./routes/publicJobPreviewRoutes";
 import googleAuthRoutes from "./routes/googleAuthRoutes";
+import linkedinAuthRoutes from "./routes/linkedinAuthRoutes";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -147,10 +148,11 @@ app.use("/api/auth/archive", sensitiveLimiter);
 app.use("/api/auth/account/change-password", sensitiveLimiter);
 
 // --- Route mounting ---
-// googleAuthRoutes MUST be first — billingRoutes has router.use(validateFirebaseIdToken)
-// which acts as a catch-all auth gate; any route mounted after billingRoutes that
-// lacks its own auth middleware gets rejected 403 before its handlers run.
+// googleAuthRoutes and linkedinAuthRoutes MUST be first — billingRoutes has
+// router.use(validateFirebaseIdToken) as a catch-all auth gate; any route mounted
+// after billingRoutes without its own auth middleware gets rejected 403.
 app.use("/api", googleAuthRoutes);
+app.use("/api", linkedinAuthRoutes);
 app.use("/api", userRoutes);
 app.use("/api", applicationRoutes);
 app.use("/api", cvRoutes);
