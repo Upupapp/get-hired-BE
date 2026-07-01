@@ -1,4 +1,3 @@
-import { initializeApp } from 'firebase/app';
 import admin from 'firebase-admin';
 import env from '../env';
 
@@ -136,7 +135,4 @@ export const firebaseConfig = {
   measurementId: env.measurementId,
 };
 
-const _app = initializeApp(firebaseConfig);
-
 export const firebaseAdmin = _admin;
-export const firebaseApp = _app;
