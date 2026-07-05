@@ -11,6 +11,10 @@ import { resolveHiringIntent } from '../services/hiringIntentResolverV4';
 import { generateStructuredDraft, redactForAnonymous } from '../services/instantJobAdGeneratorV4';
 import { validateGenerationInputs, detectBoilerplate, validateAntiDiscrimination, detectFakeClaims } from '../services/instantJobAdValidatorsV4';
 import { getUserCompanyForRequest } from './companiesController';
+import dbQuery from '../db/dbQuery';
+import env from '../env';
+
+var dbSchema = env.schema;
 
 // POST /api/recruiter/job-post-assistant/generate-intent
 // Authenticated employers only. Generates a full structured draft from inputs.
@@ -94,11 +98,35 @@ export async function generateJobAdIntent(req, res) {
       draft.quality.reviewFlags = draft.quality.reviewFlags.concat(fakeCheck.issues);
     }
 
+    // Look up a matching job role from the DB based on the job title (non-fatal)
+    var suggestedJobRoleId = null;
+    try {
+      var exactMatch = await dbQuery.query(
+        'SELECT job_role_id FROM ' + dbSchema + '.job_role WHERE LOWER(job_role_name) = LOWER($1) LIMIT 1',
+        [inputs.jobTitle]
+      );
+      if (exactMatch.rows && exactMatch.rows.length > 0) {
+        suggestedJobRoleId = exactMatch.rows[0].job_role_id;
+      }
+      if (!suggestedJobRoleId) {
+        var partialMatch = await dbQuery.query(
+          "SELECT job_role_id FROM " + dbSchema + ".job_role WHERE LOWER($1) LIKE '%' || LOWER(job_role_name) || '%' OR LOWER(job_role_name) LIKE '%' || LOWER($1) || '%' ORDER BY job_role_id LIMIT 1",
+          [inputs.jobTitle]
+        );
+        if (partialMatch.rows && partialMatch.rows.length > 0) {
+          suggestedJobRoleId = partialMatch.rows[0].job_role_id;
+        }
+      }
+    } catch (_) {
+      // non-fatal — job generation succeeds even if role lookup fails
+    }
+
     // Return full draft to authenticated employer
     return res.status(200).json({
       success: true,
       draft: draft,
       companyId: companyId,
+      suggestedJobRoleId: suggestedJobRoleId,
     });
   } catch (err) {
     console.error('[InstantJobAd] generateJobAdIntent error:', err && err.message);

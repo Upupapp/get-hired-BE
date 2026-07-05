@@ -22,6 +22,27 @@ import {
   mapTextToJobFields,
 } from '../services/easyJobPostExtractionService';
 import { getUserCompanyForRequest } from './companiesController';
+import dbQuery from '../db/dbQuery';
+import env from '../env';
+
+var dbSchema = env.schema;
+
+async function resolveJobRoleId(jobTitle) {
+  if (!jobTitle) return null;
+  try {
+    var exact = await dbQuery.query(
+      'SELECT job_role_id FROM ' + dbSchema + '.job_role WHERE LOWER(job_role_name) = LOWER($1) LIMIT 1',
+      [jobTitle]
+    );
+    if (exact.rows && exact.rows.length > 0) return exact.rows[0].job_role_id;
+    var partial = await dbQuery.query(
+      "SELECT job_role_id FROM " + dbSchema + ".job_role WHERE LOWER($1) LIKE '%' || LOWER(job_role_name) || '%' OR LOWER(job_role_name) LIKE '%' || LOWER($1) || '%' ORDER BY job_role_id LIMIT 1",
+      [jobTitle]
+    );
+    if (partial.rows && partial.rows.length > 0) return partial.rows[0].job_role_id;
+  } catch (_) { /* non-fatal */ }
+  return null;
+}
 
 var ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.txt', '.rtf'];
 var MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -83,6 +104,7 @@ export async function uploadAndExtract(req, res) {
 
     // Map to job fields
     var extractionResult = mapTextToJobFields(rawText);
+    extractionResult.jobRoleId = await resolveJobRoleId(extractionResult.jobTitle);
 
     return res.status(200).json({
       success: true,
@@ -152,6 +174,7 @@ export async function linkAndExtract(req, res) {
     }
 
     var extractionResult = mapTextToJobFields(rawText);
+    extractionResult.jobRoleId = await resolveJobRoleId(extractionResult.jobTitle);
 
     return res.status(200).json({
       success: true,
