@@ -47,12 +47,26 @@ const getPublishedJobs = async (companyId) => {
   let searchQuery;
   let params;
 
+  // TAB 04 FIX: c.company_logo was never selected here despite
+  // mappedBasicJob() reading raw.company_logo -- companyLogoUrl was always
+  // undefined on every job card rendered from this endpoint. The newer
+  // /api/search/public path (searchService.js) already selects it
+  // correctly; this brings the legacy path to parity rather than leaving
+  // two job-listing queries with different correctness.
+  //
+  // Also bounds the previously-unbounded result set (this endpoint had no
+  // LIMIT at all, relying solely on a 2-minute response cache to contain
+  // it) to a generous but finite cap. Not full page-based pagination --
+  // that needs a matching frontend change to be useful and is a larger,
+  // separate piece of work -- just a safety bound against unbounded growth.
+  const LEGACY_RESULT_CAP = 200;
+
   if (companyId) {
     searchQuery = `SELECT
         j.job_id, j.job_banner, j.job_title,
         j.company_id, j.job_type_id, j.work_setup_id,
         j.job_country, j.job_city, j.salary_minimum, j.salary_maximum, j.salary_currency,
-        c.company_name, t.job_type_name, w.work_setup_name
+        c.company_name, c.company_logo, t.job_type_name, w.work_setup_name
     FROM ${dbSchema}.jobs j
     LEFT JOIN ${dbSchema}.companies c
     ON j.company_id = c.company_id
@@ -60,15 +74,16 @@ const getPublishedJobs = async (companyId) => {
     ON j.job_type_id = t.job_type_id
     LEFT JOIN ${dbSchema}.work_setup w
     ON j.work_setup_id = w.work_setup_id
-    WHERE j.job_status_id = 2 AND j.company_id = $1
-    ORDER BY j.updated_at DESC;`;
-    params = [companyId];
+    WHERE j.job_status_id = 2 AND j.company_id = $2
+    ORDER BY j.updated_at DESC
+    LIMIT $1;`;
+    params = [LEGACY_RESULT_CAP, companyId];
   } else {
     searchQuery = `SELECT
         j.job_id, j.job_banner, j.job_title,
         j.company_id, j.job_type_id, j.work_setup_id,
         j.job_country, j.job_city, j.salary_minimum, j.salary_maximum, j.salary_currency,
-        c.company_name, t.job_type_name, w.work_setup_name
+        c.company_name, c.company_logo, t.job_type_name, w.work_setup_name
     FROM ${dbSchema}.jobs j
     LEFT JOIN ${dbSchema}.companies c
     ON j.company_id = c.company_id
@@ -77,8 +92,9 @@ const getPublishedJobs = async (companyId) => {
     LEFT JOIN ${dbSchema}.work_setup w
     ON j.work_setup_id = w.work_setup_id
     WHERE j.job_status_id = 2
-    ORDER BY j.updated_at DESC;`;
-    params = [];
+    ORDER BY j.updated_at DESC
+    LIMIT $1;`;
+    params = [LEGACY_RESULT_CAP];
   }
 
   try {
@@ -112,13 +128,23 @@ const getJobBadges = async (jobId) => {
   }
 };
 
+// STITCH fix: interview_template_question has no created_at column on the
+// live schema (confirmed via \d gethired.interview_template_question --
+// only template_question_id/template_question/template_answer_duration/
+// template_question_retakes/job_interview_template_id exist). This ORDER BY
+// referenced a nonexistent column, which failed query parsing outright
+// (regardless of row count) and — since this function is called from
+// mappedJob(), which jobDetails() awaits — took down GET /job/details for
+// every job, which in turn blocked every job-detail-dependent employer page
+// (including the applicants page) from rendering at all. Ordering by the
+// remaining real column is sufficient; no data/column was invented.
 const getJobInterviewQuestions = async (jobId, templateName) => {
   const searchQuery = `SELECT i.*
       FROM ${dbSchema}.job_interview_template j
       left join ${dbSchema}.interview_template_question i
       on i.job_interview_template_id = j.job_interview_template_id
-      WHERE j.job_id = $1 and j.job_interview_template_name = $2 
-      ORDER BY i.job_interview_template_id, i.created_at ASC;`;
+      WHERE j.job_id = $1 and j.job_interview_template_name = $2
+      ORDER BY i.job_interview_template_id ASC;`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [jobId, templateName]);
@@ -497,15 +523,28 @@ const getJobCompanyId = async (jobId) => {
 };
 
 const jobApplicants = async (jobId) => {
-  const searchQuery = `SELECT 
+  // STITCH fix: (1) gethired.users has no email column (it lives on
+  // user_credentials only, per the same fact fixed elsewhere this session)
+  // -- u.* silently carried no email field at all, leaving mappedBasicApplicantDetails's
+  // `email: raw.email` permanently undefined. Joined through user_credentials
+  // for uc.email, aliased as email so the existing mapper picks it up unchanged.
+  // (2) `users u` was joined via `u.uid = ap.user_id`, so an applicant who
+  // hasn't completed their applicants_profile row (a normal, common state,
+  // not just a test-data gap) showed a completely blank name/photo to the
+  // employer even though users.firstname/lastname exist independently of
+  // any profile. Both u and uc now join directly off j.candidate_id, the
+  // one FK that's always present on every job_applicants row.
+  const searchQuery = `SELECT
     j.job_application_id, j.date_applied, j.application_status_id, j.job_id,
-    ap.*, s.job_applicant_status_name, u.*,
+    ap.*, s.job_applicant_status_name, u.*, uc.email,
     jt.job_type_name, ws.work_setup_name
   FROM ${dbSchema}.job_applicants j
-  left join ${dbSchema}.applicants_profile ap 
+  left join ${dbSchema}.applicants_profile ap
   on ap.user_id = j.candidate_id
   left join ${dbSchema}.users u
-    on u.uid = ap.user_id
+    on u.uid = j.candidate_id
+    left join ${dbSchema}.user_credentials uc
+    on uc.uid = j.candidate_id
     left join ${dbSchema}.work_setup ws
     on ws.work_setup_id  = ap.work_setup_id
     left join ${dbSchema}.job_type jt
