@@ -11,6 +11,7 @@ import {
 } from './job.service';
 
 import { createApplicationSnapshots } from './applicationSnapshotService';
+import { validateDocumentFile } from './documentUploadValidationService';
 
 const dbSchema = env.schema;
 
@@ -60,6 +61,29 @@ const jobApply = async (jobApplication, userId) => {
     duplicateError.code = "JOB_APPLICATION_ALREADY_EXISTS";
     duplicateError.existingApplication = existing;
     throw duplicateError;
+  }
+
+  // SEC-08 FIX (TAB 08): uploadApplicationAttachment() had no MIME/size
+  // validation at all -- the sibling /applicant/docs upload path was
+  // already hardened (documentUploadValidationService.js), but a resume,
+  // cover letter, or government ID submitted as part of a job application
+  // went through this separate code path unchecked. Validate every
+  // attached file before creating the application row, rejecting the
+  // whole submission on the first bad file rather than partially applying it.
+  const attachmentsToValidate = [
+    ...(coverLetter || []),
+    ...(resume || []),
+    ...(governmentFiles || []),
+  ];
+  for (const document of attachmentsToValidate) {
+    if (document && document.file) {
+      const validation = validateDocumentFile(document.file);
+      if (!validation.valid) {
+        const validationError = new Error(validation.message);
+        validationError.code = "APPLICATION_DOCUMENT_INVALID";
+        throw validationError;
+      }
+    }
   }
 
   const jobApplicantionId = idGenerator(6, "APPL");

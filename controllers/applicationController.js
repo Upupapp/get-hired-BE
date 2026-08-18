@@ -45,6 +45,11 @@ const submitApplication = async (req, res) => {
         code: error.code,
       });
     }
+    // SEC-08 FIX (TAB 08): an attached document failing MIME/size
+    // validation is an expected client-input problem, not a server error.
+    if (error && error.code === "APPLICATION_DOCUMENT_INVALID") {
+      return res.status(status.bad).json(errorResponse(error.message));
+    }
     return res.status(status.error).json(errorResponse("Something went wrong. Please try again later."));
   }
 };
