@@ -670,6 +670,19 @@ const getJobDetails = async (req, res) => {
     }
 
     const details = await jobDetails(id);
+
+    // TAB 05 FIX: jobDetails() returns [] (not null/undefined) when no row
+    // matches -- {...[], isApplied, isSaved} silently spreads to just
+    // {isApplied, isSaved} with NO job fields at all, and this previously
+    // still returned 200/success. The frontend had no signal to treat this
+    // as an error: it rendered a real-looking page with placeholder
+    // fallback text ("Untitled role at Company") and a default "index,
+    // follow" robots tag -- a soft-404 for any dead/mistyped/removed job
+    // link, indexable by search engines as if it were real content.
+    if (Array.isArray(details) && details.length === 0) {
+      return res.status(status.notfound).json(errorResponse("Job not found."));
+    }
+
     const click = await insertLogs("Job View", "", id);
     return res.status(status.success).json(successResponse({
       ...details,
