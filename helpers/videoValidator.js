@@ -49,6 +49,11 @@ const _selfTest = () => {
   ok('empty rejected',       detectVideoContainer(Buffer.alloc(0)).code  === 'VIDEO_EMPTY');
   ok('webm valid overall',   validateVideoUpload(webmHeader.toString('base64')).valid === true);
   ok('pdf invalid overall',  validateVideoUpload(pdfHeader.toString('base64')).valid  === false);
+
+  // Oversized fixture: valid WebM header padded past VIDEO_CV_MAX_BYTES.
+  const oversized = Buffer.concat([webmHeader, Buffer.alloc(VIDEO_CV_MAX_BYTES)]);
+  const oversizedResult = validateVideoUpload(oversized.toString('base64'));
+  ok('oversized rejected',   oversizedResult.valid === false && oversizedResult.code === 'VIDEO_TOO_LARGE');
 };
 
 /**
@@ -97,6 +102,16 @@ const validateVideoUpload = (base64) => {
   try {
     if (!base64 || typeof base64 !== 'string' || base64.length === 0) {
       return { valid: false, code: 'VIDEO_EMPTY', message: REJECTION_MESSAGES.VIDEO_EMPTY, container: 'empty' };
+    }
+
+    // P0 FIX (TAB 10): VIDEO_CV_MAX_BYTES and REJECTION_MESSAGES.VIDEO_TOO_LARGE
+    // were both defined but never actually checked anywhere -- interview-answer
+    // and Video CV uploads had real container-signature validation but no
+    // enforced size limit at all. Base64 encodes 3 bytes as 4 characters --
+    // accurate size estimate without decoding the full buffer.
+    const approxSizeBytes = Math.floor((base64.length * 3) / 4);
+    if (approxSizeBytes > VIDEO_CV_MAX_BYTES) {
+      return { valid: false, code: 'VIDEO_TOO_LARGE', message: REJECTION_MESSAGES.VIDEO_TOO_LARGE, container: 'unknown' };
     }
 
     // Decode only the first ~4 KB — sufficient for any container header
