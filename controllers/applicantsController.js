@@ -16,6 +16,7 @@ import {
   updateProfileSaveVideoCV,
 } from "../services/applicant.service";
 import { getUserProfileById } from "../helpers/userDetails";
+import { validateDocumentFile } from "../services/documentUploadValidationService";
 import {
   charts,
   graph,
@@ -470,6 +471,20 @@ const saveDocuments = async (req, res) => {
     }
 
     if (documents) {
+      // SEC-08 FIX: validate every NEW file (entries carrying over an
+      // already-uploaded document have no fresh `file` data-URL -- mirrors
+      // uploadAndSaveAttachment's own "only upload if file present" check)
+      // before deleting the existing rows below. Reject the whole batch on
+      // the first bad file rather than partially applying it.
+      for (const document of documents) {
+        if (document && document.file) {
+          const validation = validateDocumentFile(document.file);
+          if (!validation.valid) {
+            return res.status(status.bad).json(errorResponse(validation.message));
+          }
+        }
+      }
+
       await deleteArrayApplicantEntry(
         applicantProfileId,
         "documents",

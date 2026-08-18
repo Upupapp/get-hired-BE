@@ -18,6 +18,7 @@ import {
 } from "../helpers/userDetails";
 
 import { getUserCompany } from "./companiesController";
+import { verifyRecaptcha } from "../helpers/recaptcha";
 import uploadInStorage, { uploadImageWithOptimization } from "../helpers/uploader";
 
 import { companySubscriptions } from "./subscriptionController";
@@ -89,7 +90,7 @@ const loginUser = async (req, res) => {
 };
 
 const registerUser = async (req, res) => {
-  const { email, password, firstName, lastName, role } = req.body;
+  const { email, password, firstName, lastName, role, recaptchaToken } = req.body;
 
   if (isEmpty(email) || isEmpty(password)) {
     return res.status(status.bad).json(errorResponse("Email or Password can not be empty"));
@@ -104,6 +105,14 @@ const registerUser = async (req, res) => {
   const ALLOWED_ROLES = [2, 3];
   if (!ALLOWED_ROLES.includes(Number(role))) {
     return res.status(status.bad).json(errorResponse("Invalid role."));
+  }
+
+  // SEC-08 FIX: the frontend has rendered a reCAPTCHA widget on signup for
+  // a long time, but nothing here ever verified the token -- see
+  // helpers/recaptcha.js for the fail-open-until-configured rationale.
+  const recaptchaResult = await verifyRecaptcha(recaptchaToken);
+  if (!recaptchaResult.success) {
+    return res.status(status.bad).json(errorResponse("reCAPTCHA verification failed. Please try again."));
   }
 
   const user = {

@@ -32,7 +32,13 @@ const verifyRoles = (allowedRoles) => async(req, res, next) => {
         if(rows.length && allowedRoles.includes(rows[0].role)) {
             next();
         } else {
-            res.status(401).json({ message: 'User not allowed to access this API' });
+            // SEC-08 FIX: this is an authorization denial (a real, authenticated
+            // identity whose role isn't permitted here), not an authentication
+            // failure -- 403, not 401. Was previously 401, which the frontend's
+            // session-expiry interceptor treated identically to "please log back
+            // in," even though logging back in as the same wrong-role account
+            // can never fix this.
+            res.status(403).json({ message: 'User not allowed to access this API' });
         }
 
     } catch (error) {
