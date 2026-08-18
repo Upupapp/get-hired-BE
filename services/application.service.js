@@ -40,7 +40,6 @@ const findActiveApplication = async (jobId, candidateId) => {
 const jobApply = async (jobApplication, userId) => {
   const {
     jobId,
-    applicantId,
     applicationStatusId,
     coverLetter,
     resume,
@@ -55,12 +54,66 @@ const jobApply = async (jobApplication, userId) => {
   // candidate_id. Identity must come from the verified auth token.
   const candidateId = userId;
 
+  // BOLA FIX (TAB 10): `applicantId` was previously taken from the request
+  // body too (jobApplication.applicantId) and used as the FK for every
+  // resume/cover-letter/government-ID/interview-answer row written by this
+  // function -- an authenticated applicant could submit a guessed/arbitrary
+  // applicantId and have their attachments filed under a different
+  // applicant's profile. applicant_profile_id is a separately-generated ID
+  // (not the same as uid), so it must be looked up server-side from the
+  // verified uid rather than trusted from the client, exactly like
+  // candidateId above.
+  const { rows: profileRows } = await dbQuery.query(
+    `SELECT applicant_profile_id FROM ${dbSchema}.applicants_profile WHERE user_id = $1 LIMIT 1`,
+    [userId]
+  );
+  if (!profileRows || profileRows.length === 0) {
+    const profileError = new Error("Please complete your profile before applying.");
+    profileError.code = "APPLICANT_PROFILE_REQUIRED";
+    throw profileError;
+  }
+  const applicantId = profileRows[0].applicant_profile_id;
+
+  // P0 FIX (TAB 10): nothing previously checked whether the job was still
+  // open before accepting an application -- an applicant could apply to an
+  // expired or closed job through the UI (which renders normally for
+  // expired jobs, see job-posts-details.component.ts's own comment on that)
+  // or via a direct API call. jobStatusId === 2 is the app's existing
+  // "active/published" convention (see TAB 05's robots-tag fix).
+  const job = await jobDetails(jobId);
+  if (!job || job.jobStatusId !== 2) {
+    const closedError = new Error("This job is no longer accepting applications.");
+    closedError.code = "JOB_NOT_ACCEPTING_APPLICATIONS";
+    throw closedError;
+  }
+  if (job.expirationDate && new Date(job.expirationDate) < new Date()) {
+    const expiredError = new Error("This job posting has expired.");
+    expiredError.code = "JOB_NOT_ACCEPTING_APPLICATIONS";
+    throw expiredError;
+  }
+
   const existing = await findActiveApplication(jobId, candidateId);
   if (existing) {
     const duplicateError = new Error("You already applied to this job.");
     duplicateError.code = "JOB_APPLICATION_ALREADY_EXISTS";
     duplicateError.existingApplication = existing;
     throw duplicateError;
+  }
+
+  // P0 FIX (TAB 10): when a job has screening questions/video requirements,
+  // nothing enforced that the applicant actually answered them -- the FE's
+  // "skip" path could jump straight to submission, and this function
+  // accepted an empty interviewAnswers array regardless. Backend is the
+  // authoritative enforcement point; the FE gets its own guard separately.
+  const requiredQuestionIds = (job.interviewQuestions || []).map((q) => q.questionId);
+  if (requiredQuestionIds.length > 0) {
+    const answeredIds = new Set((interviewAnswers || []).map((a) => a.questionId));
+    const missing = requiredQuestionIds.filter((id) => !answeredIds.has(id));
+    if (missing.length > 0) {
+      const missingAnswersError = new Error("Please answer all screening questions before submitting your application.");
+      missingAnswersError.code = "APPLICATION_SCREENING_QUESTIONS_INCOMPLETE";
+      throw missingAnswersError;
+    }
   }
 
   // SEC-08 FIX (TAB 08): uploadApplicationAttachment() had no MIME/size
@@ -105,7 +158,11 @@ const jobApply = async (jobApplication, userId) => {
       return "Failed to submit application";
     }
 
-    if (coverLetter.length > 0) {
+    // P0 FIX (TAB 10): bare `.length` on these previously crashed
+    // (unhandled rejection, no response sent) for any caller that omitted
+    // one of these arrays -- normal FE traffic always sends them, but a
+    // malformed/direct-API request didn't hit this guard until now.
+    if ((coverLetter || []).length > 0) {
       const output = await Promise.all(
         coverLetter.map(async (document, index) => {
           return await uploadApplicationAttachment(
@@ -119,7 +176,7 @@ const jobApply = async (jobApplication, userId) => {
       );
     }
 
-    if (resume.length > 0) {
+    if ((resume || []).length > 0) {
       const output = await Promise.all(
         resume.map(async (document, index) => {
           return await uploadApplicationAttachment(
@@ -133,7 +190,7 @@ const jobApply = async (jobApplication, userId) => {
       );
     }
 
-    if (governmentFiles.length > 0) {
+    if ((governmentFiles || []).length > 0) {
       const output = await Promise.all(
         governmentFiles.map(async (document, index) => {
           return await uploadApplicationAttachment(
@@ -147,7 +204,7 @@ const jobApply = async (jobApplication, userId) => {
       );
     }
 
-    if (interviewAnswers.length > 0) {
+    if ((interviewAnswers || []).length > 0) {
       const output = await Promise.all(
         interviewAnswers.map(async (item, index) => {
           const answer = {
@@ -165,7 +222,8 @@ const jobApply = async (jobApplication, userId) => {
     const dbResponse = rows[0];
     const user = await getUserProfileById(userId);
 
-    const job = await jobDetails(jobId);
+    // job was already fetched above (job-status/expiration/screening-question
+    // checks) -- reused here instead of querying it a second time.
 
     // LAUNCH-02: confirmation email — non-blocking, failure never blocks submission.
     const statusLabel = APPLICANT_SAFE_STATUS_MAP[applicationStatusId] || 'Application received';

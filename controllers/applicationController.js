@@ -19,11 +19,26 @@ const submitApplication = async (req, res) => {
   // jobApply() derives it from the authenticated uid directly. Kept out
   // of the `application` object entirely so there's no path left where a
   // body-supplied value could be mistaken for the real one.
-  const { jobId, applicantId, coverLetter, resume, governmentFiles, interviewAnswers } = req.body;
+  // P0 FIX (TAB 10): applicantId is no longer read from the request body
+  // either -- jobApply() now derives it server-side from the authenticated
+  // uid (see the BOLA fix comment there), so it's never passed through here.
+  const { jobId } = req.body;
+  // P0 FIX (TAB 10): bare `.length` on a possibly-missing array threw
+  // synchronously before the try/catch even started, for any caller that
+  // omitted interviewAnswers -- normal FE traffic always sends it, but a
+  // malformed/direct-API request hung the request (no response sent) or
+  // could crash the process. Default every array to [] up front.
+  const coverLetter = req.body.coverLetter || [];
+  const resume = req.body.resume || [];
+  const governmentFiles = req.body.governmentFiles || [];
+  const interviewAnswers = req.body.interviewAnswers || [];
+
+  if (!jobId) {
+    return res.status(status.bad).json(errorResponse("jobId is required."));
+  }
 
   const application = {
     jobId,
-    applicantId,
     coverLetter,
     resume,
     governmentFiles,
@@ -48,6 +63,16 @@ const submitApplication = async (req, res) => {
     // SEC-08 FIX (TAB 08): an attached document failing MIME/size
     // validation is an expected client-input problem, not a server error.
     if (error && error.code === "APPLICATION_DOCUMENT_INVALID") {
+      return res.status(status.bad).json(errorResponse(error.message));
+    }
+    // P0 FIX (TAB 10): each of these is an expected, client-facing
+    // condition (no profile yet, job closed/expired, required screening
+    // questions unanswered) -- not a server error.
+    if (error && (
+      error.code === "APPLICANT_PROFILE_REQUIRED" ||
+      error.code === "JOB_NOT_ACCEPTING_APPLICATIONS" ||
+      error.code === "APPLICATION_SCREENING_QUESTIONS_INCOMPLETE"
+    )) {
       return res.status(status.bad).json(errorResponse(error.message));
     }
     return res.status(status.error).json(errorResponse("Something went wrong. Please try again later."));
