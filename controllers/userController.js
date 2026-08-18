@@ -230,11 +230,38 @@ const verifyEmailFileManually = async (req, res) => {
 const verifyEmail = async (req, res) => {
   const { oobCode } = req.query;
 
+  if (isEmpty(oobCode)) {
+    return res.status(status.bad).json(errorResponse("Missing verification code."));
+  }
+
   try {
     const verify = await verifyEmailInFirebase(oobCode);
     return res.status(status.success).json(successResponse("Email Successfully verified. You may login."));
   } catch (err) {
-    console.error('[verifyEmail] error:', err);
+    // EMAIL VERIFICATION AUDIT FIX: previously every failure (expired,
+    // already-used, malformed, disabled account) returned the same 500
+    // "Operation not successful" -- a 500 misrepresents an expected,
+    // client-facing condition (an old/reused link) as a server error, and
+    // gives the user no actionable next step. applyActionCode's own error
+    // codes already distinguish these cases; surface them as a real 400
+    // with a message that tells the user what to do, without leaking
+    // Firebase internals.
+    const code = err && err.code;
+    console.error('[verifyEmail] error:', code, err && err.message);
+    if (code === 'auth/expired-action-code') {
+      return res.status(status.bad).json(errorResponse("This verification link has expired. Please request a new one."));
+    }
+    if (code === 'auth/invalid-action-code') {
+      // Firebase returns this same code for both "malformed" and
+      // "already used" -- it doesn't distinguish them, so neither can we.
+      return res.status(status.bad).json(errorResponse("This verification link is invalid or has already been used. If your email isn't verified yet, request a new link."));
+    }
+    if (code === 'auth/user-disabled') {
+      return res.status(status.bad).json(errorResponse("This account has been disabled."));
+    }
+    if (code === 'auth/user-not-found') {
+      return res.status(status.bad).json(errorResponse("This verification link is no longer valid."));
+    }
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
@@ -536,13 +563,27 @@ const getVerification = async (email) => {
   const userRole = await getUserRoleByEmail(email);
   const firstName = await getUserNameByEmail(email);
 
-  send(email, "verify_email", {
+  // EMAIL VERIFICATION AUDIT FIX: send() was previously called without
+  // await and its result was never checked -- this function always
+  // returned "Verification Link Sent" regardless of whether the email
+  // actually went out. send() itself never throws (returns
+  // {sent, reason} by design, see mailer.js), so this was silently
+  // discarding real delivery failures (e.g. an unconfigured/invalid
+  // SendGrid key locally -- every local backend boot logs "API key does
+  // not start with 'SG.'"). The Firebase verification LINK is still
+  // generated correctly regardless (that part doesn't depend on
+  // SendGrid) -- only the EMAIL DELIVERY step was failing invisibly.
+  const mailResult = await send(email, "verify_email", {
     verify_url: verify + `&role=${userRole}`,
     name: firstName,
     email,
   });
 
-  return "Verification Link Sent";
+  if (!mailResult || !mailResult.sent) {
+    console.warn('[getVerification] Verification link generated but email delivery failed:', email, mailResult && mailResult.reason);
+  }
+
+  return { linkGenerated: true, emailSent: !!(mailResult && mailResult.sent) };
 };
 
 const deleteAccountById = async (req, res) => {
