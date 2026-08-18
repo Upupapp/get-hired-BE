@@ -1,4 +1,4 @@
-import { jobApply, updateApplicationStatus as updateApplicationStatusService } from "../services/application.service";
+import { jobApply, updateApplicationStatus as updateApplicationStatusService, APPLICANT_SAFE_STATUS_MAP } from "../services/application.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import {
   getApplicationSnapshot,
@@ -94,8 +94,15 @@ const getApplicantApplicationSnapshot = async (req, res) => {
 
   try {
     // Confirm the caller owns this application
+    // P0 FIX (TAB 10): now also selects application_status_id -- the
+    // application-detail page previously had no authoritative backend
+    // status source of its own; it relied entirely on Angular router state
+    // passed from the list page at click time, which was empty (and the
+    // status silently didn't render at all) on a direct link, refresh, or
+    // new-tab open, and was never re-verified against the backend even on
+    // normal navigation.
     const { rows: appRows } = await dbQuery.query(
-      `SELECT candidate_id, job_id FROM ${dbSchema}.job_applicants WHERE job_application_id = $1 LIMIT 1`,
+      `SELECT candidate_id, job_id, application_status_id FROM ${dbSchema}.job_applicants WHERE job_application_id = $1 LIMIT 1`,
       [applicationId]
     );
     if (!appRows || appRows.length === 0) {
@@ -112,6 +119,8 @@ const getApplicantApplicationSnapshot = async (req, res) => {
 
     return res.status(status.success).json(successResponse({
       applicationId,
+      applicationStatusId: appRows[0].application_status_id,
+      statusLabel: APPLICANT_SAFE_STATUS_MAP[appRows[0].application_status_id] || 'Application received',
       hasSnapshot: !!snap,
       snapshotCreatedAt: snap ? snap.created_at : null,
       completenessScore: comp ? comp.completeness_score : null,
