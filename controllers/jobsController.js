@@ -25,6 +25,8 @@ import {
 
 import { listOfJobAppliedByApplicant } from "../services/applicant.service";
 import { getUserCompanyForRequest } from "./companiesController";
+import { getAccessContextForRequest, hasPermission, canAccessJob, sqlJobScopeFilter } from "../services/accessControl.service";
+import { addJobAssignment } from "../services/teamAccess.service";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
@@ -88,6 +90,11 @@ const createJobs = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
     const companyId = callerCompany.companyId;
+
+    const accessCtx = await getAccessContextForRequest(req, uid);
+    if (!accessCtx || !hasPermission(accessCtx, "jobs.create")) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
 
     if (bannerFile && bannerFile.length != 0) {
       rawUrl = await uploadImageWithOptimization(
@@ -153,6 +160,12 @@ const createJobs = async (req, res) => {
       }
     }
 
+    // An assigned_jobs-scoped creator must not immediately lose access to
+    // the job they just made -- auto-assign it to them.
+    if (accessCtx.accessScope === "assigned_jobs") {
+      await addJobAssignment(companyId, uid, rows[0].job_id, uid);
+    }
+
     const dbResponse = await mappedJob(rows[0]);
     // SEO: notify Google the new job URL is available (fire-and-forget).
     // No-op unless GOOGLE_INDEXING_API_ENABLED=true in the environment.
@@ -180,6 +193,10 @@ const getJobApplicantDetails = async (req, res) => {
     if (!jobCompanyId || jobCompanyId !== callerCompany.companyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!hasPermission(accessCtx, "applicants.view") || !canAccessJob(accessCtx, jobId)) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
 
     const applicants = await applicationOfApplicant(jobId, id);
 
@@ -193,7 +210,8 @@ const getJobApplicantDetails = async (req, res) => {
 const getJobBasicListOfCompany = async (req, res) => {
   try {
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
-    const list = await getBasicJobList(callerCompany.companyId, 0);
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    const list = await getBasicJobList(callerCompany.companyId, 0, accessCtx);
     return res.status(status.success).json(successResponse(list));
   } catch (error) {
     console.error('[jobsController] error:', error);
@@ -204,7 +222,8 @@ const getJobBasicListOfCompany = async (req, res) => {
 const getExpiredJobListOfCompany = async (req, res) => {
   try {
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
-    const list = await getBasicJobList(callerCompany.companyId, 10);
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    const list = await getBasicJobList(callerCompany.companyId, 10, accessCtx);
     return res.status(status.success).json(successResponse(list));
   } catch (error) {
     console.error('[jobsController] error:', error);
@@ -225,6 +244,10 @@ const deleteJob = async (req, res) => {
     // caller-supplied scope claim.
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "Job not found or you do not have access." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!hasPermission(accessCtx, "jobs.delete") || !canAccessJob(accessCtx, jobId)) {
       return res.status(403).json({ message: "Job not found or you do not have access." });
     }
 
@@ -251,7 +274,15 @@ const deleteJob = async (req, res) => {
     // Refresh the caller's own job list — scoped to callerCompany.companyId,
     // never to any caller-supplied ID. Empty array is a valid success response
     // (all jobs deleted).
-    const jobs = await getBasicJobList(callerCompany.companyId, 0);
+    // SECURITY FIX (zero-scope/null-context remediation): accessCtx was
+    // resolved above (for the delete's own authorization) but not passed
+    // into this response-refresh call -- getBasicJobList treats a missing
+    // 3rd argument as "internal, pre-existing unscoped caller" (see its own
+    // doc comment), so an assigned_jobs-scoped caller who deletes their one
+    // assigned job received the company's FULL, unscoped job list back in
+    // the response body. The mutation itself was already correctly scoped;
+    // only the post-mutation response projection was not.
+    const jobs = await getBasicJobList(callerCompany.companyId, 0, accessCtx);
     return res.status(status.success).json(successResponse(jobs));
   } catch (error) {
     console.error('[deleteJob] error:', error);
@@ -317,6 +348,10 @@ const updateJob = async (req, res) => {
     // UPDATE WHERE clause enforces ownership in a single query.
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to update this job." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!hasPermission(accessCtx, "jobs.edit") || !canAccessJob(accessCtx, jobId)) {
       return res.status(403).json({ message: "You don't have permission to update this job." });
     }
 
@@ -403,6 +438,10 @@ const updateStatusOfJob = async (req, res) => {
     // pattern already applied to updateJob and deleteJob). 2 DB calls, not 3.
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!hasPermission(accessCtx, "jobs.publish") || !canAccessJob(accessCtx, jobId)) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
 
@@ -540,7 +579,7 @@ const getCategoryList = async (req, res) => {
   }
 };
 
-const getBasicJobList = async (companyId, statusId) => {
+const getBasicJobList = async (companyId, statusId, ctx) => {
   let filteredStatus = "";
 
   switch (statusId) {
@@ -555,20 +594,39 @@ const getBasicJobList = async (companyId, statusId) => {
       break;
   }
 
-  const searchQuery = `SELECT 
+  // ctx is optional -- internal callers that don't pass a 3rd argument at all
+  // (e.g. getPublishedJobsWithinDateRange) get the pre-existing, unscoped
+  // behavior unchanged. Request-driven controller calls always pass ctx as
+  // their 3rd argument, even when it resolves to null (e.g. a suspended
+  // member, or a company_employees row with no team_role_id yet) -- that
+  // null means "this caller has zero access," not "skip scoping." The check
+  // below must be `!== undefined`, not a truthiness check: `if (ctx)` would
+  // treat a real, resolved null the same as "ctx never passed," silently
+  // returning the full unscoped company job list to a caller who should see
+  // none of it. sqlJobScopeFilter(null, ...) already returns the correct
+  // deny-all clause -- the bug was skipping the call entirely.
+  let jobScopeClause = "";
+  const params = [companyId];
+  if (ctx !== undefined) {
+    const filter = sqlJobScopeFilter(ctx, "j.job_id", 2);
+    jobScopeClause = filter.clause;
+    if (filter.param) params.push(filter.param);
+  }
+
+  const searchQuery = `SELECT
   j.job_id, j.job_title, j.created_at, j.company_id,
-  j.job_city, j.work_setup_id, j.job_type_id, 
+  j.job_city, j.work_setup_id, j.job_type_id,
   j.salary_minimum, j.salary_maximum, j.salary_currency,
   j.job_status_id, ws.work_setup_name, jt.job_type_name, j.rate
   FROM ${dbSchema}.jobs j
-  left join ${dbSchema}.work_setup ws 
+  left join ${dbSchema}.work_setup ws
   on ws.work_setup_id = j.work_setup_id
-  left join ${dbSchema}.job_type jt 
+  left join ${dbSchema}.job_type jt
   on jt.job_type_id = j.job_type_id
-  where company_id = $1 ${filteredStatus} ORDER BY j.created_at DESC;`;
+  where company_id = $1 ${filteredStatus} ${jobScopeClause} ORDER BY j.created_at DESC;`;
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, [companyId]);
+    const { rows } = await dbQuery.query(searchQuery, params);
     if (!rows || rows.length > 0) {
       return rows.map((row) => mappedBasicJob(row));
     }
@@ -595,17 +653,17 @@ const getPublishedJobsWithinDateRange = async (companyId, startRange, newest) =>
 
 const getJobList = async (companyId) => {
   const selectQuery = `
-    SELECT 
+    SELECT
       j.job_id, j.jobtitle, j.jobcountry, j.jobcategory,
       j.maxsalary, j.hoursperweek, j.externallink, j.minsalary,
-      j.jobcity, j.reqdetails, j.applicationemail, j.jobdescription, 
+      j.jobcity, j.reqdetails, j.applicationemail, j.jobdescription,
       j.minrate, j.jobtype, j.jobtags, j.createddate,
       cj.isfilled, cj.applications, cj.isdraft, cj."views",
-      c.companyname, c.logourl, c.natureofbusiness  
+      c.companyname, c.logourl, c.natureofbusiness
     FROM ${dbSchema}.jobs j
-    inner join ${dbSchema}.company_jobs cj 
-    on j.job_id = cj.job_id 
-    inner join ${dbSchema}.company c 
+    inner join ${dbSchema}.company_jobs cj
+    on j.job_id = cj.job_id
+    inner join ${dbSchema}.company c
     on c.company_id = cj.company_id where cj.company_id = $1`;
 
   try {
@@ -728,6 +786,10 @@ const getAllApplicantOfJob = async (req, res) => {
     if (!jobCompanyId || !callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobCompanyId) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!hasPermission(accessCtx, "applicants.view") || !canAccessJob(accessCtx, id)) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
 
     const list = await jobApplicants(id);
     return res.status(status.success).json(successResponse(list));
@@ -766,6 +828,10 @@ const deleteInterviewQuestion = async (req, res) => {
     // before deleting. Join through job_interview_template for company_id.
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!canAccessJob(accessCtx, jobId)) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
     // OPT-QA9-1: fold ownership check into the DELETE WHERE via subquery —
@@ -874,6 +940,10 @@ const getJobActionSummary = async (req, res) => {
     // Verify job belongs to the authenticated caller's company.
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You do not have access to this job." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!canAccessJob(accessCtx, jobId)) {
       return res.status(403).json({ message: "You do not have access to this job." });
     }
 
