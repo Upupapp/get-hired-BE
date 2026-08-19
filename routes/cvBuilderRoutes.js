@@ -1,5 +1,5 @@
 import express from "express";
-import { uploadCv } from "../controllers/cvBuilderController";
+import { uploadCv, getCurrentCv } from "../controllers/cvBuilderController";
 import verifyAuth from "../middleware/verifyAuth";
 
 // CVCOACH (v2 Product OS) -- route group. Every route requires verifyAuth
@@ -9,5 +9,6 @@ import verifyAuth from "../middleware/verifyAuth";
 const router = express.Router();
 
 router.post("/cv-builder/upload", verifyAuth, uploadCv);
+router.get("/cv-builder/current", verifyAuth, getCurrentCv);
 
 export default router;

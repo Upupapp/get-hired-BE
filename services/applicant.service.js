@@ -887,7 +887,8 @@ const uploadAndSaveAttachment = async (
   applicantId,
   tableName,
   column,
-  index = 0
+  index = 0,
+  extraColumns = null
 ) => {
   let rawUrl = "";
   let generalQuery = "";
@@ -910,9 +911,19 @@ const uploadAndSaveAttachment = async (
       rawUrl = await uploadInStorage(storageFolder, safeFileName, file);
     }
 
+    // CV Builder foundation: optional extra columns (currently just
+    // `is_cv`) for callers that need to write beyond the base
+    // fileurl/filename/size/type/<owner column> shape every other caller of
+    // this function uses. Backward compatible -- when omitted, the INSERT
+    // is byte-identical to before this change.
+    const extraKeys = extraColumns ? Object.keys(extraColumns) : [];
+    const extraColumnSql = extraKeys.map((key) => `, "${key}"`).join("");
+    const extraPlaceholderSql = extraKeys.map((_, i) => `, $${6 + i}`).join("");
+    const extraValues = extraKeys.map((key) => extraColumns[key]);
+
     generalQuery = `INSERT INTO ${dbSchema}.${tableName}
-      (fileurl, filename, "size", "type", ${column})
-      VALUES($1, $2, $3, $4, $5) returning *;`;
+      (fileurl, filename, "size", "type", ${column}${extraColumnSql})
+      VALUES($1, $2, $3, $4, $5${extraPlaceholderSql}) returning *;`;
 
     const { rows } = await dbQuery.query(generalQuery, [
       rawUrl,
@@ -920,6 +931,7 @@ const uploadAndSaveAttachment = async (
       size,
       type,
       applicantId,
+      ...extraValues,
     ]);
 
     if (rows && rows.length == 0) {
