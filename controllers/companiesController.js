@@ -1,4 +1,6 @@
 import { successResponse, errorResponse, status } from "../helpers/status";
+import { getAccessContextForRequest, hasPermission } from "../services/accessControl.service";
+import { removeTeamMember as removeTeamMemberById } from "../services/teamAccess.service";
 import uploadInStorage, { uploadImageWithOptimization } from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
@@ -21,6 +23,7 @@ import {
 import { send } from "../helpers/mailer";
 
 import { registerUserInDB, getVerification } from "./userController";
+import { insertLogs } from "../services/user.service";
 import {
   companyList,
   companyDetailsById,
@@ -348,10 +351,25 @@ const createBasicCompany = async (companyName, companyEmail, userId) => {
 
     const dbResponse = mappedCompany(rows[0]);
 
+    // Non-fatal audit trail (reuses the existing gethired.logs table via
+    // insertLogs -- no new table/migration). A logging failure must never
+    // block company setup, matching the same non-fatal posture as the
+    // subscription step below.
+    try {
+      await insertLogs("Company Setup Completed", userId, dbResponse.companyId);
+    } catch (logErr) {
+      console.warn('[companiesController] createBasicCompany: setup-completed log skipped:', logErr && logErr.code);
+    }
+
     // Non-fatal: subscription table may not exist yet on this environment.
     // Company creation succeeds regardless; subscription can be applied later.
     try {
       await createCompanySubscription(dbResponse.companyId, 1);
+      try {
+        await insertLogs("Trial Activated", userId, dbResponse.companyId);
+      } catch (logErr) {
+        console.warn('[companiesController] createBasicCompany: trial-activated log skipped:', logErr && logErr.code);
+      }
     } catch (subErr) {
       console.warn('[companiesController] createBasicCompany: subscription step skipped:', subErr && subErr.code);
     }
@@ -443,7 +461,14 @@ const getDashboard = async (req, res) => {
     const totalContact = await totalContacts(userCompany.companyId);
     const graphList = await graph(userCompany.companyId);
     const cityList = await cities(userCompany.companyId);
-    const contact = await contactList(userCompany.companyId);
+    // SECURITY FIX (zero-scope/null-context remediation, same root cause as
+    // contactsController.js's list endpoint): contactList's array mixes
+    // company-wide unscoped contacts with genuinely job-tied ones
+    // (searchQuery2/searchQuery3) -- totalContacts previously reflected the
+    // full unscoped count regardless of the caller's own job scope, an
+    // aggregate-count leak of the same data-flow issue, not a separate one.
+    const accessCtx = await getAccessContextForRequest(req, uid);
+    const contact = await contactList(userCompany.companyId, accessCtx);
     const dbResponse = {
       company: userCompany,
       charts: chart,
@@ -478,7 +503,8 @@ const getDashboardPipelineOverview = async (req, res) => {
       });
     }
 
-    const overview = await pipelineOverview(userCompany.companyId);
+    const accessCtx = await getAccessContextForRequest(req, uid);
+    const overview = await pipelineOverview(userCompany.companyId, accessCtx);
     return res.status(status.success).json(successResponse(overview));
   } catch (error) {
     console.error('[companiesController] error:', error);
@@ -537,11 +563,17 @@ const mappedCompany = (raw) => {
   };
 };
 
+// Job-scoped RBAC V3 alignment (2026-08-13): this legacy route had NO
+// team.manage permission check and NO last-owner protection -- confirmed
+// live during V1 verification that a no_job_access member could remove any
+// other member, including the sole Owner, entirely bypassing the new
+// Team & Access authorization model. Fixed by delegating the actual removal
+// to teamAccess.service.js's removeTeamMember (single source of truth for
+// last-owner protection + audit logging), rather than duplicating that
+// logic here. Legacy request shape uses employee_uuid ($userId), the new
+// service expects employee_id (the company_employees PK) -- resolved below.
 const removeCompanyUser = async (req, res) => {
   const { userId, companyId } = req.body;
-  // Parameterized, not string-interpolated -- STITCH fix (SQL injection).
-  const deleteQuery = `DELETE FROM ${dbSchema}.company_employees
-  WHERE employee_uuid=$1 and company_id=$2`;
   try {
     // SECURE fix (BOLA): this route previously had no auth middleware at
     // all -- anyone could remove any user from any company. Confirm the
@@ -554,21 +586,45 @@ const removeCompanyUser = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
 
-    const { rows } = await dbQuery.query(deleteQuery, [userId, companyId]);
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    if (!hasPermission(accessCtx, "team.manage")) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
+    const { rows: memberRows } = await dbQuery.query(
+      `SELECT employee_id FROM ${dbSchema}.company_employees WHERE employee_uuid = $1 AND company_id = $2`,
+      [userId, companyId]
+    );
+    if (!memberRows || memberRows.length === 0) {
+      return res.status(status.notfound).json(errorResponse("Not found."));
+    }
+
+    await removeTeamMemberById(companyId, memberRows[0].employee_id, { uid: req.user.uid, email: req.user.email });
 
     return res.status(status.success).json(successResponse("Company user has been removed"));
   } catch (error) {
+    if (error && error.code === "CANNOT_REMOVE_LAST_OWNER") {
+      return res.status(status.bad).json(errorResponse("You can't remove the last remaining Owner."));
+    }
     console.error('[companiesController] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
 };
 
+// Job-scoped RBAC V3 alignment (2026-08-13): gated with team.view for
+// consistency with the new GET /company/team/members -- this legacy
+// endpoint is read-only (no escalation risk) but should not offer a
+// permission-check-free path to the same data.
 const getAllCompanyUser = async (req, res) => {
   const { uid } = req.user;
   try {
     // BOLA guard: derive authoritative companyId from the JWT, never from req.query
     const callerCompany = await getUserCompanyForRequest(req, uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, uid);
+    if (!hasPermission(accessCtx, "team.view")) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
     const users = await companyUsers(callerCompany.companyId);
@@ -579,6 +635,14 @@ const getAllCompanyUser = async (req, res) => {
   }
 };
 
+// Job-scoped RBAC V3 alignment (2026-08-13): this legacy route had NO
+// team.manage permission check -- any authenticated company member could
+// silently create a new member (hardcoded role, no job scope, no invite
+// token/expiry/audit trail). Confirmed it has zero live frontend callers
+// (see GETHIRED_TEAM_ACCESS_RBAC_V3_GAP_ANALYSIS.md), but is left mounted
+// rather than removed in case of an untested integration -- now gated the
+// same way as the new invite endpoint. Internal provisioning logic
+// (addCompanyUserByEmail) is unchanged.
 const addCompanyUser = async (req, res) => {
   const { emails } = req.body;
   const { uid } = req.user;
@@ -589,6 +653,10 @@ const addCompanyUser = async (req, res) => {
     // supplying a spoofed companyId.
     const callerCompany = await getUserCompanyForRequest(req, uid);
     if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+    const accessCtx = await getAccessContextForRequest(req, uid);
+    if (!hasPermission(accessCtx, "team.manage")) {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
     const companyId = callerCompany.companyId;
@@ -846,6 +914,7 @@ export {
   createInitialCompany,
   getUserCompany,
   getUserCompanyForRequest,
+  getRequestCache,
   getSpecificCompany,
   getCompanyBySlug,
   updateCompany,
