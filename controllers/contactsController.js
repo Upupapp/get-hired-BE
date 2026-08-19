@@ -4,6 +4,7 @@ import env from "../env";
 import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact, addMultipleContact, listOfGroup, listOfContacts, checkGroupIfExist, editGroup, checkEmailIfExistInContact, groupList } from "../services/contact.service";
 import { checkEmailIfExist } from "../helpers/userDetails";
 import { getUserCompanyForRequest } from "./companiesController";
+import { getAccessContextForRequest } from "../services/accessControl.service";
 const dbSchema = env.schema;
 
 const createContact = async (req, res) => {
@@ -159,7 +160,28 @@ const list = async (req, res) => {
         }
         const companyId = callerCompany.companyId;
 
-        contact = await contactList(companyId);
+        // SECURITY FIX (zero-scope/null-context remediation): accessCtx was
+        // never resolved/passed here -- contactList(companyId) with no 3rd
+        // argument at all falls into its own "ctx !== undefined ? scoped :
+        // unscoped" branch as "never passed" (an intentional escape hatch
+        // for genuinely internal callers), not "resolved to zero access".
+        // A caller scoped to one job (or zero) received every job-tied
+        // applicant/candidate contact company-wide. contactList's own
+        // job-scoped queries (searchQuery2/searchQuery3) already handle a
+        // real ctx correctly (including a resolved null); this was purely a
+        // missing pass-through at this call site.
+        //
+        // No permission gate is added here: this entire contactsController.js
+        // feature (create/update/delete/list contact & group) predates the
+        // Team & Access RBAC effort and has no dedicated permission key in
+        // the current 18-key catalog (confirmed via db/20260813_team_access_rbac.sql),
+        // and no sibling endpoint in this file is permission-gated either --
+        // adding one to only this endpoint would be inventing new policy
+        // inconsistently, not closing a confirmed gap. Documented as a
+        // separate, broader architectural gap in the remediation report
+        // rather than silently policed here.
+        const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+        contact = await contactList(companyId, accessCtx);
 
         if (!contact || contact.length == 0) {
             return res.status(status.success).json(successResponse([]));
