@@ -3,6 +3,7 @@ import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
 import { getJobCompanyId } from "./job.service";
 import { getUserCompany } from "../controllers/companiesController";
+import { getAccessContext, canAccessJob, sqlJobScopeFilter } from "./accessControl.service";
 
 const dbSchema = env.schema;
 
@@ -27,9 +28,21 @@ const resolveCallerCompany = async (callerUid) => {
   return company && !Array.isArray(company) ? company : null;
 };
 
-const assertEmployerOwnsThreadsJob = async (employerCompanyId, jobId) => {
+const assertEmployerOwnsThreadsJob = async (employerCompanyId, jobId, ctx) => {
   const jobCompanyId = await getJobCompanyId(jobId);
   if (!jobCompanyId || employerCompanyId !== jobCompanyId) {
+    const err = new Error("FORBIDDEN");
+    err.code = "FORBIDDEN";
+    throw err;
+  }
+  // SECURITY FIX (zero-scope/null-context remediation): was
+  // `ctx && !canAccessJob(...)` -- a null ctx (suspended member, or one
+  // whose team_role_id hasn't been backfilled yet) short-circuited this
+  // check entirely instead of denying, allowing thread creation for any
+  // job in the caller's company regardless of job-level scope. Matches
+  // the already-correct unconditional pattern this same file already
+  // uses in loadAuthorizedThread() below.
+  if (!canAccessJob(ctx, jobId)) {
     const err = new Error("FORBIDDEN");
     err.code = "FORBIDDEN";
     throw err;
@@ -49,7 +62,8 @@ const findOrCreateThread = async (jobId, applicantUid, callerUid) => {
   let resolvedApplicantUid = applicantUid;
 
   if (callerCompany) {
-    await assertEmployerOwnsThreadsJob(callerCompany.companyId, jobId);
+    const ctx = await getAccessContext(callerUid);
+    await assertEmployerOwnsThreadsJob(callerCompany.companyId, jobId, ctx);
   } else {
     // Not an employer -- can only open a thread as themself.
     resolvedApplicantUid = callerUid;
@@ -91,6 +105,12 @@ const loadAuthorizedThread = async (threadId, callerUid) => {
   const callerCompany = await resolveCallerCompany(callerUid);
   if (callerCompany) {
     if (callerCompany.companyId !== thread.company_id) {
+      const err = new Error("FORBIDDEN");
+      err.code = "FORBIDDEN";
+      throw err;
+    }
+    const ctx = await getAccessContext(callerUid);
+    if (!canAccessJob(ctx, thread.job_id)) {
       const err = new Error("FORBIDDEN");
       err.code = "FORBIDDEN";
       throw err;
@@ -139,6 +159,15 @@ const sendMessage = async (threadId, callerUid, body) => {
 
   const { callerIsEmployer } = await loadAuthorizedThread(threadId, callerUid);
 
+  if (callerIsEmployer) {
+    const ctx = await getAccessContext(callerUid);
+    if (!ctx || !ctx.permissions.has("messages.send")) {
+      const err = new Error("FORBIDDEN");
+      err.code = "FORBIDDEN";
+      throw err;
+    }
+  }
+
   const messageId = idGenerator(8, "MSG");
   const { rows } = await dbQuery.query(
     `INSERT INTO ${dbSchema}.messages (id, thread_id, sender_uid, sender_role, body)
@@ -179,6 +208,9 @@ const listRecruiterThreads = async (callerUid) => {
     err.code = "FORBIDDEN";
     throw err;
   }
+  const ctx = await getAccessContext(callerUid);
+  const jobScope = sqlJobScopeFilter(ctx, "mt.job_id", 2);
+  const queryParams = jobScope.param ? [callerCompany.companyId, jobScope.param] : [callerCompany.companyId];
 
   // Join threads -> jobs (title), messages (last message snippet).
   // The LEFT JOIN on messages lets us return threads that were just created
@@ -214,10 +246,10 @@ const listRecruiterThreads = async (callerUid) => {
        ORDER  BY created_at DESC
        LIMIT  1
      ) last_msg ON true
-     WHERE mt.company_id = $1
+     WHERE mt.company_id = $1 ${jobScope.clause}
      ORDER BY mt.updated_at DESC
      LIMIT 200;`,
-    [callerCompany.companyId]
+    queryParams
   );
 
   return rows.map((row) => ({
