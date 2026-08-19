@@ -84,8 +84,15 @@ CREATE TABLE gethired.jobs (
 	job_description varchar NULL,
 	job_duties varchar NULL,
 	work_setup_id int4 NULL,
-	salary_minimum numeric(6, 2) NULL,
-	salary_maximum numeric(6, 2) NULL,
+	-- BUG FIX (2026-08-19): was numeric(6, 2) -- max representable value
+	-- 9,999.99, overflowing on any realistic salary figure. Every other
+	-- salary column in this codebase (applicants_profile, and both salary
+	-- columns in the legacy jobhunt schema this was migrated from) uses
+	-- numeric(20, 2) -- matching that, not inventing a new precision. See
+	-- db/20260819c_jobs_salary_precision.sql for the corresponding
+	-- already-deployed-schema migration.
+	salary_minimum numeric(20, 2) NULL,
+	salary_maximum numeric(20, 2) NULL,
 	rate varchar NULL,
 	job_address varchar NULL,
 	created_at timestamp NULL,
@@ -168,8 +175,18 @@ CREATE TABLE gethired.job_interview_template (
 	created_at timestamp NULL,
 	updated_at timestamp NULL DEFAULT now(),
 	job_id varchar NULL,
+	-- BUG FIX (2026-08-19): company_id/created_by were missing entirely --
+	-- services/interview.service.js's createInterviewTemplateQuestions()
+	-- has always written to both, and controllers/interviewController.js's
+	-- getAllInterviewsTemplatesOfCompanies() has always read jit.company_id
+	-- -- neither ever worked against this table as originally defined. See
+	-- db/20260819d_interview_template_missing_columns.sql for the
+	-- corresponding already-deployed-schema migration.
+	company_id varchar NULL,
+	created_by varchar NULL,
 	CONSTRAINT job_interview_template_pk PRIMARY KEY (job_interview_template_id),
-	CONSTRAINT job_interview_template_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE
+	CONSTRAINT job_interview_template_fk FOREIGN KEY (job_id) REFERENCES gethired.jobs(job_id) ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT job_interview_template_fk_company FOREIGN KEY (company_id) REFERENCES gethired.companies(company_id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
 CREATE TABLE gethired.interview_template_question (
@@ -178,6 +195,10 @@ CREATE TABLE gethired.interview_template_question (
 	template_answer_duration int4 NULL DEFAULT 3,
 	template_question_retakes int4 NULL DEFAULT 1,
 	job_interview_template_id varchar NOT NULL,
+	-- BUG FIX (2026-08-19): created_at/sequence were missing -- createQuestion()
+	-- has always written both. See the migration referenced above.
+	created_at timestamp NULL DEFAULT now(),
+	sequence int4 NULL,
 	CONSTRAINT interview_template_question_pk PRIMARY KEY (template_question_id),
 	CONSTRAINT interview_template_question_fk FOREIGN KEY (job_interview_template_id) REFERENCES gethired.job_interview_template(job_interview_template_id) ON DELETE CASCADE ON UPDATE CASCADE
 );

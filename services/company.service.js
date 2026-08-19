@@ -84,10 +84,42 @@ const companyUsers = async (companyId) => {
   }
 };
 
+// BUG FIX (2026-08-19, found live-debugging a fresh employer signup): this
+// function never set team_role_id/access_scope at all -- every row it
+// created left team_role_id NULL, which buildAccessContext() (services/
+// accessControl.service.js) deliberately treats identically to "zero
+// access" (the same fail-closed design applied to suspended members). The
+// one-time RBAC migration (db/20260813_team_access_rbac.sql) backfilled
+// every company_employees row that existed AT THAT TIME, but nothing was
+// ever updated here in the ongoing runtime code path -- so every company
+// created (and every teammate added via the legacy invite flow) SINCE that
+// migration got a permanently permission-less row, silently. Confirmed:
+// jobs.create (and every other permission-gated action) 403s for every
+// such row, with no error indicating why.
+//
+// Both real call patterns are distinguished by whether the caller is
+// assigning themselves (uid === assignedBy, the two company-creation call
+// sites in companiesController.js) or assigning someone else (the legacy
+// addCompanyUserByEmail invite flow) -- matching exactly the same
+// creator-becomes-owner / everyone-else-becomes-company_admin choice the
+// RBAC migration's own one-time backfill already made, so a newly created
+// company and a migration-backfilled one land in the same place.
 const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
+  const isSelfAssignment = uid === assignedBy;
+  const roleKey = isSelfAssignment ? "owner" : "company_admin";
+
+  const roleRow = await dbQuery.query(
+    `SELECT team_role_id FROM ${dbSchema}.team_roles WHERE role_key = $1 AND company_id IS NULL LIMIT 1`,
+    [roleKey]
+  );
+  const teamRoleId = roleRow.rows[0] && roleRow.rows[0].team_role_id;
+  if (!teamRoleId) {
+    throw new Error(`Missing system team role: ${roleKey}`);
+  }
+
   const insertQuery = `INSERT INTO ${dbSchema}.company_employees
-      (employee_id, company_id, employee_uuid, assigned_at, updated_at, position_id, assigned_by)
-      VALUES($1, $2, $3, $4, $5, $6, $7) returning *;`;
+      (employee_id, company_id, employee_uuid, assigned_at, updated_at, position_id, assigned_by, team_role_id, access_scope, status)
+      VALUES($1, $2, $3, $4, $5, $6, $7, $8, 'all_jobs', 'active') returning *;`;
 
   const employeeId = idGenerator(6, "EMP");
 
@@ -100,6 +132,7 @@ const assignEmployeeToCompany = async (companyId, uid, assignedBy) => {
       new Date(),
       0, // TODO to change if position is available
       assignedBy,
+      teamRoleId,
     ]);
 
     if (rows && rows.length == 0) {
