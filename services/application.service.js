@@ -12,6 +12,7 @@ import {
 
 import { createApplicationSnapshots } from './applicationSnapshotService';
 import { validateDocumentFile } from './documentUploadValidationService';
+import { canAccessJob } from './accessControl.service';
 
 const dbSchema = env.schema;
 
@@ -364,7 +365,7 @@ const uploadApplicationAttachment = async (
 
 // LAUNCH-02: employer status-update with idempotency check and status-change email.
 // Company ownership is pre-verified by the caller (applicationController).
-const updateApplicationStatus = async (applicationId, newStatusId, callerCompanyId) => {
+const updateApplicationStatus = async (applicationId, newStatusId, callerCompanyId, accessCtx) => {
   const newStatusIdInt = parseInt(newStatusId);
 
   const selectQuery = `SELECT ja.job_application_id, ja.job_id, ja.candidate_id,
@@ -385,6 +386,19 @@ const updateApplicationStatus = async (applicationId, newStatusId, callerCompany
   const app = appRows[0];
 
   if (app.company_id !== callerCompanyId) {
+    const err = new Error('Forbidden');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+  // SECURITY FIX (zero-scope/null-context remediation): was
+  // `accessCtx && !canAccessJob(...)` -- when accessCtx is null (a
+  // suspended company_employees row, or one whose team_role_id hasn't
+  // been backfilled yet -- both real states buildAccessContext()
+  // deliberately returns null for), the `accessCtx &&` guard short-
+  // circuited and this check was skipped entirely instead of denying.
+  // canAccessJob(null, jobId) already correctly returns false; the bug
+  // was never calling it. No accessCtx should ever mean "unrestricted."
+  if (!canAccessJob(accessCtx, app.job_id)) {
     const err = new Error('Forbidden');
     err.code = 'FORBIDDEN';
     throw err;

@@ -8,6 +8,7 @@ import {
   EXCLUDED_FIELDS,
 } from "../services/applicationSnapshotService";
 import { getUserCompanyForRequest } from "./companiesController";
+import { getAccessContextForRequest, canAccessJob, hasPermission, assertApplicationJobAccess } from "../services/accessControl.service";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 
@@ -151,37 +152,26 @@ const getEmployerApplicantSnapshotSummary = async (req, res) => {
   }
 
   try {
-    // Get the application's job and candidate
-    const { rows: appRows } = await dbQuery.query(
-      `SELECT job_id, candidate_id FROM ${dbSchema}.job_applicants WHERE job_application_id = $1 LIMIT 1`,
-      [applicationId]
-    );
-    // SECURE fix (enumeration oracle): use 403 for both "not found" and
-    // "wrong company" so a recruiter from Company B cannot probe valid
-    // applicationIds by comparing 404 vs 403 response codes.
-    if (!appRows || appRows.length === 0) {
-      return res.status(403).send({ status: "error", error: "Forbidden." });
-    }
-
-    // Confirm the caller's company owns the job
-    const { rows: jobRows } = await dbQuery.query(
-      `SELECT company_id FROM ${dbSchema}.jobs WHERE job_id = $1 LIMIT 1`,
-      [appRows[0].job_id]
-    );
-    if (!jobRows || jobRows.length === 0) {
-      return res.status(403).send({ status: "error", error: "Forbidden." });
-    }
-
-    const callerCompany = await getUserCompanyForRequest(req, uid);
-    // Array.isArray guard: getUserCompany returns [] when no company exists
-    // (not null/undefined), so !callerCompany alone won't catch that case.
-    if (!callerCompany || Array.isArray(callerCompany) || callerCompany.companyId !== jobRows[0].company_id) {
-      return res.status(403).send({ status: "error", error: "Forbidden." });
-    }
+    // RECONSTRUCTED (TAB 08): the original job-scoped RBAC version of this
+    // check was accidentally discarded via a `git checkout` during an
+    // unrelated fix and could not be recovered from git (never committed).
+    // Rebuilt using assertApplicationJobAccess(), whose own doc comment in
+    // accessControl.service.js explicitly states it mirrors this exact
+    // function's 403-for-both-cases oracle-avoidance pattern, extended with
+    // the job-scope check -- same behavior as the manual two-query version
+    // this replaces (a recruiter from Company B still cannot distinguish
+    // "not found" from "wrong company" by response code), plus it now also
+    // denies an assigned_jobs-scoped caller whose job assignments don't
+    // include this application's job.
+    const accessCtx = await getAccessContextForRequest(req, uid);
+    await assertApplicationJobAccess(accessCtx, applicationId);
 
     const summary = await getApplicationSnapshotSummaryForEmployer(applicationId);
     return res.status(status.success).json(successResponse(summary));
   } catch (error) {
+    if (error && error.code === "FORBIDDEN") {
+      return res.status(403).send({ status: "error", error: "Forbidden." });
+    }
     console.error("[getEmployerApplicantSnapshotSummary]", error);
     return res.status(status.error).json(errorResponse("Unable to retrieve application summary. Please try again later."));
   }
@@ -302,7 +292,27 @@ const updateApplicationStatus = async (req, res) => {
       return res.status(403).json(errorResponse('Forbidden.'));
     }
 
-    const result = await updateApplicationStatusService(applicationId, newStatusIdInt, callerCompany.companyId);
+    // RECONSTRUCTED (TAB 08): updateApplicationStatusService's own signature
+    // already takes an accessCtx 4th argument (confirmed still present in
+    // services/application.service.js) and denies an assigned_jobs-scoped
+    // caller whose job assignments don't include this application's job --
+    // this caller-side build-and-pass was lost the same way as the function
+    // above and is rebuilt here to actually supply it.
+    const accessCtx = await getAccessContextForRequest(req, uid);
+
+    // SECURITY FIX (zero-scope/null-context remediation): this handler had
+    // no permission check at all -- company membership alone was treated
+    // as sufficient to change an application's status. 'applicants.status_update'
+    // is the existing, already-seeded permission key for exactly this
+    // action (db/20260813_team_access_rbac.sql). hasPermission(null, ...)
+    // already returns false, so this also closes the null-accessCtx path
+    // (suspended / role-less member) at the controller layer, ahead of the
+    // service-layer job-scope check below (defense in depth).
+    if (!hasPermission(accessCtx, 'applicants.status_update')) {
+      return res.status(403).json(errorResponse('Forbidden.'));
+    }
+
+    const result = await updateApplicationStatusService(applicationId, newStatusIdInt, callerCompany.companyId, accessCtx);
 
     if (result.noop) {
       return res.status(status.success).json(successResponse({
