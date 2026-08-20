@@ -114,3 +114,51 @@ replayed requests) — only the backend atomic fix closes that fully.
 requests with the same valid token and a valid Employer JWT; exactly one
 returns `200` with a `jobId`, the other returns `404` ("Preview not found or
 expired"); exactly one job row exists in the database for that token.
+
+---
+
+## 2026-08-20 — GETHIRED_LOCAL_ACCOUNT_VERIFICATION_500_REMEDIATION_SINGLE_COMMAND_V1
+
+### LOCAL ACCOUNT VERIFICATION — RESEND 500
+
+**Observed:**
+- Endpoint: `POST /api/auth/resendverificationlink?email=<email>`
+- HTTP status: `500`
+- Response body: `{"status":"error","error":"Operation not successful. Please try again."}`
+- Relevant backend log line: `[resendVerification] error: Email Error: There is no user record corresponding to the provided identifier.`
+- Exception origin: `controllers/userController.js`'s `resendVerification()` → `getVerification(email)` → `helpers/firebaseFunctions.js`'s `sendEmailVerificationFirebase(email)` → `firebaseAdmin.auth().generateEmailVerificationLink(email)` throws when no Firebase user exists for that email, re-thrown as a plain string (`throw "Email " + err`, not an `Error`), caught by `resendVerification`'s try/catch, which returns a generic `500` regardless of the actual failure cause.
+
+**Root cause (live-reproduced against a freshly restarted local stack, not a stale-process artifact):** the local Firebase Auth Emulator's user store is in-memory and does not survive an emulator/backend restart, while the corresponding `gethired.users` Postgres row does persist. After any local dev-environment restart, resend/verification calls for a previously-registered-but-not-yet-verified account 500 because the account genuinely no longer exists on the Firebase side — retrying does not help; only re-registering against the currently-running emulator does. This is inherent to using an ephemeral auth emulator across restarts, not a code defect on its own — but the current error handling gives the caller no way to know that's what happened.
+
+Two additional gaps observed in the same code path, confirmed live, not fixed here (backend source frozen):
+
+1. **Generic error collapse:** every failure inside `getVerification()`/`resendVerification()` — Firebase-user-not-found, a Postgres error from `getUserRoleByEmail`/`getUserNameByEmail`, or anything else — collapses into the identical `500` + `"Operation not successful. Please try again."`. The frontend cannot distinguish "this will never succeed without re-registering" from "transient failure, retry may help."
+2. **Account-existence status-code oracle:** an existing account → `200` with `{linkGenerated:true, emailSent:<bool>}`; a nonexistent email → `500`. The status code itself leaks whether an email is registered, independent of the response body content (which is already generic and doesn't leak this). Confirmed live: `resend500-qa@example.com` (real account) → `200`; `totally-nonexistent-user-xyz@example.com` → `500`.
+
+Also observed (not a defect, just worth noting): `resendVerification` does not check whether the account is already verified before generating and returning a new link (`200` with `linkGenerated:true` for an already-verified test account) — Phase 8 of the originating command asked to "not unnecessarily resend verification" for a verified user; this can only be fixed backend-side since the frontend has no verification-state signal at this point in the flow.
+
+**Root cause classification:** C (Firebase Auth Emulator state does not survive restart) + F (backend error-mapping/status-code defect, generic collapse + existence oracle).
+
+**Required backend behavior:**
+- Catch the specific `auth/user-not-found` Firebase Admin error code (not a stringly-typed generic re-throw) and return a distinct, non-500 status (e.g. `404` with a message that doesn't literally say "no such account" if account-enumeration avoidance is an intentional product decision elsewhere in this codebase — worth checking against `checkUserIfExistInFirebase`'s own existing privacy stance before choosing the exact wording/status).
+- Fix `sendEmailVerificationFirebase`'s `throw "Email " + err` to re-throw a proper `Error` (or a structured `{code, message}`) so callers can distinguish failure classes instead of pattern-matching a string.
+- Consider whether `resendVerification` should short-circuit with a distinct response when the target account is already verified.
+
+**Production safety:** none of the above changes production's verification/email delivery behavior — production always has a live Firebase project (not an emulator), so accounts don't spontaneously stop existing between requests the way they do against a restarted local emulator. This entry only concerns local/dev ergonomics and error-mapping precision.
+
+**Local behavior:** confirmed — Firebase Auth Emulator OOB verification does not require a real SendGrid key. `getVerification()` already generates a real, working verification link via `generateEmailVerificationLink()` regardless of email delivery outcome (`emailSent:false` is logged and returned, not treated as fatal) — the OOB code is independently retrievable via `GET http://localhost:9099/emulator/v1/projects/get-hired-363107/oobCodes` and consumable via the real `POST /api/auth/verifyemail?oobCode=...` endpoint, both confirmed working live this session.
+
+**Acceptance test:**
+1. Create local emulator user via `POST /api/auth/signup`.
+2. Confirm `emailVerified=false` (unverified sign-in correctly blocked — confirmed live: `401` + `"Please Verify Email..."`).
+3. Call `POST /api/auth/resendverificationlink?email=<email>` for that same, still-existing account → confirmed `200`.
+4. Retrieve the OOB code from the emulator and complete verification via `POST /api/auth/verifyemail?oobCode=...` → confirmed `200`, `"Email Successfully verified."`.
+5. Confirm verified sign-in succeeds → confirmed `200` with a real ID token.
+6. Confirm production path is unchanged (no code touched there).
+
+### Frontend fixes applied in get-hired-FE (this entry's matching implementation)
+
+Two real, independently-confirmed frontend defects were found and fixed — these do not require any backend change and fully explain the "one action → multiple 500s" symptom reported:
+
+1. **Duplicate request per click:** `account-authentication.component.html`'s resend button was inside a `<form (ngSubmit)="resendVerification()">` and also carried its own `(click)="resendVerification()"`, with no explicit `type` attribute. A bare `<button>` inside a `<form>` defaults to `type="submit"`, so one click fired both the click handler and native form submission — two overlapping calls per click, in addition to the automatic `setTimeout(() => this.resendVerification(), 3000)` already firing once on page load for `mode=resendVerification`. Fixed: explicit `type="submit"`, `(click)` handler removed, `[disabled]` bound to a new `resending` in-flight flag, and `resendVerification()` itself now no-ops if already in flight.
+2. **Garbled error display:** the error handler passed the raw `HttpErrorResponse` object directly to the snackbar (`this.snackbarService.error(err, '')`) instead of extracting the backend's actual message (`err.error.error`, per this codebase's `errorResponse()` envelope shape). Fixed to extract the real string, with a generic fallback, plus an environment-gated (`!environment.production`) local-dev hint pointing at the emulator-restart cause diagnosed above — never shown in production, no verification bypass, no `emailVerified` shortcut.
