@@ -193,3 +193,56 @@ Two real, independently-confirmed frontend defects were found and fixed — thes
 2. Response is `201`, not `500`.
 3. `gethired.user_credentials.email` for the new row is lowercase (Firebase's normalization) and the request succeeded on the first attempt (no need to "fail then retry").
 4. `POST /auth/resendverificationlink?email=<the same mixed-case email>` also returns `200`, not `500`.
+
+---
+
+## 2026-08-20 — GETHIRED_EMPLOYER_AI_RECOVERY_DRAFT_AND_SIGNOUT_MODAL_CORRECTION
+
+### 5. `gethired.job_type` is missing a "Freelance" row — AI Create can't persist that employment type
+
+**Observed limitation:** `gethired.job_type` (`db/job_ddl.sql`) only seeds
+3 rows: `1='Full time'`, `2='Part time'`, `3='Contractor'`. There is no row
+for "Freelance", "Internship", or any other employment type. `job_type_id`
+on `gethired.jobs` is a real foreign key to this table
+(`jobs_fk_1 ... REFERENCES gethired.job_type(job_type_id)`).
+
+**Reproduced (root cause, not live-curled this pass):** the AI Create panel's
+Employment Type dropdown previously offered "Freelance" as an option, and
+`resolveWorkSetupId`/`resolveJobTypeId`
+(`get-hired-FE/src/app/job/utils/job-field-resolvers.ts`) previously mapped
+it to a fabricated `job_type_id = 5` (and "Internship" to `4`) — ids that do
+not exist in `gethired.job_type`. Selecting "Freelance" and letting AI
+Create's background draft-save fire (`persistAssistantDraft()` in
+`job-create.component.ts`) sent `job_type_id: 5` to `POST /job/createjobs`,
+which fails the `jobs_fk_1` FK constraint on INSERT — surfaced to the
+Employer as "Couldn't auto-save your AI draft. Your data is still here —
+save manually when ready."
+
+**Frontend mitigation already applied (this pass):** `resolveJobTypeId()` no
+longer fabricates ids 4/5 for "intern"/"freelance" hints — it returns `null`
+for both, so selecting "Freelance" no longer crashes the save (the column is
+nullable). Per product requirement, "Freelance" is kept as a selectable
+option in the AI Create Employment Type dropdown (which is otherwise now
+sourced from the real `GET /options/type` list, matching the canonical
+manual job-creation form) — it just can't carry a real `job_type_id` yet, so
+an Employer who picks it will see Employment Type unset once they reach the
+full job form and will need to re-pick from the 3 real options there.
+
+**Required backend behavior:** add a real "Freelance" row to
+`gethired.job_type` (and update the `jobs_fk_1` foreign key is already
+generic, no schema change needed beyond the new row) so the frontend can map
+to a real, persistable id instead of leaving it null. Recommend
+`job_type_id = 4` (matching the frontend's original, now-removed
+'freelance' → 4 mapping intent) to minimize churn if this is added later,
+but any unused id works.
+
+**Frontend dependency:** once a real "Freelance" `job_type_id` exists, add
+that id back to `resolveJobTypeId()` in
+`get-hired-FE/src/app/job/utils/job-field-resolvers.ts` (currently
+deliberately absent) and it will resolve correctly with no other change.
+
+**Acceptance test:**
+1. `SELECT * FROM gethired.job_type;` includes a `'Freelance'` row.
+2. In AI Create, select "Freelance" as Employment Type and generate/save a
+   draft — the background autosave succeeds (no FK violation), and the
+   employment type also appears correctly pre-selected in the full job form.
