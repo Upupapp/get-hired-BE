@@ -246,3 +246,49 @@ deliberately absent) and it will resolve correctly with no other change.
 2. In AI Create, select "Freelance" as Employment Type and generate/save a
    draft — the background autosave succeeds (no FK violation), and the
    employment type also appears correctly pre-selected in the full job form.
+
+---
+
+## 2026-08-20 — GETHIRED_EMPLOYER_AI_CREATE_RECOVERY_SERVER_DRAFT_GUEST_SPAM_SIGNOUT_SAFETY_MASTER_COMMAND (draft hardening closure)
+
+### 6. `updateJob`'s SQL never sets `updated_at` — no real server-side revision signal for stale-vs-newer draft detection
+
+**Observed limitation:** `gethired.jobs.updated_at` exists as a column
+(`db/job_ddl.sql:99`, nullable timestamp) but `updateJob` in
+`controllers/jobsController.js` (the `PUT /job/updatejobs` handler backing
+every "Save Draft" after the first) never assigns it in its `UPDATE ... SET`
+clause (`controllers/jobsController.js:300-308`). `createJobs`'s `INSERT`
+likewise never sets it. In practice `updated_at` is always `NULL` for every
+job in this schema, regardless of how many times it's been saved.
+
+**Frontend impact:** the frontend's local AI Create recovery layer
+(`AiCreateDraftService`) now tracks `serverJobId`/`serverSyncedAt` per draft
+and can honestly detect "does this browser have local edits it hasn't yet
+pushed to the server" (`hasUnsyncedLocalEdits()`), but it CANNOT detect "has
+the server Draft been changed by some other actor/device/tab since I last
+saved it," because the backend gives no revision signal to compare against.
+This is a real gap in the "stale local recovery vs newer server draft"
+safety property requested for this feature — the frontend cannot honestly
+claim to detect that case today, and does not pretend to.
+
+**Required backend behavior:** add `updated_at = now()` to `updateJob`'s
+`SET` clause (and consider setting it in `createJobs`'s `INSERT` too, so a
+freshly created job has a real initial value rather than `NULL`). This is a
+low-risk, additive change to an existing nullable column already present in
+the schema — no migration needed.
+
+**Production safety:** safe in both environments; purely adds a timestamp
+write to an existing UPDATE statement, no behavior change to any response
+shape unless a caller starts reading it (which nothing currently does).
+
+**Frontend dependency:** once `updated_at` is reliably maintained, extend
+`AiCreateDraftEnvelope`/`markServerSynced()` to also store the server's
+returned `updatedAt`, and compare it against a freshly-fetched job's
+`updatedAt` when resuming a draft with a known `serverJobId`, to detect a
+genuinely newer server Draft rather than only unsynced local edits.
+
+**Acceptance test:**
+1. `PUT /job/updatejobs` on an existing job, then
+   `SELECT updated_at FROM gethired.jobs WHERE job_id = '<id>'` returns a
+   recent timestamp, not `NULL`.
+2. Saving the same job again produces a strictly later `updated_at`.
