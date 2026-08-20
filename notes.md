@@ -162,3 +162,34 @@ Two real, independently-confirmed frontend defects were found and fixed — thes
 
 1. **Duplicate request per click:** `account-authentication.component.html`'s resend button was inside a `<form (ngSubmit)="resendVerification()">` and also carried its own `(click)="resendVerification()"`, with no explicit `type` attribute. A bare `<button>` inside a `<form>` defaults to `type="submit"`, so one click fired both the click handler and native form submission — two overlapping calls per click, in addition to the automatic `setTimeout(() => this.resendVerification(), 3000)` already firing once on page load for `mode=resendVerification`. Fixed: explicit `type="submit"`, `(click)` handler removed, `[disabled]` bound to a new `resending` in-flight flag, and `resendVerification()` itself now no-ops if already in flight.
 2. **Garbled error display:** the error handler passed the raw `HttpErrorResponse` object directly to the snackbar (`this.snackbarService.error(err, '')`) instead of extracting the backend's actual message (`err.error.error`, per this codebase's `errorResponse()` envelope shape). Fixed to extract the real string, with a generic fallback, plus an environment-gated (`!environment.production`) local-dev hint pointing at the emulator-restart cause diagnosed above — never shown in production, no verification bypass, no `emailVerified` shortcut.
+
+---
+
+## 2026-08-20 — EMAIL CASE-SENSITIVITY BUG: registerUser / resendVerification crash on any email with uppercase letters
+
+**Severity: significant.** This is very likely the dominant real-world cause of both the signup 500 and the resend 500 — far more common than the emulator-restart scenario documented above, since it fires for essentially any user who types their email with normal capitalization (a leading capital, "Gmail" instead of "gmail", etc.), not just after a dev-environment restart.
+
+**Observed (live-reproduced, both endpoints):**
+- `POST /api/auth/signup` with `email: "Mysample@gmail.com"` → account is actually created successfully in both Firebase and Postgres, but the request still returns `500` `"Registration failed. Please try again."`
+- A retry with the same email then correctly returns `500` `"User is already Registered. Please login instead."` (from the pre-check at the top of `registerUser`) — confirming the first attempt's account creation *did* succeed despite the error response.
+- `POST /api/auth/resendverificationlink?email=Mysample@gmail.com` for the same account → `500`.
+- Backend log (both cases): `TypeError: Cannot read properties of undefined (reading 'role')` at `helpers/userDetails.js:24` (`getUserRoleByEmail`), called from `getVerification()` (`controllers/userController.js:583`), called from `registerUser` (line 166) or `resendVerification` (line 199).
+
+**Root cause, exact:**
+- `controllers/userController.js`, `registerUser()`: line 154 builds `dbData.email` from `userData.email` — the value Firebase Admin returns after creating the account, which Firebase always normalizes to lowercase (confirmed live: `gethired.user_credentials.email` for this account is stored as `mysample@gmail.com`, all lowercase, despite the request body containing `Mysample@gmail.com`).
+- Line 166, immediately after, calls `getVerification(email, user.firstName)` using `email` — the **original, un-normalized** value destructured from `req.body` at line 106 — not `userData.email`.
+- `getVerification()` (line 577) passes that same case-preserved `email` into `getUserRoleByEmail(email)` and `getUserNameByEmail(email)` (`helpers/userDetails.js`), both of which do a case-sensitive Postgres `where email = $1` lookup against `user_credentials`. Since the stored value is lowercase and the queried value is not, the query returns zero rows; `rows[0].role` / `rows[0].firstname` then throws on `undefined`.
+- `resendVerification()` (line 193-194) has the identical problem one level up: it reads `email` straight from `req.query` with no normalization at all, then calls `getVerification(email)` directly.
+- Note: `sendEmailVerificationFirebase(email)` (the first line inside `getVerification`) succeeds regardless of case — Firebase Auth itself matches emails case-insensitively — so **the verification link is genuinely generated correctly before the crash**, and is retrievable via the emulator's `oobCodes` endpoint even though the HTTP response reports failure. Confirmed live: verification completed successfully for the affected test account using a link generated during a "failed" request.
+
+**Required backend behavior:** normalize the email to lowercase once, immediately after destructuring `req.body`/`req.query` in both `registerUser` and `resendVerification` (and ideally at every other auth entry point that accepts an email — `loginUser` already gets this for free client-side via `signin.component.ts`'s `.toLowerCase()`, but nothing enforces it server-side, so any direct API caller bypasses that). Alternatively/additionally, use `userData.email` (the Firebase-normalized value) consistently instead of the raw request value for every downstream lookup in `registerUser`.
+
+**Production safety:** this is a pure logic bug present in both local and production — normalizing the email is safe in both environments and does not touch verification/email-delivery architecture, Firebase configuration, or any environment-specific behavior.
+
+**Frontend dependency:** none directly fixable — this is a server-side case-sensitivity bug between Firebase's own email normalization and this codebase's raw-request-value Postgres lookups; no frontend change can correct a server-side query.
+
+**Acceptance test:**
+1. `POST /auth/signup` with an email containing at least one uppercase letter (e.g. `Test.User@Example.com`).
+2. Response is `201`, not `500`.
+3. `gethired.user_credentials.email` for the new row is lowercase (Firebase's normalization) and the request succeeded on the first attempt (no need to "fail then retry").
+4. `POST /auth/resendverificationlink?email=<the same mixed-case email>` also returns `200`, not `500`.
