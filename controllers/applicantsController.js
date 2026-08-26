@@ -485,10 +485,19 @@ const saveDocuments = async (req, res) => {
         }
       }
 
+      // BUGFIX: previously deleted every row in "documents" for this
+      // applicant unconditionally, including the CV Builder's own
+      // dedicated CV row (is_cv=true) -- re-saving Profile Setup's generic
+      // document list (cover letters, certificates, etc.) silently wiped
+      // out the applicant's CV as an unrelated side effect. Excludes
+      // is_cv=true rows so CV Builder stays the single source of truth for
+      // "the current CV" and this save only ever manages the other,
+      // non-CV documents.
       await deleteArrayApplicantEntry(
         applicantProfileId,
         "documents",
-        "applicant_id"
+        "applicant_id",
+        "is_cv"
       );
 
       if (documents.length != 0) {

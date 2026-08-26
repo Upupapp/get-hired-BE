@@ -5,6 +5,7 @@ import uploadInStorage from "../helpers/uploader";
 import genericInsert from "../helpers/genericInsert";
 
 import { updateUserProfile } from "./user.service";
+import { sqlJobScopeFilter } from "./accessControl.service";
 
 const dbSchema = env.schema;
 
@@ -758,9 +759,22 @@ const mappedCertifications = (raw) => {
 const deleteArrayApplicantEntry = async (
   applicantId,
   tableName,
-  columnName
+  columnName,
+  // BUGFIX (CV duplication/data-loss): optional column to exclude rows
+  // where it's true -- specifically for "documents", so that re-saving the
+  // generic Profile Setup document list (saveDocuments) doesn't blanket-
+  // delete-and-replace the WHOLE table for this applicant, which silently
+  // wiped out the CV Builder's own dedicated CV row (is_cv=true) as a side
+  // effect, since that row lives in the same "documents" table and this
+  // query had no filter excluding it. Every other existing caller passes
+  // nothing here, so this is purely additive -- their DELETE is byte-
+  // identical to before.
+  excludeWhereTrueColumn = null
 ) => {
-  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1 returning *;`;
+  const exclusion = excludeWhereTrueColumn
+    ? ` AND (${excludeWhereTrueColumn} IS NOT TRUE)`
+    : "";
+  const deleteQuery = `DELETE FROM ${dbSchema}.${tableName} WHERE ${columnName} = $1${exclusion} returning *;`;
   try {
     const { rows } = await dbQuery.query(deleteQuery, [applicantId]);
 
@@ -784,13 +798,13 @@ const saveApplicantDetailsList = async (
   (skills, applicant_id, created_at)
   VALUES($1, $2, $3) returning *;`;
   try {
+    // BUGFIX: `now` was never declared anywhere in this file -- every call
+    // here threw ReferenceError: now is not defined, meaning Professional
+    // Skills save has been unconditionally broken (500 on every "Apply
+    // Change" click) until this fix.
     const insertedList = await Promise.all(
       list.map(
         async (item) =>
-          // BUGFIX: `now` was never declared anywhere in this file -- every
-          // call here threw ReferenceError: now is not defined, meaning
-          // Professional Skills save has been unconditionally broken (500
-          // on every "Apply Change" click) until this fix.
           await dbQuery.query(insertQuery, [item, applicantId, new Date()])
       )
     );
@@ -829,13 +843,24 @@ const appplicantProfile = async (userId) => {
 const getApplicantArrayDetails = async (
   applicantId,
   tableName,
-  joinQuery = ""
+  joinQuery = "",
+  // BUGFIX (CV duplication): optional column to exclude rows where it's
+  // true -- for "documents", excludes the CV Builder's dedicated CV row
+  // (is_cv=true) so it doesn't also show up a second time in the generic
+  // documents list (Profile Setup's "Upload documents" step, and the My
+  // Profile page's Documents table both read this). CV Builder is meant
+  // to be the single place the CV is shown; every other existing caller
+  // passes nothing here, so their query is unchanged.
+  excludeWhereTrueColumn = null
 ) => {
   let join = `left join `;
+  const exclusion = excludeWhereTrueColumn
+    ? ` AND (${excludeWhereTrueColumn} IS NOT TRUE)`
+    : "";
   const searchQuery = `SELECT *
       FROM ${dbSchema}.${tableName} t
       ${joinQuery}
-      WHERE applicant_id = $1;`;
+      WHERE applicant_id = $1${exclusion};`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [applicantId]);
@@ -984,18 +1009,27 @@ const listOfJobAppliedByApplicant = async (uid) => {
   }
 };
 
-const listOfAllUniqueApplicantsByCompany = async (companyId) => {
-  const seachrQuery = `SELECT 
-      distinct(ja.candidate_id) as candidate_id, uc.email 
+const listOfAllUniqueApplicantsByCompany = async (companyId, ctx) => {
+  // Job-scoped RBAC V1: this is genuinely job-tied data (every applicant
+  // across every job in the company) -- found unscoped during V1 live
+  // verification (2026-08-13) via getInterviewRecipients' emailByJobPost.
+  // Its only caller (getInterviewRecipients, interview.service.js) always
+  // passes a resolved accessCtx, possibly null for a caller with zero
+  // access -- call sqlJobScopeFilter unconditionally so that case denies
+  // instead of leaking the full unscoped applicant list.
+  const jobScope = sqlJobScopeFilter(ctx, "j.job_id", 2);
+  const params = jobScope.param ? [companyId, jobScope.param] : [companyId];
+  const seachrQuery = `SELECT
+      distinct(ja.candidate_id) as candidate_id, uc.email
         from ${dbSchema}.job_applicants ja
           left join ${dbSchema}.jobs j
           on ja.job_id = j.job_id
-          left join ${dbSchema}.user_credentials uc 
-          on ja.candidate_id = uc.uid 
-          where j.company_id = $1 and ja.is_archived = false`;
+          left join ${dbSchema}.user_credentials uc
+          on ja.candidate_id = uc.uid
+          where j.company_id = $1 and ja.is_archived = false ${jobScope.clause}`;
 
   try {
-    const { rows } = await dbQuery.query(seachrQuery, [companyId]);
+    const { rows } = await dbQuery.query(seachrQuery, params);
     if (rows && rows.length != 0) {
       return await Promise.all(
         rows.map(async (row) => {
@@ -1073,7 +1107,9 @@ const mappedProfile = async (raw) => {
     certifications: await getcert(raw.applicant_profile_id),
     documents: await getApplicantArrayDetails(
       raw.applicant_profile_id,
-      "documents"
+      "documents",
+      "",
+      "is_cv"
     ),
   };
 };

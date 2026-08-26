@@ -323,13 +323,23 @@ const uploadApplicationAttachment = async (
   let generalQuery = "";
   let dbResponse = {};
 
-  const { id, file, fileUrl, size, type, filename } = attachment;
+  // BUGFIX: destructured `fileUrl` (camelCase), but every frontend caller
+  // (profile-documents.component.ts's mappedOutToControl, and the CV-reuse
+  // path that builds this object) actually sends `fileurl` (lowercase) --
+  // fileUrl was always undefined here, so attaching a document that
+  // referenced an EXISTING already-uploaded file (no new `file` blob to
+  // upload) silently saved an empty fileurl to the database instead of the
+  // real one. Reading the correct key and falling back to it when there's
+  // no new file to upload.
+  const { id, file, fileurl, size, type, filename } = attachment;
 
   const name = `${filename}-${Date.now()}`;
 
   try {
     if (file && file != "") {
       rawUrl = await uploadInStorage("Applicant-Documents", name, file);
+    } else if (fileurl) {
+      rawUrl = fileurl;
     }
 
     generalQuery = `INSERT INTO ${dbSchema}.${tableName}
