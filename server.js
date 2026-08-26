@@ -148,6 +148,19 @@ app.use("/api/applicant/savevideocv", express.json({
   limit: "140mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+// BUGFIX: same root cause as the video upload above -- CV Builder's upload
+// (cvBuilderController.js) also sends the file as base64-in-JSON, and
+// cvValidationService.js's own advertised limit is 5MB. Base64 inflates
+// that to ~6.67MB before JSON overhead, which already exceeds the blanket
+// 6mb limit below -- any CV near the documented "under 5MB" limit failed
+// with PayloadTooLargeError before ever reaching validateCvFile(), i.e.
+// upload could reject files the app itself told the user were acceptable.
+// 8mb comfortably covers the worst case (5MB file -> ~6.67MB base64 + JSON
+// wrapper) without opening this up anywhere near the video route's need.
+app.use("/api/cv-builder/upload", express.json({
+  limit: "8mb",
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.json({
   limit: "6mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
