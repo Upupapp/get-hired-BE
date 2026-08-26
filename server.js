@@ -74,12 +74,33 @@ const globalLimiter = rateLimit({
 
 // Tier 2 — Auth endpoints: signin, signup, password reset, email verify
 // Tight limit to defend against brute-force and credential-stuffing.
+//
+// FIX: this tier used to also cover every already-authenticated /api/auth
+// route (GET /auth/getprofile, POST /auth/logout, PUT /auth/updateprofile,
+// ...) sharing the SAME 20-per-15-min budget as anonymous login guessing.
+// Neither is a credential-guessing vector -- an attacker needs an already-
+// valid token to reach them at all -- so counting them here only risked
+// locking out a legitimate active user through normal use (e.g.
+// UnauthGuard's session-revalidation GET on every /signin visit, or a
+// double logout click). POST /auth/logout flooding this exact limiter into
+// 429s was already noted as a real incident elsewhere (see
+// unauthorize.interceptor.ts's BURST-401 DEDUPE comment) and only ever got
+// a client-side dedupe band-aid, not this root fix.
+// Same skip rule globalLimiter already uses above: a request carrying an
+// Authorization header (valid or stale/expired -- verifyAuth decides that,
+// this only checks presence) is, by definition, not an anonymous
+// credential-guessing attempt, so it's exempt here. A real brute-force
+// login attempt never carries one, so signin/signup/etc. keep the exact
+// same protection as before.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many authentication attempts. Please try again in 15 minutes." },
+  skip: function(req) {
+    return !!(req.headers && req.headers['authorization']);
+  },
 });
 
 // Tier 3 — Write operations across all /api routes (POST/PUT/DELETE only)
