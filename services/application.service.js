@@ -101,21 +101,14 @@ const jobApply = async (jobApplication, userId) => {
     throw duplicateError;
   }
 
-  // P0 FIX (TAB 10): when a job has screening questions/video requirements,
-  // nothing enforced that the applicant actually answered them -- the FE's
-  // "skip" path could jump straight to submission, and this function
-  // accepted an empty interviewAnswers array regardless. Backend is the
-  // authoritative enforcement point; the FE gets its own guard separately.
-  const requiredQuestionIds = (job.interviewQuestions || []).map((q) => q.questionId);
-  if (requiredQuestionIds.length > 0) {
-    const answeredIds = new Set((interviewAnswers || []).map((a) => a.questionId));
-    const missing = requiredQuestionIds.filter((id) => !answeredIds.has(id));
-    if (missing.length > 0) {
-      const missingAnswersError = new Error("Please answer all screening questions before submitting your application.");
-      missingAnswersError.code = "APPLICATION_SCREENING_QUESTIONS_INCOMPLETE";
-      throw missingAnswersError;
-    }
-  }
+  // Screening questions/video responses are optional at submission time --
+  // the applicant may skip them from the FE and still submit for
+  // evaluation. Previously this function rejected the submission if any
+  // interviewQuestion lacked a matching interviewAnswers entry (P0 FIX
+  // TAB 10); that enforcement was intentionally removed per product
+  // decision so screening completeness no longer blocks submission.
+  // interviewAnswers (whatever subset was actually recorded) still flows
+  // through unchanged below for employer review.
 
   // SEC-08 FIX (TAB 08): uploadApplicationAttachment() had no MIME/size
   // validation at all -- the sibling /applicant/docs upload path was
