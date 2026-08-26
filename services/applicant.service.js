@@ -89,7 +89,12 @@ const createApplicationProfile = async (applicant) => {
       salaryCurrency,
     ]);
 
-    if (!rows && rows.length == 0) {
+    // BUGFIX: was `!rows && rows.length == 0` -- when a query legitimately
+    // matches zero rows, `rows` is `[]` (truthy), so `!rows` is false and
+    // this whole check short-circuited to false without ever evaluating
+    // `.length` -- the "failed" branch could never fire, letting a no-op
+    // insert/update fall through as if it succeeded.
+    if (!rows || rows.length == 0) {
       throw "Failed to create profile";
     }
 
@@ -104,7 +109,8 @@ const createApplicationProfile = async (applicant) => {
       userId,
     });
 
-    if (!profile && profile.length == 0) {
+    // BUGFIX: same dead-code guard pattern as above (&& should be ||).
+    if (!profile || profile.length == 0) {
       throw "Failed to update basic info";
     }
 
@@ -328,7 +334,8 @@ const updateProfileBasicInfo = async (applicant) => {
       userId,
     ]);
 
-    if (!rows && rows.length == 0) {
+    // BUGFIX: was `!rows && rows.length == 0` -- see explanation above.
+    if (!rows || rows.length == 0) {
       throw "Failed to update profile";
     }
 
@@ -343,7 +350,8 @@ const updateProfileBasicInfo = async (applicant) => {
       userId,
     });
 
-    if (!profile && profile.length == 0) {
+    // BUGFIX: same dead-code guard pattern as above (&& should be ||).
+    if (!profile || profile.length == 0) {
       throw "Failed to update basic info";
     }
 
@@ -437,7 +445,8 @@ const updateApplicationProfile = async (applicant) => {
       userId,
     ]);
 
-    if (!rows && rows.length == 0) {
+    // BUGFIX: was `!rows && rows.length == 0` -- see explanation above.
+    if (!rows || rows.length == 0) {
       throw "Failed to update profile";
     }
 
@@ -452,7 +461,8 @@ const updateApplicationProfile = async (applicant) => {
       userId,
     });
 
-    if (!profile && profile.length == 0) {
+    // BUGFIX: same dead-code guard pattern as above (&& should be ||).
+    if (!profile || profile.length == 0) {
       throw "Failed to update basic info";
     }
 
@@ -557,7 +567,11 @@ const updateProfileSaveVideoCV = async (video, applicantProfileId, userId) => {
       rawUrl = videoCVUrl;
     }
 
-    const { rows } = await dbQuery.query(updateQuery, [rawUrl, now, userId]);
+    // BUGFIX: `now` was never declared anywhere in this file -- every call
+    // here threw ReferenceError: now is not defined, meaning Video CV save
+    // has been unconditionally broken (500 on every attempt, after the
+    // video already uploaded to Firebase Storage) until this fix.
+    const { rows } = await dbQuery.query(updateQuery, [rawUrl, new Date(), userId]);
 
     if (!rows || rows.length == 0) {
       // QA9 FIX-2b: was `throw error` — `error` is not defined inside the try
@@ -773,7 +787,11 @@ const saveApplicantDetailsList = async (
     const insertedList = await Promise.all(
       list.map(
         async (item) =>
-          await dbQuery.query(insertQuery, [item, applicantId, now])
+          // BUGFIX: `now` was never declared anywhere in this file -- every
+          // call here threw ReferenceError: now is not defined, meaning
+          // Professional Skills save has been unconditionally broken (500
+          // on every "Apply Change" click) until this fix.
+          await dbQuery.query(insertQuery, [item, applicantId, new Date()])
       )
     );
     return insertedList;

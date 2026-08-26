@@ -131,6 +131,23 @@ const sensitiveLimiter = rateLimit({
 const app = express();
 app.use(compression());
 app.use(cors({ origin: env.app_url }));
+// BUGFIX: the applicant Video CV upload sends the video as a base64 string
+// inside a JSON body (see saveVideoCV / applicant.service.ts), not a
+// multipart stream -- base64 inflates the raw file size by ~33%, so even a
+// video comfortably under the already-enforced 100MB video cap (see
+// VIDEO_CV_MAX_BYTES in videoValidator.js / MAX_VIDEO_BYTES in
+// recorder.component.ts) produces a JSON payload well past the blanket
+// 6mb limit below, failing with PayloadTooLargeError AFTER the video has
+// already been accepted/validated client-side -- confirmed in production
+// logs. Scoped to just this one route (registered before the blanket
+// parser below, so Express's body-parser matches and consumes the body
+// here first for this exact path only) rather than raising the global
+// limit for every /api route, which would widen the large-payload/DoS
+// surface app-wide for no benefit to any other endpoint.
+app.use("/api/applicant/savevideocv", express.json({
+  limit: "140mb",
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.json({
   limit: "6mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
