@@ -464,11 +464,16 @@ const registerUserInDB = async (user) => {
   const insertQueryInCredentials = `Insert into ${dbSchema}.user_credentials
   (uid, email, "password", "role", created_date) values ($1, $2, $3, $4, current_timestamp) returning *;`;
 
+  // STITCH QA11 FIX F-01: users.email was dropped in a DDL migration --
+  // email lives on user_credentials only (see the same fix already applied
+  // in interviewController.js and message.service.js). This INSERT was
+  // missed at the time; still tried to write into users.email, which no
+  // longer exists, crashing registration.
   const insertQueryInProfile = `
-      Insert into ${dbSchema}.users 
-        (uid, email, firstname, lastname) 
-      values 
-        ($1, $2, $3, $4) returning *;`;
+      Insert into ${dbSchema}.users
+        (uid, firstname, lastname)
+      values
+        ($1, $2, $3) returning *;`;
 
   try {
     const { rows } = await dbQuery.query(insertQueryInCredentials, [
@@ -482,7 +487,6 @@ const registerUserInDB = async (user) => {
 
     const rows_profile = await dbQuery.query(insertQueryInProfile, [
       user.uid,
-      user.email,
       user.firstname,
       user.lastname,
     ]);
@@ -495,7 +499,7 @@ const registerUserInDB = async (user) => {
 
     const credentials = {
       id: profileResponse.uid,
-      email: profileResponse.email,
+      email: dbResponse.email,
       firstName: profileResponse.firstname,
       lastName: profileResponse.lastname,
       role: dbResponse.role,

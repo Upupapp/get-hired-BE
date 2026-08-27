@@ -139,9 +139,13 @@ function presentEmployerApplicant(row) {
 // ── Resolve company from authenticated user ───────────────────────────────────
 
 async function getCompanyForUser(uid) {
+  // Stale table/column reference (same class as the .email fixes elsewhere
+  // in this codebase): gethired.company_users doesn't exist -- the real
+  // table is company_employees, keyed by employee_uuid, with a status
+  // column ('active'/'suspended') rather than an is_active boolean.
   var sql = `
-    SELECT cu.company_id FROM ${dbSchema}.company_users cu
-    WHERE cu.uid = $1 AND cu.is_active = true
+    SELECT ce.company_id FROM ${dbSchema}.company_employees ce
+    WHERE ce.employee_uuid = $1 AND ce.status = 'active'
     LIMIT 1
   `;
   var result = await db.query(sql, [uid]);

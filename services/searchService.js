@@ -384,9 +384,13 @@ async function searchEmployerApplicants(companyId, params) {
 
   if (q) {
     values.push('%' + q + '%');
+    // STITCH QA11 FIX F-01: users.email was dropped; email lives on
+    // user_credentials only. display_name doesn't exist on users either --
+    // composed from firstname/lastname, matching every other query in this
+    // codebase (see contact.service.js/candidate.service.js).
     where.push(`(
-      lower(u.display_name) ILIKE $${paramIdx}
-      OR lower(u.email) ILIKE $${paramIdx}
+      lower(concat(u.firstname, ' ', u.lastname)) ILIKE $${paramIdx}
+      OR lower(uc.email) ILIKE $${paramIdx}
       OR lower(j.job_title) ILIKE $${paramIdx}
     )`);
     paramIdx++;
@@ -397,19 +401,27 @@ async function searchEmployerApplicants(companyId, params) {
   values.push(offset);
   var offsetParam = paramIdx++;
 
+  // Column-name reconciliation (bounded, same class as the .email fixes):
+  // job_applicants has no job_applicant_id/application_status/created_at --
+  // the real columns are job_application_id/application_status_id/date_applied
+  // (confirmed against the live schema). users has no display_name -- every
+  // other query in this codebase composes full_name from firstname/lastname
+  // (see contact.service.js/candidate.service.js). Output aliases (AS ...)
+  // are unchanged so the API response shape is preserved.
   var sql = `
     SELECT
-      ja.job_applicant_id, ja.job_id, ja.candidate_id, ja.application_status,
+      ja.job_application_id AS job_applicant_id, ja.job_id, ja.candidate_id, ja.application_status_id AS application_status,
       j.job_title,
-      u.display_name AS applicant_name,
-      u.email AS applicant_email,
-      ja.created_at AS applied_at,
+      concat(u.firstname, ' ', u.lastname) AS applicant_name,
+      uc.email AS applicant_email,
+      ja.date_applied AS applied_at,
       COUNT(*) OVER() AS total_count
     FROM ${dbSchema}.job_applicants ja
     INNER JOIN ${dbSchema}.jobs j ON ja.job_id = j.job_id
     LEFT JOIN ${dbSchema}.users u ON ja.candidate_id = u.uid
+    LEFT JOIN ${dbSchema}.user_credentials uc ON uc.uid = u.uid
     WHERE ${where.join(' AND ')}
-    ORDER BY ja.created_at DESC
+    ORDER BY ja.date_applied DESC
     LIMIT $${limitParam} OFFSET $${offsetParam}
   `;
 

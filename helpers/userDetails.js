@@ -38,8 +38,13 @@ const getUserProfileById = async (uid) => {
 };
 
 const getUserNameByEmail = async (email) => {
-  const searchQuery = `Select firstname
-    from ${dbSchema}.users where email = $1`;
+  // STITCH QA11 FIX F-01: users.email was dropped; email lives on
+  // user_credentials only (same pattern as getUserCredentialsByEmail
+  // above and company.service.js's companyUsers()).
+  const searchQuery = `Select u.firstname
+    from ${dbSchema}.user_credentials c
+    left join ${dbSchema}.users u on u.uid = c.uid
+    where c.email = $1`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [email]);

@@ -317,12 +317,15 @@ const contactList = async (companyId) => {
                         where c.company_id = $1
                         order by created_at DESC;`;
 
-    const searchQuery3 = `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.firstname, u.lastname, u.email, u.cell_number as mobile_number, u.address,
+    // STITCH QA11 FIX F-01: users.email was dropped; join user_credentials
+    // for email (same pattern applied elsewhere in this codebase).
+    const searchQuery3 = `SELECT concat(u.firstname, ' ', u.lastname) as full_name, u.firstname, u.lastname, uc.email, u.cell_number as mobile_number, u.address,
                         j.date_applied as created_at,  jo.job_id , jo.job_title, s.job_applicant_status_name as status , u.uid as candidate_id
                        FROM ${dbSchema}.job_applicants j
                        left join ${dbSchema}.jobs jo on jo.job_id = j.job_id
                        left join ${dbSchema}.applicants_profile ap on ap.user_id = j.candidate_id
                        left join ${dbSchema}.users u on u.uid = ap.user_id
+                       left join ${dbSchema}.user_credentials uc on uc.uid = u.uid
                        left join ${dbSchema}.job_applicant_status s on j.application_status_id = s.job_applicant_status_id
                        where jo.company_id = $1`;
 

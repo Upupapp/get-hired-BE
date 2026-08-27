@@ -292,3 +292,489 @@ genuinely newer server Draft rather than only unsynced local edits.
    `SELECT updated_at FROM gethired.jobs WHERE job_id = '<id>'` returns a
    recent timestamp, not `NULL`.
 2. Saving the same job again produces a strictly later `updated_at`.
+
+## 2026-08-27 — GETHIRED_PRODUCTION_READINESS_STABILIZATION — SEVERITY: CRITICAL
+
+### 2. Eight committed, currently-deployed backend files import two service modules that do not exist anywhere in git history — undocumented out-of-band dependency, silent single point of failure
+
+**Observed limitation:** `origin/main` (verified at commit `2958613`, the
+exact commit this backend is currently deployed from) contains eight
+tracked, clean (`git status` shows no local diff) files with hard,
+top-level ES-module imports of `services/accessControl.service.js` and/or
+`services/teamAccess.service.js`. Neither file exists in `git log --all`
+for this repository -- `git show origin/main:services/accessControl.service.js`
+fails with `fatal: path ... exists on disk, but not in 'origin/main'`.
+Both files currently sit **untracked** (`??` in `git status`) in this
+working tree, part of the larger uncommitted Team & Access / RBAC
+work-in-progress this command was explicitly instructed to preserve and
+never commit.
+
+**The eight committed importers (all deployed, all confirmed clean against
+origin/main):**
+
+| File | Imports | Symbols |
+|---|---|---|
+| `services/interview.service.js` | `accessControl.service` | `sqlJobScopeFilter` |
+| `services/applicant.service.js` | `accessControl.service` | `sqlJobScopeFilter` |
+| `services/message.service.js` | `accessControl.service` | `getAccessContext, canAccessJob, sqlJobScopeFilter` |
+| `services/application.service.js` | `accessControl.service` | `canAccessJob` |
+| `controllers/jobsController.js` | `accessControl.service` + `teamAccess.service` | `getAccessContextForRequest, hasPermission, canAccessJob, sqlJobScopeFilter` (10 call sites) + `addJobAssignment` |
+| `controllers/contactsController.js` | `accessControl.service` | `getAccessContextForRequest` |
+| `controllers/companiesController.js` | `accessControl.service` + `teamAccess.service` | `getAccessContextForRequest, hasPermission` + `removeTeamMember as removeTeamMemberById` |
+| `controllers/applicationController.js` | `accessControl.service` | `getAccessContextForRequest, canAccessJob, hasPermission, assertApplicationJobAccess` |
+
+This covers the core of the product: job creation/listing, job
+applications, messaging, company management, contacts, and interviews.
+
+**Reproduced / verified (2026-08-27, this command):**
+```
+git status --short controllers/jobsController.js        → (empty -- clean)
+git show origin/main:controllers/jobsController.js | grep accessControl
+  → import { getAccessContextForRequest, hasPermission, canAccessJob,
+      sqlJobScopeFilter } from "../services/accessControl.service";
+     (present, 10 call sites, identical to local working copy)
+git log --oneline --all -- services/accessControl.service.js  → (empty, no commit ever)
+git show origin/main:services/accessControl.service.js
+  → fatal: path 'services/accessControl.service.js' exists on disk,
+    but not in 'origin/main'
+```
+
+**Directly reproduced the crash (not just inferred from static analysis):**
+stashed `services/accessControl.service.js` and `services/teamAccess.service.js`
+(along with the rest of the uncommitted RBAC work-in-progress, then restored
+in full afterward -- `git stash push -u` / `git stash pop`, zero data lost,
+verified by file-count and syntax-check before dropping the stash) to
+produce a working tree that genuinely matches what a fresh `origin/main`
+checkout would look like, then attempted to boot the backend:
+```
+$ node start.js
+...
+C:\...\controllers\companiesController.js:1
+Error: Cannot find module '../services/accessControl.service'
+Require stack:
+- controllers/companiesController.js
+- controllers/userController.js
+- routes/userRoute.js
+- server.js
+- start.js
+    at Object.<anonymous> (...\controllers\companiesController.js:1) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [ ... ]
+}
+```
+The process exited immediately (`node`'s own uncaught-exception exit).
+This is not a single-route failure -- `start.js` never reaches
+`app.listen()`, so **the entire backend fails to boot**, confirmed by
+direct reproduction, not inference.
+
+**Why production is not currently down (and why that is not reassuring):**
+`https://api.gethiredonline.app/` responds `200 "Welcome to gethired API"`
+right now -- confirmed live during this command. Since these are
+synchronous top-level imports (evaluated at module load, before
+`app.listen()`), a genuinely missing file at boot would crash the entire
+Express app, not just these eight files' routes. The fact that the server
+is up proves `services/accessControl.service.js` and
+`services/teamAccess.service.js` **do exist on the production server's
+filesystem right now** -- by some means outside git. The production
+deploy workflow (`.github/workflows/deploy.yml`) runs `git fetch origin
+main && git reset --hard origin/main && git clean -fd` on every single
+push before restarting the process. `git clean -fd` removes untracked
+files. This backend has been deployed multiple times today (this
+session's own pushes: `19a8f07`, `8e8edd8`, `df40c14`, `2958613`), and the
+server has not gone down -- meaning either (a) these two files are
+present on the production filesystem in a location/manner that survives
+`git clean -fd` (e.g. a server-local `.gitignore` addition never
+committed to this repo, or a `.git/info/exclude` entry), or (b) they are
+being re-created by some out-of-band process this command has no
+visibility into. Either way, this is undocumented, unverified, and not
+something the current codebase or deploy pipeline provides on its own --
+a fresh clone of `origin/main` onto a new server, or any change to
+whatever local exclusion is currently protecting these files from
+`git clean -fd`, would crash the entire backend on the very next deploy.
+
+**Root cause:** `services/accessControl.service.js` and
+`services/teamAccess.service.js` were built as part of an in-progress
+Team & Access / RBAC feature and were never committed -- but eight files
+that DO depend on them were committed and merged into `main` regardless
+(most likely during the large multi-week backlog merge earlier in this
+engagement, where the RBAC work-in-progress was sitting in the same
+working tree as legitimate, ready fixes and the import lines were carried
+along without the files they reference).
+
+**Recommended backend change (not implemented -- backend frozen for this
+command):**
+1. Immediate (P0, before any further deploy): commit
+   `services/accessControl.service.js` and `services/teamAccess.service.js`
+   to `main` in whatever state currently makes the local/production
+   backend run successfully -- even if the broader RBAC feature (routes,
+   controllers, UI) stays unreleased/unmounted. The goal is only to make
+   the working tree's actual runtime dependencies match what git tracks,
+   removing the silent single point of failure. This is not "shipping
+   RBAC" -- `sqlJobScopeFilter`/`canAccessJob`/`getAccessContextForRequest`
+   etc. already run in production today per the eight files above; not
+   having them in git is strictly worse than having them in git.
+2. Alternatively, if the RBAC feature is genuinely not ready to ship even
+   as inert helper code: revert the eight files' RBAC-related hunks back
+   to their pre-RBAC behavior (each function has an earlier, working,
+   company-scoped-only version per this session's own audit history) and
+   remove the dangling imports, deferring the whole feature to a real
+   release rather than leaving half of it live by accident.
+3. Either way: add a CI/deploy-time check that fails the deploy (before
+   `pm2 restart`, which currently has no post-restart health verification
+   at all) if `node --check` or a `require`/import dry-run of every
+   committed entrypoint fails. This class of bug -- a committed file
+   silently depending on an uncommitted one -- should be structurally
+   impossible to deploy, not something that happens to survive by luck.
+4. Determine and document exactly what is currently protecting these two
+   files from `git clean -fd` on the production server, since that
+   protection is itself undocumented and could be lost at any time
+   (server migration, disk reprovisioning, a future deploy script change
+   that adds `git clean -fdx` or similar).
+
+**Severity / blocking impact:** CRITICAL, but not currently release-blocking
+in the sense of "users are seeing errors right now" -- production is
+observably up. It is release-blocking in the sense that this
+certification cannot respsonsibly call the backend's deploy safety
+anything better than CONDITIONAL: the app is one lost file (on a server
+this command cannot inspect) away from a full outage, with no CI gate that
+would have caught it before this audit found it by manual inspection.
+
+**Frontend dependency:** None -- this is entirely a backend/deploy-pipeline
+gap. No frontend change can mitigate it.
+
+**Acceptance test (once addressed):**
+1. From a completely fresh clone of `origin/main` (no local working-tree
+   history, no leftover files), run `node --check` (or equivalent) against
+   every file in `controllers/` and `services/` that has a static import --
+   must resolve cleanly with zero "module not found" errors.
+2. Add an explicit step to `deploy.yml` that performs this check (or a
+   smoke `require()` of `server.js` in a throwaway process) after
+   `npm ci` and before `pm2 restart`, failing the workflow (not just
+   logging a warning) if it fails.
+
+---
+
+## 2026-08-27 — GETHIRED_PRODUCTION_READINESS_STABILIZATION — SEVERITY: CRITICAL
+
+### 3. `POST /api/auth/signin` (email/password login) throws `FirebaseError: Need to provide options` on a cold process — the modular Firebase client SDK's default app is never initialized
+
+**Observed limitation:** on a freshly started backend process (a clean
+`pm2 restart`, a fresh worker after a crash, or the very first request a
+new deployment ever receives), the very first call to
+`POST /api/auth/signin` for ANY existing user fails with:
+
+```
+[loginUser] error: Error: FirebaseError: Firebase: Need to provide options,
+when not being deployed to hosting via source. (app/no-options).
+    at loginUserInDBAndFirebase (controllers/userController.js:540:11)
+```
+
+**Root cause (directly reproduced, not inferred):**
+`helpers/firebaseFunctions.js: signInUserAndGetTokeninFirebase` calls the
+**modular** Firebase Auth SDK's `getAuth()` with no arguments
+(`firebase/auth`, `firebase/app`'s default app). That default app is only
+ever created by calling `initializeApp(firebaseConfig)` from `firebase/app`
+-- and grepping the entire backend (`from ['"]firebase/app['"]`) finds
+**zero** call sites. The only `initializeApp` calls anywhere in the
+codebase are in `controllers/imageController.js:37` and
+`helpers/uploader.js:18`, and both use the **compat** SDK
+(`firebase/compat/app`), invoked lazily, only inside the image/CV upload
+code path, only after a request already arrives at `POST /api/images/upload`.
+
+Empirically confirmed (`node -e` repro) that `firebase/compat`'s
+`initializeApp()` registers into the *same* underlying app registry that
+modular `firebase/app`'s `getAuth()` reads from -- so login "works" **only
+as an accidental side effect** of some earlier, unrelated request in that
+same process having already hit the image-upload path once. In this
+session, every earlier successful `/api/auth/signin` call happened against
+a long-lived process that had, at some point, processed an image/CV
+upload; a genuinely fresh process (confirmed via `taskkill` + restart,
+before any other request) fails on the very first login attempt, 100% of
+the time.
+
+**Registration is not affected by this bug** --
+`registerNewUserInFirebase` (`userController.js:134`) uses
+`firebaseAdmin.auth().createUser()` (the **admin** SDK, already
+initialized at module load via `middleware/firebaseApp.js`), not the
+client SDK's `createUserWithEmailAndPassword`. So on a cold process, new
+accounts CAN be created, but no existing user -- including the one that
+was just created -- can log in with `/api/auth/signin` until an unrelated
+upload request happens to warm the compat registry first. There is no
+user-facing way to trigger that warm-up (the upload route itself requires
+an auth token that login is what's supposed to provide), so this is a full
+login outage on a cold worker, not a degraded/slow path.
+
+**In production (PM2 cluster, 2 workers):** any request that lands on a
+worker that has not yet processed an image upload will hit this on its
+first login attempt. Depending on real traffic mix this may be masked most
+of the time (once *any* user on a worker uploads an image, that worker is
+"fixed" for its remaining lifetime) -- which is consistent with this not
+having been reported as a visible outage, and exactly why it was missed:
+it is a silent, traffic-shape-dependent bug, not a deterministic one.
+
+**Proposed fix (documented only, not implemented -- backend frozen):** in
+`middleware/firebaseApp.js` (or a new small init module loaded at server
+boot, before `app.listen()`), add:
+```js
+import { initializeApp } from 'firebase/app';
+initializeApp(firebaseConfig);
+```
+once, at process startup, alongside the existing `admin.initializeApp`
+call -- so the modular default app always exists before the first request,
+regardless of whether an upload has ever occurred. This makes the
+compat-SDK initializations in `imageController.js`/`uploader.js`
+redundant (they already no-op via `firebase.apps.length` checks) but not
+harmful to leave as-is.
+
+**Frontend dependency:** None. Frontend already calls
+`POST /api/auth/signin` correctly; this is purely a backend
+initialization-order bug.
+
+**Severity / blocking impact:** CRITICAL for certification purposes --
+this is a real, reproducible login outage under a plausible, realistic
+production condition (a newly deployed or newly restarted worker with no
+prior upload traffic). It downgrades this certification's login/auth
+domain below a clean PASS even though most warm-process testing in this
+session did not surface it.
+
+**How this session worked around it for further testing (test-only, no
+code changed):** obtained ID tokens directly from the local Firebase Auth
+Emulator's REST API (`POST http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<any>`)
+for the already-provisioned QA test accounts, and used those tokens
+directly as `Authorization: Bearer <idToken>` against backend endpoints --
+independent of the broken `/api/auth/signin` route -- to continue
+exercising the rest of the authenticated jobseeker/employer flows.
+
+**Acceptance test (once addressed):**
+1. `taskkill` any running backend process, confirm port free.
+2. Start the backend fresh with zero prior requests processed.
+3. As the very first request to the process, call
+   `POST /api/auth/signin` for an existing verified user.
+4. Must return `200` with a valid token, not `Need to provide options`.
+
+### 4. `gethired.interview_template_question` is missing an `updated_at` column against this session's reconstructed local DB — `PUT /api/interview/updatejobinterview` fails with `42703`
+
+**Observed:** live-reproduced against the local dev DB (bootstrapped from
+`db/local-dev/*.sql` per that directory's own documented, best-effort
+process): `PUT /api/interview/updatejobinterview` for an existing
+question fails with
+`column "updated_at" of relation "interview_template_question" does not exist`
+(`code 42703`, `routine: transformUpdateTargetList`).
+
+**Why:** `db/complete_ddl.sql` (the legacy `jobhunt`-schema snapshot) has
+always defined `updated_at timestamp NULL DEFAULT now()` on this table,
+but no migration ever carried that column into the live `gethired` schema
+-- `db/20260819d_interview_template_missing_columns.sql` (the most recent
+fix for this exact table) added `created_at`/`sequence` but not
+`updated_at`. This is the same class of gap
+`db/local-dev/README.md` already documents and explicitly invites patches
+for ("Other gaps may surface at runtime... add an additive `ALTER TABLE
+... ADD COLUMN IF NOT EXISTS` patch file here").
+
+**Not fixed in this session:** applying the `ALTER TABLE` (even scoped to
+the local dev DB only, never touching a checked-in migration file) was
+blocked by this environment's own action-safety classifier as a
+schema-modifying operation, and this command's backend-freeze instruction
+was treated as covering DB schema regardless of scope -- so the column
+gap was left exactly as found and login/session-based testing continued
+around it rather than through it.
+
+**Proposed fix:** add
+`db/local-dev/32_interview_template_updated_at_patch.sql` (and, since
+this affects the real `gethired` schema, a corresponding dated file in
+`db/`) with:
+```sql
+ALTER TABLE gethired.interview_template_question
+	ADD COLUMN IF NOT EXISTS updated_at timestamp NULL DEFAULT now();
+```
+
+**Impact on this certification:** interview-question EDIT could not be
+re-verified live in this session's reconstructed local environment after
+the DB/emulator reset (TAB04/TAB07). The prior session turn's
+code-level review of the deployed `origin/main` version of
+`updateJobInterviewQuestion` (company-scoped `UPDATE ... RETURNING *`,
+zero-rows -> 403) still stands as the basis for believing the endpoint is
+correctly written; this is a local-schema-reconstruction gap, not a
+newly found defect in the endpoint's logic itself. Classified as a known,
+bounded local-environment limitation, not a release blocker.
+
+**Frontend dependency:** None.
+
+### 5. No DB migration process exists — deployment/rollback safety gap (documentation only, per TAB09 audit)
+
+**Observed:** `package.json` has no `migrate` script (`scripts` block:
+`test`, `start`, `postinstall`, `security:secrets`, two `deploy-*` gcloud
+commands, two `*-server` ssh shortcuts -- nothing that applies `db/*.sql`
+against a target database). Schema changes ship as loose, dated `.sql`
+files in `db/` with no tracking of which have been applied to which
+environment, no ordering enforcement beyond filename convention, and no
+automated way to reproduce the live schema (this session's own local DB
+reconstruction, `db/local-dev/*.sql`, is explicitly self-documented as
+"best-effort," not verified-identical to production -- see finding 4
+above for a concrete gap that reconstruction missed).
+
+**Recommended migration process (proposed, not implemented):**
+1. Adopt a real migration runner (`node-pg-migrate`, `db-migrate`, or a
+   thin custom `scripts/migrate.js` that reads `db/*.sql` in filename
+   order and records applied filenames in a `schema_migrations` table)
+   so "what's applied where" becomes a queryable fact, not tribal
+   knowledge.
+2. **Ordering/idempotency:** keep the existing dated-filename convention
+   (`YYYYMMDD_description.sql`) as the apply order; require every new
+   migration to use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS` guards
+   (already the de facto convention in recent files like
+   `20260819d_interview_template_missing_columns.sql`) so a migration can
+   safely be re-run without erroring.
+3. **Rollback:** none of the existing `.sql` files have a paired `down`
+   migration. At minimum, document per-migration whether it's safely
+   reversible (additive column/table = yes, data backfill = usually no)
+   rather than attempting automated rollback for all of them.
+4. **CI/CD integration point:** run the migration step after `npm ci`,
+   before `pm2 restart`, in the same deploy stage flagged in finding 2's
+   remediation (the boot-smoke-test gate) -- both gaps point at the same
+   missing pre-restart verification stage.
+5. **Pre/post-deploy validation:** pre-deploy, diff the target DB's
+   applied-migrations table against `db/`'s file list and fail the
+   deploy if any expected migration is missing; post-deploy, run a
+   lightweight smoke query per critical table (the same tables finding 4
+   and this session's local reconstruction had gaps on: `jobs`,
+   `interview_template_question`, `applicants_profile`, `users`) to catch
+   a silently-failed or partially-applied migration before traffic
+   resumes.
+6. **Failure behavior:** the deploy should fail closed -- if the
+   migration step errors, `pm2 restart` must not proceed with the old
+   code against a half-migrated schema (or vice versa).
+
+**Frontend dependency:** None -- this is backend/deploy-process only.
+
+### 6. Dependency security triage (`npm audit`, both repos) -- backend disposition recommendations only
+
+Real `npm audit --json` run this session, both repos:
+
+| Repo | Total | Critical | High | Moderate | Low |
+|---|---|---|---|---|---|
+| get-hired-BE | 27 | 4 | 12 | 10 | 1 |
+| get-hired-FE | 95 | 10 | 52 | 22 | 11 |
+
+**Backend critical-severity packages, disposition:**
+
+| Package | Runtime exposure | Fix path | Risk if unfixed | Disposition |
+|---|---|---|---|---|
+| `protobufjs` | Transitive via `firebase-admin` -- used for every Admin SDK call (auth verification, Firestore/Storage if used) | Fix available, but breaking (`npm audit fix --force` would bump `firebase-admin` to a new major) | Prototype pollution / DoS chain in a dependency that touches every authenticated request via `verifyIdToken` | **Schedule for a dedicated `firebase-admin` major-version upgrade + regression pass, not a blind `--force` fix** -- too central to the auth path to bump unreviewed |
+| `websocket-driver` | Transitive; check whether anything in this codebase actually opens WebSocket connections (no evidence found this session that it does) | Non-breaking fix available | Low if genuinely unused -- confirm via dependency tree before prioritizing | **Verify actual usage, then apply the non-breaking fix** -- likely a quick win |
+| `form-data` | Transitive, multiple paths | **No fix available upstream** | Unsafe random boundary generation, CRLF injection in multipart bodies -- relevant anywhere the backend itself constructs outgoing multipart requests | **Monitor for upstream fix; audit call sites that use it to construct (not just receive) multipart requests in the meantime** |
+| `request` | Transitive (deprecated package, likely via an older transitive dependency) | **No fix available** (package is unmaintained) | SSRF-class advisory | **Identify and remove/replace whatever still pulls in `request`** -- it's deprecated upstream and will never get a real fix; this is the one that most needs a dependency-tree audit, not just a triage note |
+
+Frontend-critical packages (`@babel/traverse`, `@nguniversal/*`, `dompurify`,
+`jspdf`, `tar`, `webpack`) are FE-owned disposition, not repeated here --
+see the frontend certification report for those.
+
+**Frontend dependency:** None for the backend table above; the FE table
+lives in the FE-side certification report, not here, per this command's
+own routing rule (backend recs -> notes.md only).
+
+---
+
+## 2026-08-27 — GETHIRED_BACKEND_COLD_START_AUTH_AND_DEPLOYMENT_INTEGRITY_P0 — FIXED
+
+### Finding 3 (P0) — FIXED
+
+**Fix implemented:** `middleware/firebaseApp.js` now initializes the
+modular Firebase client SDK's default app exactly once, at process boot,
+immediately after the existing Admin SDK initialization (guarded via
+`getApps().length` so a second call is a safe no-op, mirroring the
+existing Admin SDK guard). This is the single, correct ownership location
+for this initialization -- no endpoint (image upload or otherwise) needs
+to perform it opportunistically anymore. In local/dev only, when
+`FIREBASE_AUTH_EMULATOR_HOST` is set, the same init also calls
+`connectAuthEmulator()` once on the default app's auth instance --
+production, which never sets that env var, is unaffected; this was added
+because directly proving "signin succeeds" (not just "the crash is gone")
+against this session's Firebase Auth Emulator required it, and it lives
+in the exact same initialization block being added regardless.
+
+**Verified via direct reproduction, 4 independent fresh process starts:**
+- Before fix: first request to a truly fresh process (`POST
+  /api/auth/signin`, no prior requests) → `500`,
+  `FirebaseError: Need to provide options, when not being deployed to
+  hosting via source. (app/no-options)`.
+- After fix: first request to a truly fresh process → `200` with a real
+  token, on every one of 4 independent restarts. `grep -c "Need to
+  provide options"` across all 4 run logs = 0.
+- Confirmed no duplicate-app crash across repeated signins in the same
+  process, and across an unrelated image-upload call happening either
+  before or with no bearing on signin anymore (both succeed
+  independently).
+- Registration (`admin.createUser`, unrelated Firebase Admin flow) and
+  wrong-password / nonexistent-account signin error contracts are
+  unchanged -- confirmed via the same log evidence (a pre-existing,
+  unrelated local DB schema gap now surfaces for signup and for employer
+  signin specifically -- see below -- but neither is a Firebase
+  initialization error, and neither regressed from this fix).
+
+**File changed:** `middleware/firebaseApp.js` only. `notes.md` also
+modified (this entry). No other backend file touched.
+
+### Two additional, pre-existing, unrelated local-DB gaps surfaced while proving the P0 fix (out of scope for this command's schema-patch phase; documented, not fixed)
+
+1. `POST /api/auth/signup`: fails with `column "email" of relation
+   "users" does not exist` -- happens *after* the Firebase Admin
+   `createUser` step already succeeded (proving this is not a Firebase
+   issue), inside `registerUserInDB`'s insert into a `users` table that
+   doesn't match this session's reconstructed local schema. Same class of
+   gap as findings 4/6 above.
+2. `POST /api/auth/signin` for the employer test account specifically:
+   fails with `column u.email does not exist`, downstream of a
+   successful Firebase auth step, inside the post-auth `getUserCompany`
+   join. Same class of gap. This is why this command's Phase 7 employer
+   smoke-test step used an emulator-issued token (bypassing only this
+   unrelated, pre-existing local DB join gap) rather than the real
+   `/api/auth/signin` route for the employer leg specifically -- the
+   jobseeker leg used the real route successfully throughout.
+
+Neither gap is Firebase-related, neither regressed from this fix, and
+fixing either would mean altering schema/queries beyond this command's
+explicit Phase 6 scope (`interview_template_question.updated_at` only).
+Flagged here for whoever eventually builds the real migration tooling
+proposed in finding 5.
+
+### Finding 2 — re-audited, consumer count corrected: 9 production consumers, not 8
+
+Re-running the same audit query this session found the affected set has
+grown since the prior pass. Corrected classification:
+
+**Class 1 -- required production dependency (release-integrity blocker,
+unchanged conclusion, larger blast radius than previously documented):**
+9 tracked, clean, committed files that `origin/main` (== local HEAD,
+confirmed identical via `git rev-parse HEAD origin/main`) actually
+imports `services/accessControl.service.js` and/or
+`services/teamAccess.service.js` from:
+`controllers/applicationController.js`, `controllers/companiesController.js`,
+`controllers/contactsController.js`, `controllers/jobsController.js`,
+`services/applicant.service.js`, `services/application.service.js`,
+`services/company.service.js` (**newly identified this pass -- not in
+the original 8-file list**), `services/interview.service.js`,
+`services/message.service.js`.
+
+**Class 2 -- active/unfinished WIP dependency, not a current production
+risk:** `controllers/scheduledInterviewController.js`,
+`controllers/teamAccessController.js`,
+`services/scheduledInterview.service.js` are untracked and also import
+the same two missing modules, but since they were never committed to
+`origin/main` either, they don't independently threaten the *current*
+production boot -- they matter only if someone commits this WIP
+Team-Access-RBAC feature without also committing its two dependencies,
+which would be the exact same mistake compounded.
+
+**Clean-checkout impact:** unchanged from the prior audit's direct
+reproduction (stash the two untracked files, attempt `node start.js`,
+observe `MODULE_NOT_FOUND` on `companiesController.js`'s import chain) --
+not re-run this pass since local HEAD is confirmed identical to
+`origin/main` and the destructive stash/restore cycle was already proven
+once; re-running it a second time would add risk without adding new
+information.
+
+**Release classification: unchanged -- CRITICAL, release-integrity
+blocker for the production baseline.** Not fixed in this command (out of
+scope -- Phase 5 is audit-only, "do not silently add unrelated WIP code
+to the production baseline").

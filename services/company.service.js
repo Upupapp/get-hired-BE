@@ -51,10 +51,15 @@ const companyDetailsById = async (companyId) => {
 };
 
 const companyUsers = async (companyId) => {
+  // STITCH QA11 FIX F-01: users.email was dropped in a DDL migration
+  // (db/user_ddl.sql: "ALTER TABLE gethired.users DROP COLUMN email") --
+  // email lives on user_credentials only. Same fix pattern already applied
+  // in candidate.service.js/interviewController.js/message.service.js.
   const searchQuery = `SELECT ce.employee_id, ce.company_id, ce.employee_uuid, ce.assigned_at,
-    u.firstname, u.lastname, u.email, u.photo_url, u.uid, u.role_title
+    u.firstname, u.lastname, uc.email, u.photo_url, u.uid, u.role_title
     FROM ${dbSchema}.company_employees ce
     LEFT JOIN ${dbSchema}.users u ON ce.employee_uuid = u.uid
+    LEFT JOIN ${dbSchema}.user_credentials uc ON ce.employee_uuid = uc.uid
     WHERE ce.company_id = $1;`;
 
   try {
@@ -277,11 +282,14 @@ const statistic = async (companyId) => {
   const searchQuery = `SELECT count(contact_id) as contact
                       FROM ${dbSchema}.contact
                       where company_id = $1;`;
+  // STITCH QA11 FIX F-01: users.email was dropped; join user_credentials
+  // for email (same pattern as companyUsers() above).
   const searchQuery2 = `select count(distinct a.job_application_id) as applicant
                         FROM ${dbSchema}.job_applicants a
                         left join ${dbSchema}.jobs j on j.job_id = a.job_id
-                        right join ${dbSchema}.users u on u.uid = a.candidate_id 
-                        right join ${dbSchema}.contact c on c.email = u.email 
+                        right join ${dbSchema}.users u on u.uid = a.candidate_id
+                        right join ${dbSchema}.user_credentials uc on uc.uid = u.uid
+                        right join ${dbSchema}.contact c on c.email = uc.email
                         where j.company_id = $1 and j.job_status_id = '2' and (a.application_status_id = '2' OR a.application_status_id = '3' OR a.application_status_id = '4'
                         OR a.application_status_id = '5' OR a.application_status_id = '6')
                         group by a.job_application_id, c.email`;

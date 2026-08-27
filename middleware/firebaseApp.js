@@ -1,4 +1,6 @@
 import admin from 'firebase-admin';
+import { initializeApp as initializeClientApp, getApps as getClientApps } from 'firebase/app';
+import { getAuth as getClientAuth, connectAuthEmulator } from 'firebase/auth';
 import env from '../env';
 
 // ---------------------------------------------------------------------------
@@ -134,5 +136,44 @@ export const firebaseConfig = {
   appId: env.appId,
   measurementId: env.measurementId,
 };
+
+// ---------------------------------------------------------------------------
+// Modular Firebase client SDK — default app initialization
+// ---------------------------------------------------------------------------
+// Consumers (e.g. helpers/firebaseFunctions.js) call the modular `getAuth()`
+// with no arguments, which requires a default app to already exist via
+// `initializeApp()` from `firebase/app`. That call must happen exactly once,
+// at process boot, here — not opportunistically inside an unrelated request
+// handler (e.g. the image-upload path's `firebase/compat` initialization),
+// which previously left every fresh process unable to complete
+// POST /api/auth/signin until some unrelated request happened to run first.
+// ---------------------------------------------------------------------------
+function initFirebaseClientApp() {
+  if (getClientApps().length > 0) {
+    return getClientApps()[0];
+  }
+
+  const app = initializeClientApp(firebaseConfig);
+
+  // Local dev only: mirror the Admin SDK's emulator awareness so this
+  // process's own signin/signup regression tests exercise the same
+  // account store the Admin SDK already uses via FIREBASE_AUTH_EMULATOR_HOST.
+  // No-op in production, where this env var is never set.
+  if (process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    connectAuthEmulator(
+      getClientAuth(app),
+      `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`,
+      { disableWarnings: true }
+    );
+  }
+
+  console.log(
+    `Firebase Client SDK: default app initialized${process.env.FIREBASE_AUTH_EMULATOR_HOST ? ` (auth-emulator: ${process.env.FIREBASE_AUTH_EMULATOR_HOST})` : ''}`
+  );
+
+  return app;
+}
+
+initFirebaseClientApp();
 
 export const firebaseAdmin = _admin;
