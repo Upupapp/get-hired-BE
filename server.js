@@ -161,6 +161,20 @@ app.use("/api/cv-builder/upload", express.json({
   limit: "8mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+// BUGFIX: same root cause as the two routes above -- job applications send
+// each recorded video interview answer as a base64 string inside the JSON
+// body (recordService.blobToBase64() in record-interview.component.ts),
+// and a single application can carry several answers plus resume/cover
+// letter/government-file uploads in the same POST. All of that was falling
+// under the blanket 6mb limit below, so submitting even one real video
+// answer reliably failed with PayloadTooLargeError -- confirmed via the
+// generic "Submission failed" 413 reported against POST /api/application/apply.
+// 150mb mirrors the savevideocv route's own cap (a single video answer is
+// the same recording feature) with headroom for multiple answers in one payload.
+app.use("/api/application/apply", express.json({
+  limit: "150mb",
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.json({
   limit: "6mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
@@ -342,6 +356,24 @@ app.get("/sitemap.xml", async (req, res) => {
 });
 
 app.get("/", (req, res) => res.send(`Welcome to ${env.projectName} API`));
+
+// BUGFIX: no error-handling middleware existed anywhere in this file, so a
+// body-parser PayloadTooLargeError (entity.too.large) fell through to
+// Express's default handler -- a plain-text/HTML 413 response the frontend
+// couldn't parse into anything more specific than a generic "Something went
+// wrong" toast. This gives it a real code + user-actionable message so
+// callers like the job-application submit flow can tell the applicant
+// exactly what to do (remove/re-record an oversized video answer) instead
+// of a dead-end error.
+app.use((err, req, res, next) => {
+  if (err && (err.type === "entity.too.large" || err.status === 413)) {
+    return res.status(413).json({
+      code: "PAYLOAD_TOO_LARGE",
+      error: "One of your uploaded files is too large -- this is most often a recorded video interview answer. Please remove or re-record the oversized video (or a large document) and try again.",
+    });
+  }
+  return next(err);
+});
 
 app.listen(env.port).on("listening", () => {
   console.log(`running server on port ${env.port}`);
