@@ -452,8 +452,17 @@ const saveSkillsArray = async (req, res) => {
 
     return res.status(status.success).json(successResponse(skills));
   } catch (error) {
-    console.error('[applicantsController] error:', error);
-    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+    // TEMP DIAGNOSTIC: this route is 500ing in production with no
+    // reproducible cause found across the route/controller/service/schema
+    // (all verified against the deployed source directly) -- no server log
+    // access to see the real underlying error. Surfaces error.message (not
+    // the full stack -- no internals/credentials in a Postgres or JS error
+    // message here) so the next failure is diagnosable from the browser's
+    // Network tab alone. Revert once root-caused.
+    console.error('[applicantsController] saveSkillsArray error:', error);
+    return res.status(status.error).json(errorResponse(
+      `Operation not successful. Please try again. (debug: ${error && error.message ? error.message : String(error)})`
+    ));
   }
 };
 
