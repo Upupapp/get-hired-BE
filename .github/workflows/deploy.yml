@@ -43,13 +43,33 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$LINODE_HOST" >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$LINODE_USER@$LINODE_HOST" << 'ENDSSH'
+            set -e
             cd /var/www/_work/get-hired-BE
+            echo "=== DIAG: pre-deploy state ==="
+            git rev-parse HEAD
+            pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');console.log(p?('gethired BEFORE: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime)):'gethired: NOT FOUND IN PM2 LIST')}catch(e){console.log('pm2 jlist parse failed:', e.message)}})"
+
+            echo "=== DIAG: git update ==="
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
+            echo "post-reset HEAD: $(git rev-parse HEAD)"
+
+            echo "=== DIAG: install/build ==="
             npm ci --omit=dev
             npm run build --if-present
             npm run migrate --if-present
+
+            echo "=== DIAG: restart ==="
             pm2 restart gethired --update-env
             pm2 save
+
+            echo "=== DIAG: post-restart verification ==="
+            sleep 3
+            pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');if(!p){console.log('gethired: NOT FOUND IN PM2 LIST AFTER RESTART');process.exit(1)};console.log('gethired AFTER: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime));if(p.pm2_env.status!=='online'){console.log('FATAL: process not online after restart');process.exit(1)}}catch(e){console.log('pm2 jlist parse failed:', e.message);process.exit(1)}})"
+
+            echo "=== DIAG: local health check (informational only -- port assumed, not verified) ==="
+            curl -s -o /dev/null -w "local health check HTTP status: %{http_code}\n" --max-time 10 http://127.0.0.1:3000/api/auth/signin -X POST -H "Content-Type: application/json" -d '{}' || echo "local health check request itself failed (informational, not fatal)"
+
+            echo "=== DEPLOY VERIFIED: HEAD=$(git rev-parse HEAD) ==="
           ENDSSH
