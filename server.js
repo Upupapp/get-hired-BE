@@ -175,6 +175,20 @@ app.use("/api/application/apply", express.json({
   limit: "150mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+// BUGFIX: same root cause as the three routes above -- the Profile Setup
+// Documents step (resume/cover letter/government files) sends each file as
+// a base64 data URL inside the JSON body (saveDocuments,
+// applicantsController.js), and documentUploadValidationService.js now
+// advertises a 10MB-per-file limit. Base64 inflates a file near that limit
+// to ~13.3MB, and multiple documents can be submitted in the same POST --
+// both were already exceeding the blanket 6mb limit below, so the new
+// per-file validator could never even run for any file close to its own
+// advertised cap. 60mb comfortably covers several 10MB files in one
+// payload without approaching the video-answer routes' much larger caps.
+app.use("/api/applicant/docs", express.json({
+  limit: "60mb",
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 app.use(express.json({
   limit: "6mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
