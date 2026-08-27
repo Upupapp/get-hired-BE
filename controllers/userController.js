@@ -131,7 +131,18 @@ const registerUser = async (req, res) => {
     }
 
     // Use this if we have different mailer
-    const userData = await registerNewUserInFirebase(user);
+    // TEMP DIAGNOSTIC (remove after root-cause capture): tag any error from
+    // this specific step so the outer catch can report the sanitized
+    // Firebase error CODE only -- never the raw message, stack, or any
+    // credential material -- to pin down the production createUser()
+    // failure without server log access.
+    let userData;
+    try {
+      userData = await registerNewUserInFirebase(user);
+    } catch (firebaseCreateErr) {
+      firebaseCreateErr._diagStage = 'firebase_create_user';
+      throw firebaseCreateErr;
+    }
 
     // Use this if we need firebase mailer
     // const userData = await registerNewUserInFirebaseWithEmail(user);
@@ -158,6 +169,16 @@ const registerUser = async (req, res) => {
     return res.status(status.created).json(successResponse(dbRegister));
   } catch (err) {
     console.error('[registerUser] error:', err);
+    // TEMP DIAGNOSTIC (remove after root-cause capture): surface only the
+    // Firebase error CODE (a short enum string like "auth/invalid-argument",
+    // never a message/stack/credential) when the failure is proven to
+    // originate from the createUser() step specifically.
+    if (err && err._diagStage === 'firebase_create_user') {
+      return res.status(status.error).json({
+        ...errorResponse("Registration failed. Please try again."),
+        diagFirebaseErrorCode: (err && err.code) ? String(err.code).slice(0, 60) : 'no_code',
+      });
+    }
     return res.status(status.error).json(errorResponse("Registration failed. Please try again."));
   }
 };
