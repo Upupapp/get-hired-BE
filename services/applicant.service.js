@@ -794,21 +794,32 @@ const saveApplicantDetailsList = async (
   columnName,
   applicantId
 ) => {
-  const insertQuery = `INSERT INTO ${dbSchema}.applicant_skills
-  (skills, applicant_id, created_at)
-  VALUES($1, $2, $3) returning *;`;
   try {
-    // BUGFIX: `now` was never declared anywhere in this file -- every call
-    // here threw ReferenceError: now is not defined, meaning Professional
-    // Skills save has been unconditionally broken (500 on every "Apply
-    // Change" click) until this fix.
-    const insertedList = await Promise.all(
-      list.map(
-        async (item) =>
-          await dbQuery.query(insertQuery, [item, applicantId, new Date()])
-      )
-    );
-    return insertedList;
+    // BUGFIX (PROD-ONLY 500 on skills save): this previously fired one
+    // dbQuery.query() PER skill via Promise.all(list.map(...)) -- N fully
+    // parallel queries, each claiming its own connection from the pool
+    // (max: 10 per PM2 worker, see db/dbQuery.js). A single Apply Change
+    // click with more skills than free connections already exceeds the
+    // pool on its own; any other concurrent request sharing that same
+    // pool (guaranteed under real production traffic, never present
+    // during solo local testing) makes it worse. dbQuery.query() rejects
+    // outright on a pool timeout, so this surfaced as an unexplained
+    // Internal Server Error that never reproduced locally -- identical
+    // code, different load. Rebuilt as one batched multi-row INSERT: a
+    // single connection and a single round trip no matter how many
+    // skills are being saved.
+    const now = new Date();
+    const values = [];
+    const placeholders = list.map((item, i) => {
+      const base = i * 3;
+      values.push(item, applicantId, now);
+      return `($${base + 1}, $${base + 2}, $${base + 3})`;
+    }).join(', ');
+    const insertQuery = `INSERT INTO ${dbSchema}.applicant_skills
+    (skills, applicant_id, created_at)
+    VALUES ${placeholders} returning *;`;
+    const { rows } = await dbQuery.query(insertQuery, values);
+    return rows;
   } catch (error) {
     throw error;
   }

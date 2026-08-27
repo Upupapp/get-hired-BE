@@ -44,7 +44,19 @@ const updateUserProfile = async (profile) => {
       userId,
     ]);
 
-    if (!rows && rows.length == 0) {
+    // BUGFIX (Short Bio "not saving"): `!rows && rows.length == 0` is dead
+    // code -- pg's rows is always an array, never null/undefined, so !rows
+    // is never true and this guard never fires. When the UPDATE matches
+    // zero rows (this applicant's uid has no row in gethired.users), rows
+    // is [], rows[0] is undefined, and every property read below
+    // (dbResponse.firstname, ...) throws a raw TypeError instead of the
+    // intended controlled error. That crash reaches
+    // updateProfileBasicInfo's caller AFTER the short_bio UPDATE on
+    // applicants_profile has already committed -- the bio genuinely saves,
+    // but the request still 500s, which is exactly "it's not saving" from
+    // the applicant's side. Fixed to the correct || so a real zero-row
+    // match throws the clear, already-handled error instead of crashing.
+    if (!rows || rows.length == 0) {
       throw "Failed to update profile";
     }
 

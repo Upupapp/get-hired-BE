@@ -10,6 +10,7 @@ import { groupList, contactList, checkContacts } from './contact.service'
 import { listOfAllUniqueApplicantsByCompany } from './applicant.service'
 import { getCompanyNameByCompanyId } from './company.service'
 import { send } from '../helpers/mailer'
+import { sqlJobScopeFilter } from './accessControl.service'
 
 const createQuestion = async (questionDetails, templateId) => {
   const { question, answerDuration, retakes, sequence } = questionDetails
@@ -127,7 +128,11 @@ const changeQuestionSequence = async (questionId, sequence) => {
   try {
     const { rows } = await dbQuery.query(updateQuery, [sequence, questionId])
 
-    if (!rows && rows.length == 0) {
+    // BUGFIX: same dead-code guard as user.service.js's updateUserProfile
+    // (!rows is never true -- pg's rows is always an array) -- a zero-row
+    // match crashed on mappedQuestion(undefined) instead of throwing this
+    // intended, controlled error.
+    if (!rows || rows.length == 0) {
       throw 'Failed to Update Questions'
     }
 
@@ -156,26 +161,34 @@ const getTemplateQuestions = async interviewTemplateId => {
 
 // Used to authorize getInterviewTemplateQuestions by company ownership
 // rather than trusting templateId alone. STITCH/security fix (GH-ACT-008).
+// Also returns job_id so callers can layer a job-scope check on top of the
+// company-ownership check (job-scoped RBAC V1).
 const getTemplateCompanyId = async interviewTemplateId => {
-  const searchQuery = `select company_id from ${dbSchema}.job_interview_template
+  const searchQuery = `select company_id, job_id from ${dbSchema}.job_interview_template
     where job_interview_template_id = $1`
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [interviewTemplateId])
-    return rows && rows.length != 0 ? rows[0].company_id : null
+    return rows && rows.length != 0 ? { companyId: rows[0].company_id, jobId: rows[0].job_id } : null
   } catch (error) {
     throw error
   }
 }
 
-const getAllInterviews = async companyId => {
+const getAllInterviews = async (companyId, ctx) => {
+  // Sole caller (interviewController.js) always passes a resolved accessCtx,
+  // possibly null for a caller with zero access (e.g. suspended) -- call
+  // sqlJobScopeFilter unconditionally so that case correctly denies instead
+  // of silently returning the full unscoped list.
+  const jobScope = sqlJobScopeFilter(ctx, 'i.job_id', 2)
+  const params = jobScope.param ? [companyId, jobScope.param] : [companyId]
   const searchQuery = `select i.*, j.job_title from ${dbSchema}.group_interviews i
-    left join ${dbSchema}.jobs j 
-    on i.job_id = j.job_id 
-    where i.company_id = $1`
+    left join ${dbSchema}.jobs j
+    on i.job_id = j.job_id
+    where i.company_id = $1 ${jobScope.clause}`
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, [companyId])
+    const { rows } = await dbQuery.query(searchQuery, params)
     if (rows && rows.length != 0) {
       return await Promise.all(
         rows.map(async row => await mappedGroupInterview(row))
@@ -188,18 +201,21 @@ const getAllInterviews = async companyId => {
   }
 }
 
-const getAllInterviewTemplates = async companyId => {
-  const searchQuery = `select jit.*, j.job_title, 
-        (select count(*) 
-        from ${dbSchema}.interview_template_question itq 
+const getAllInterviewTemplates = async (companyId, ctx) => {
+  // Same reasoning as getAllInterviews above -- call unconditionally.
+  const jobScope = sqlJobScopeFilter(ctx, 'jit.job_id', 2)
+  const params = jobScope.param ? [companyId, jobScope.param] : [companyId]
+  const searchQuery = `select jit.*, j.job_title,
+        (select count(*)
+        from ${dbSchema}.interview_template_question itq
         where itq.job_interview_template_id = jit.job_interview_template_id) as number_of_questions
     from ${dbSchema}.job_interview_template jit
-    left join ${dbSchema}.jobs j 
-    on jit.job_id = j.job_id 
-    where j.company_id = $1 or jit.company_id = $1 order by jit.created_at DESC`
+    left join ${dbSchema}.jobs j
+    on jit.job_id = j.job_id
+    where (j.company_id = $1 or jit.company_id = $1) ${jobScope.clause} order by jit.created_at DESC`
 
   try {
-    const { rows } = await dbQuery.query(searchQuery, [companyId])
+    const { rows } = await dbQuery.query(searchQuery, params)
     if (rows && rows.length != 0) {
       return await Promise.all(rows.map(async row => mappedTemplateList(row)))
     } else {
@@ -210,12 +226,17 @@ const getAllInterviewTemplates = async companyId => {
   }
 }
 
-const getInterviewRecipients = async companyId => {
+// Job-scoped RBAC V1: groupContact (company-wide CRM contact groups -- no
+// job_id anywhere in groupList/checkContacts' query chain, confirmed by
+// reading contact.service.js in full) is correctly left unscoped.
+// emailByJobPost and individualEmails ARE genuinely job-tied and are now
+// scoped via ctx -- found leaking during V1 live verification (2026-08-13).
+const getInterviewRecipients = async (companyId, ctx) => {
   try {
     const dbResponse = {
       groupContact: await groupList(companyId),
-      emailByJobPost: await listOfAllUniqueApplicantsByCompany(companyId),
-      individualEmails: await contactList(companyId)
+      emailByJobPost: await listOfAllUniqueApplicantsByCompany(companyId, ctx),
+      individualEmails: await contactList(companyId, ctx)
     }
     return dbResponse
   } catch (error) {
