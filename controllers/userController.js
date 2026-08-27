@@ -90,6 +90,13 @@ const loginUser = async (req, res) => {
 };
 
 const registerUser = async (req, res) => {
+  // TEMP DIAGNOSTIC (remove after root-cause capture): unconditional
+  // deploy-liveness marker, unrelated to any error branch -- proves
+  // whether this specific process restart actually picked up new code.
+  if (req.query && req.query.diagPing === '1') {
+    return res.status(200).json({ diagDeployMarker: 'a229b04-liveness-check' });
+  }
+
   const { email, password, firstName, lastName, role, recaptchaToken } = req.body;
 
   if (isEmpty(email) || isEmpty(password)) {
