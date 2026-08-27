@@ -87,14 +87,64 @@ jobs:
             });
             " || true
 
-            echo "=== PM2/NODE PROCESS OWNERS ==="
-            ps -eo user,pid,ppid,cmd | grep -E '[P]M2|[n]ode' || true
+            echo "=== SUDO CAPABILITY ==="
+            sudo -n true 2>/dev/null && echo "SUDO_NOPASSWD=YES" || echo "SUDO_NOPASSWD=NO"
+
+            echo "=== PM2 BINARY ==="
+            command -v pm2 || true
+
+            echo "=== PM2/NODE PROCESS OWNERS (with start time) ==="
+            ps -eo user,pid,ppid,lstart,cmd | grep -E '[P]M2|[n]ode' || true
 
             echo "=== LISTENING NODE PORTS ==="
             ss -ltnp 2>/dev/null | grep -E 'node|pm2' || true
 
-            echo "=== ROOT PM2 CHECK ==="
-            sudo -n -u root pm2 list 2>/dev/null || echo "ROOT_PM2_UNAVAILABLE"
+            echo "=== ROOT PM2 CHECK (sanitized: name/pid/status/cwd/script/instances only) ==="
+            if sudo -n true 2>/dev/null; then
+              PM2_BIN="$(command -v pm2)"
+              sudo -n -u root env PM2_HOME=/root/.pm2 "$PM2_BIN" jlist 2>/dev/null | node -e "
+                let d='';process.stdin.on('data',c=>d+=c);
+                process.stdin.on('end',()=>{
+                  try {
+                    const rows = JSON.parse(d).map(p => ({
+                      name: p.name, pid: p.pid, status: p.pm2_env && p.pm2_env.status,
+                      cwd: p.pm2_env && p.pm2_env.pm_cwd, script: p.pm2_env && p.pm2_env.pm_exec_path,
+                      instances: p.pm2_env && p.pm2_env.instances
+                    }));
+                    console.log(JSON.stringify(rows, null, 2));
+                  } catch (e) { console.log('root pm2 jlist parse failed'); }
+                });
+              " || echo "ROOT_PM2_QUERY_FAILED"
+            else
+              echo "SKIPPED: no passwordless sudo"
+            fi
+
+            echo "=== SERVER SOURCE SNAPSHOT ==="
+            git rev-parse HEAD
+            git status --short
+            git diff --name-status
+            git diff --stat
+            git diff --check || true
+
+            echo "=== MODIFIED FILE HASHES ==="
+            git diff --name-only | while read -r f; do
+              [ -f "$f" ] && sha256sum "$f"
+            done
+
+            echo "=== .env.example CHANGE SUMMARY (keys only, values redacted) ==="
+            if git diff --name-only | grep -qx '.env.example'; then
+              sha256sum .env.example
+              echo "changed keys:"
+              git diff .env.example | grep -E '^[+-][A-Za-z_][A-Za-z0-9_]*=' | sed -E 's/=.*/=<REDACTED>/' | sort -u
+            else
+              echo ".env.example: not modified"
+            fi
+
+            echo "=== CODE-FILE DIFFS (application code only -- no artifact-retrieval channel available, printed here instead) ==="
+            for f in controllers/applicantsController.js controllers/applicationController.js controllers/companiesController.js controllers/contactsController.js controllers/cvBuilderController.js controllers/jobsController.js controllers/userController.js db/job_ddl.sql helpers/videoValidator.js; do
+              echo "--- DIFF: $f ---"
+              git diff -- "$f" || true
+            done
 
             echo "=== END DIAGNOSTICS ==="
 
