@@ -348,11 +348,15 @@ async function createLinkedinUser(liSub, email, emailVer, firstName, lastName, p
      ON CONFLICT (uid) DO NOTHING`,
     [uid, email, dummyPassword, roleId]
   );
+  // STITCH QA11 FIX F-01: users.email was dropped in a DDL migration --
+  // email lives on user_credentials only (already inserted above). Same
+  // fix pattern applied to userController.js's registerUserInDB and
+  // googleAuthController.js's chooseRole.
   await dbQuery.query(
-    `INSERT INTO ${dbSchema}.users (uid, email, firstname, lastname, photo_url)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO ${dbSchema}.users (uid, firstname, lastname, photo_url)
+     VALUES ($1,$2,$3,$4)
      ON CONFLICT (uid) DO NOTHING`,
-    [uid, email, firstName || null, lastName || null, photoUrl || null]
+    [uid, firstName || null, lastName || null, photoUrl || null]
   );
   await dbQuery.query(
     `INSERT INTO ${dbSchema}.auth_identities

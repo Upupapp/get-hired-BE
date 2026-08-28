@@ -303,9 +303,13 @@ const chooseRole = async (req, res) => {
     );
 
     // Insert into users
+    // STITCH QA11 FIX F-01: users.email was dropped in a DDL migration --
+    // email lives on user_credentials only (already inserted above). Same
+    // fix pattern already applied to controllers/userController.js's
+    // registerUserInDB for the email/password signup path.
     var profileResult = await dbQuery.query(
-      'INSERT INTO ' + dbSchema + '.users (uid, email, firstname, lastname, photo_url) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [uid, email, firstName || null, lastName || null, photoUrl || null]
+      'INSERT INTO ' + dbSchema + '.users (uid, firstname, lastname, photo_url) VALUES ($1, $2, $3, $4) RETURNING *',
+      [uid, firstName || null, lastName || null, photoUrl || null]
     );
 
     if (!credsResult.rows[0] || !profileResult.rows[0]) {
