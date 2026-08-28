@@ -826,7 +826,17 @@ const saveApplicantDetailsList = async (
 };
 
 const appplicantProfile = async (userId) => {
-  const searchQuery = `SELECT ap.*, u.*,
+  // BUGFIX: applicants_profile and users both have short_bio, photo_url,
+  // and updated_at columns (confirmed via live schema inspection --
+  // users.short_bio/photo_url are legacy/unused, never written by any
+  // save flow). With "ap.*, u.*", pg's row-to-object conversion keeps the
+  // LAST value for a duplicate column name, so u.*'s (empty) values were
+  // silently overwriting ap.*'s real ones on every profile fetch -- Short
+  // Bio always came back null regardless of what was actually saved.
+  // Swapping the order makes ap.* win for every overlapping column, which
+  // is correct in all three cases (the applicant-profile-specific value
+  // is always what should display, not the legacy users-table one).
+  const searchQuery = `SELECT u.*, ap.*,
     jt.job_type_name, jl.job_level_name, ws.work_setup_name
     FROM ${dbSchema}.applicants_profile ap
     left join ${dbSchema}.users u
