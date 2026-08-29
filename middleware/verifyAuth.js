@@ -35,15 +35,27 @@ const validateFirebaseIdToken = async (req, res, next) => {
   }
 
   try {
-    // idToken = idToken.replace(' Bearer ', '');
-    // console.log(idToken);
-    const decodedIdToken = await firebaseAdmin.auth().verifyIdToken(idToken);
+    // SIGNOUT SESSION-EXPIRY FIX: revokeTokenInFirebase() (called on
+    // /auth/logout) has always correctly called
+    // firebaseAdmin.auth().revokeRefreshTokens(uid) -- but verifyIdToken()
+    // only enforces that revocation if explicitly told to check for it.
+    // Without the `true` here, an ID token already in a browser's hands
+    // keeps passing verification (valid signature, not yet expired) right
+    // through logout, for up to its full ~1hr lifetime, regardless of any
+    // frontend fix -- the backend was never actually ending the session.
+    // checkRevoked:true makes the SDK compare the token's issued-at time
+    // against the user's revocation timestamp on every request.
+    const decodedIdToken = await firebaseAdmin.auth().verifyIdToken(idToken, true);
     req.user = decodedIdToken;
     next();
     return;
   } catch (error) {
     if (error.code === "auth/id-token-expired") {
       res.status(401).send("Token Expired. Login again.");
+      return;
+    }
+    if (error.code === "auth/id-token-revoked") {
+      res.status(401).send("Session has been signed out. Please log in again.");
       return;
     }
     res.status(401).send('Authentication failed.');

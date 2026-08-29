@@ -30,12 +30,18 @@ const optionalVerifyAuth = async (req, res, next) => {
   }
 
   try {
-    const decodedIdToken = await firebaseAdmin.auth().verifyIdToken(idToken);
+    // Same fix as verifyAuth.js: checkRevoked:true so a signed-out session's
+    // still-unexpired token is actually rejected here too, not just treated
+    // as valid personalized context.
+    const decodedIdToken = await firebaseAdmin.auth().verifyIdToken(idToken, true);
     req.user = decodedIdToken;
     return next();
   } catch (error) {
     if (error.code === "auth/id-token-expired") {
       return res.status(401).json({ message: "Your session has expired. Please sign in again." });
+    }
+    if (error.code === "auth/id-token-revoked") {
+      return res.status(401).json({ message: "Session has been signed out. Please log in again." });
     }
     return res.status(401).json({ message: "Unable to verify your session. Please sign in again." });
   }
