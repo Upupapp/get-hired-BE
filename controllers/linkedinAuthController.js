@@ -36,14 +36,21 @@ const dbSchema = env.schema;
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 
+// BUGFIX: production "LinkedIn token validation failed" (invalid_audience) --
+// LinkedIn's own OAuth handshake tolerates/trims incidental whitespace in the
+// client_id it's given, but our own aud/iss checks below did a raw !==
+// string comparison against the untrimmed env value -- a stray trailing
+// space/newline in LINKEDIN_CLIENT_ID (easy to introduce pasting into a
+// .env file) let the handshake itself succeed while still failing our own
+// stricter-than-LinkedIn's equality check. .trim() everything read from env.
 function getLiConfig() {
   return {
-    clientId:      process.env.LINKEDIN_CLIENT_ID || '',
-    clientSecret:  process.env.LINKEDIN_CLIENT_SECRET || '',
-    redirectUri:   process.env.LINKEDIN_REDIRECT_URI || '',
-    authEndpoint:  process.env.LINKEDIN_AUTHORIZATION_ENDPOINT || 'https://www.linkedin.com/oauth/v2/authorization',
-    tokenEndpoint: process.env.LINKEDIN_TOKEN_ENDPOINT         || 'https://www.linkedin.com/oauth/v2/accessToken',
-    userinfoUrl:   process.env.LINKEDIN_USERINFO_ENDPOINT      || 'https://api.linkedin.com/v2/userinfo',
+    clientId:      (process.env.LINKEDIN_CLIENT_ID || '').trim(),
+    clientSecret:  (process.env.LINKEDIN_CLIENT_SECRET || '').trim(),
+    redirectUri:   (process.env.LINKEDIN_REDIRECT_URI || '').trim(),
+    authEndpoint:  (process.env.LINKEDIN_AUTHORIZATION_ENDPOINT || 'https://www.linkedin.com/oauth/v2/authorization').trim(),
+    tokenEndpoint: (process.env.LINKEDIN_TOKEN_ENDPOINT         || 'https://www.linkedin.com/oauth/v2/accessToken').trim(),
+    userinfoUrl:   (process.env.LINKEDIN_USERINFO_ENDPOINT      || 'https://api.linkedin.com/v2/userinfo').trim(),
     enabled:       process.env.LINKEDIN_AUTH_ENABLED === 'true',
     appUrl:        env.app_url || 'http://localhost:4200',
   };
@@ -204,10 +211,27 @@ export const linkedinCallback = async (req, res) => {
       if (decoded && decoded.payload) {
         var p = decoded.payload;
         var now = Math.floor(Date.now() / 1000);
-        if (p.iss && p.iss !== 'https://www.linkedin.com') return redirectError('invalid_issuer');
-        if (p.aud && p.aud !== cfg.clientId) return redirectError('invalid_audience');
-        if (p.exp && p.exp < now) return redirectError('token_expired');
-        if (nonce && p.nonce && p.nonce !== nonce) return redirectError('invalid_nonce');
+        // BUGFIX: these four checks used to fail completely silently --
+        // no server-side log line at all, only a generic redirect to the
+        // FE -- making a real mismatch (e.g. invalid_audience) undiagnosable
+        // from PM2 logs. Log the actual vs. expected values (never the
+        // client secret) whenever one of these trips.
+        if (p.iss && p.iss !== 'https://www.linkedin.com') {
+          console.error('[linkedin/callback] invalid_issuer: got=' + p.iss);
+          return redirectError('invalid_issuer');
+        }
+        if (p.aud && p.aud !== cfg.clientId) {
+          console.error('[linkedin/callback] invalid_audience: tokenAud=' + p.aud + ' cfgClientId=' + cfg.clientId);
+          return redirectError('invalid_audience');
+        }
+        if (p.exp && p.exp < now) {
+          console.error('[linkedin/callback] token_expired: exp=' + p.exp + ' now=' + now);
+          return redirectError('token_expired');
+        }
+        if (nonce && p.nonce && p.nonce !== nonce) {
+          console.error('[linkedin/callback] invalid_nonce: tokenNonce=' + p.nonce + ' expectedNonce=' + nonce);
+          return redirectError('invalid_nonce');
+        }
       }
     }
 
