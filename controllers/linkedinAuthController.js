@@ -216,7 +216,13 @@ export const linkedinCallback = async (req, res) => {
         // FE -- making a real mismatch (e.g. invalid_audience) undiagnosable
         // from PM2 logs. Log the actual vs. expected values (never the
         // client secret) whenever one of these trips.
-        if (p.iss && p.iss !== 'https://www.linkedin.com') {
+        // ISSUER FIX: confirmed via live production logs (repeated
+        // invalid_issuer entries) that LinkedIn's real ID tokens carry
+        // iss="https://www.linkedin.com/oauth" -- earlier research pointed
+        // at "https://www.linkedin.com" (no /oauth), which was wrong for
+        // this integration and silently rejected every real LinkedIn
+        // sign-in since that check was added.
+        if (p.iss && p.iss !== 'https://www.linkedin.com/oauth') {
           console.error('[linkedin/callback] invalid_issuer: got=' + p.iss);
           return redirectError('invalid_issuer');
         }
