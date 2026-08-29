@@ -978,7 +978,7 @@ const getJobActionSummary = async (req, res) => {
     const qCount = await dbQuery.query(
       `SELECT COUNT(*) AS total
        FROM ${dbSchema}.interview_template_question itq
-       JOIN ${dbSchema}.job_interview_template jit ON jit.template_id = itq.template_id
+       JOIN ${dbSchema}.job_interview_template jit ON jit.job_interview_template_id = itq.job_interview_template_id
        WHERE jit.job_id = $1`,
       [jobId]
     );
