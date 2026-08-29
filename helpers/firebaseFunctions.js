@@ -13,30 +13,55 @@ import axios from 'axios';
 
 import env from "../env";
 
+// SIGNOUT-DOESN'T-WORK-FOR-EMAIL/PASSWORD FIX: this previously used the
+// stateful Firebase Client SDK (getAuth(), a module-level SINGLETON Auth
+// instance with its own auth.currentUser + background token-refresh timer)
+// to sign in -- an SDK designed for a single-user, browser-like context,
+// used here on a stateless multi-tenant Node server. Every email/password
+// login shared and mutated the SAME process-wide Auth object. Google/
+// LinkedIn sign-in (googleAuthController.js's exchangeGoogleTokenForFirebase,
+// linkedinAuthController.js's token exchange) never had this problem: both
+// already talk to Firebase's Identity Toolkit REST API directly -- a plain,
+// stateless HTTP call with no persistent SDK session at all. Rewritten to
+// match that same stateless pattern, eliminating the shared-singleton/
+// background-refresh risk entirely rather than trying to reason about
+// exactly how it interacted with revokeRefreshTokens().
 const signInUserAndGetTokeninFirebase = async (email, password) => {
   try {
-    const auth = getAuth();
+    const apiKey = env.apiKey;
+    const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + apiKey;
+    const response = await axios.post(url, {
+      email,
+      password,
+      returnSecureToken: true,
+    }, { timeout: 10000 });
 
-    const { user } = await signInWithEmailAndPassword(auth, email, password);
+    const { idToken, refreshToken, localId: uid } = response.data;
 
-    if (!user.emailVerified) {
-      revokeTokenInFirebase(user.uid);
+    // The REST sign-in response doesn't include emailVerified -- decode it
+    // off the token's own claims via Admin SDK, same double-verification
+    // pattern already used by the Google/LinkedIn flows.
+    const decoded = await firebaseAdmin.auth().verifyIdToken(idToken);
+
+    if (!decoded.email_verified) {
+      await revokeTokenInFirebase(uid);
       const errorMessage =
         "Please Verify Email with the link sent to your registered email address.";
       throw Error(errorMessage);
     }
 
-    const token = await auth.currentUser.getIdToken();
-    const refreshToken = auth.currentUser.refreshToken;
-
-    const firebaseUser = {
-      uid: user.uid,
-      token,
-      refreshToken,
-    };
-
-    return firebaseUser;
+    return { uid, token: idToken, refreshToken };
   } catch (err) {
+    // Firebase's REST API error shape is nested under response.data.error --
+    // surface its message (e.g. INVALID_PASSWORD, EMAIL_NOT_FOUND) instead
+    // of a generic Axios error object where available. The caller
+    // (loginUserInDBAndFirebase) already validates the password against our
+    // own DB copy before this ever runs, and the final user-facing message
+    // is generic either way (userController.js's loginUser catch block), so
+    // exact wording here only matters for server-side error logs.
+    if (err && err.response && err.response.data && err.response.data.error) {
+      throw Error(err.response.data.error.message || 'Authentication failed.');
+    }
     throw err;
   }
 };
