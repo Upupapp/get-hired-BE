@@ -103,6 +103,10 @@ var toPublicProfileDto = function(raw, openJobsCount) {
     heroBanner:     bannerObj,
     openJobsCount:  openJobs,
     updatedAt:      raw.updated_at || null,
+    // COMPANY DUPLICATION FIX: true only for a renamed duplicate ("Company
+    // Name #2", etc.) created by the historical-duplicates backfill --
+    // drives the "duplicate listing" banner on this public page.
+    isDuplicate:    raw.is_duplicate === true,
     seo: {
       title:       seoTitle,
       description: seoDesc,
@@ -151,7 +155,7 @@ export var getPublicCompanyProfile = async function(req, res) {
     }
 
     var companyResult = await dbQuery.query(
-      'SELECT c.company_id, c.company_name, c.company_slug, c.company_logo, c.company_banner, c.company_details, c.company_city, c.company_country, c.number_of_employee, c.work_setup_id, c.updated_at, i.industry_name AS company_industry_name FROM gethired.companies c LEFT JOIN gethired.industry i ON i.industry_id = c.industry_id WHERE c.company_slug = $1 LIMIT 1',
+      'SELECT c.company_id, c.company_name, c.company_slug, c.company_logo, c.company_banner, c.company_details, c.company_city, c.company_country, c.number_of_employee, c.work_setup_id, c.updated_at, c.is_duplicate, i.industry_name AS company_industry_name FROM gethired.companies c LEFT JOIN gethired.industry i ON i.industry_id = c.industry_id WHERE c.company_slug = $1 LIMIT 1',
       [slug]
     );
 

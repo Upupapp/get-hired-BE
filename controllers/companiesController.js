@@ -29,6 +29,9 @@ import {
   companyDetailsById,
   companyDetailsBySlug,
   generateSlug,
+  generateUniqueSlug,
+  assertCompanyNameAvailable,
+  DuplicateCompanyNameError,
   companyUsers,
   assignEmployeeToCompany,
   getCompanyNameByCompanyId,
@@ -52,6 +55,25 @@ import env from "../env";
 
 const dbSchema = env.schema;
 
+// COMPANY DUPLICATION FIX: matches updateCompany's existing fieldErrors
+// response shape (400, feedback.state='validation_error') so the frontend's
+// already-built field-error UI (company-details-form.component.ts
+// afterError()) handles a duplicate name on CREATE the same way it already
+// handles one on UPDATE, with no new frontend branch needed.
+const duplicateNameFieldErrorResponse = (res, error) => {
+  return res.status(400).json({
+    status: 'error',
+    error: 'Please review the highlighted fields.',
+    fieldErrors: { companyName: error.message },
+    feedback: {
+      state: 'validation_error',
+      title: 'Some details need a quick check',
+      body: 'We found fields that need to be fixed before saving.',
+      primaryCta: 'Review fields',
+    },
+  });
+};
+
 const createInitialCompany = async (req, res) => {
   const { companyName, companyEmail } = req.body;
   const { uid } = req.user;
@@ -71,6 +93,9 @@ const createInitialCompany = async (req, res) => {
 
     return res.status(status.success).json(successResponse(company));
   } catch (error) {
+    if (error instanceof DuplicateCompanyNameError) {
+      return duplicateNameFieldErrorResponse(res, error);
+    }
     console.error('[companiesController] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
@@ -95,6 +120,9 @@ const createCompanyFull = async (req, res) => {
 
     return res.status(status.success).json(successResponse(company));
   } catch (error) {
+    if (error instanceof DuplicateCompanyNameError) {
+      return duplicateNameFieldErrorResponse(res, error);
+    }
     console.error('[companiesController] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
   }
@@ -175,6 +203,23 @@ const updateCompany = async (req, res) => {
       }
     }
 
+    // COMPANY DUPLICATION FIX: renaming to a name another company already
+    // has was previously unchecked (this is also where every existing
+    // duplicate's slug got silently regenerated from an already-colliding
+    // name, on every edit). excludeCompanyId=companyId so a company saving
+    // its own unchanged name never collides with itself.
+    if (trimmedName) {
+      try {
+        await assertCompanyNameAvailable(trimmedName, companyId);
+      } catch (dupErr) {
+        if (dupErr instanceof DuplicateCompanyNameError) {
+          fieldErrors.companyName = dupErr.message;
+        } else {
+          throw dupErr;
+        }
+      }
+    }
+
     if (Object.keys(fieldErrors).length > 0) {
       return res.status(400).json({
         status: 'error',
@@ -219,7 +264,7 @@ const updateCompany = async (req, res) => {
       companyZip,
       companyAddressOne,
       shownPublicly === true || shownPublicly === 'true',
-      generateSlug(trimmedName),
+      await generateUniqueSlug(trimmedName, companyId),
       companyId,
     ]);
 
@@ -329,8 +374,13 @@ const getSpecificCompany = async (req, res) => {
 };
 
 const createBasicCompany = async (companyName, companyEmail, userId) => {
+  // COMPANY DUPLICATION FIX: reject an exact (case/whitespace-insensitive)
+  // name match before creating anything -- previously unrestricted, which
+  // is how this app ended up with multiple companies sharing one name/slug.
+  await assertCompanyNameAvailable(companyName);
+
   const companyId = idGenerator(6, "COM");
-  const slug = generateSlug(companyName);
+  const slug = await generateUniqueSlug(companyName);
   const insertQuery = `INSERT INTO ${dbSchema}.companies
   (company_id, company_name, company_email, created_at, created_by, company_slug)
   VALUES($1, $2, $3, $4, $5, $6) returning *;`;
@@ -381,6 +431,11 @@ const createBasicCompany = async (companyName, companyEmail, userId) => {
 };
 
 const createCompany = async (company, uid) => {
+  // COMPANY DUPLICATION FIX: same guard as createBasicCompany, checked
+  // before the logo upload so a rejected duplicate never wastes a storage
+  // write.
+  await assertCompanyNameAvailable(company && company.companyName);
+
   let rawUrl = "";
   const companyId = idGenerator(6, "COM");
 
@@ -437,7 +492,7 @@ const createCompany = async (company, uid) => {
       companyTown,
       companyZip,
       companyAddressOne,
-      generateSlug(companyName),
+      await generateUniqueSlug(companyName),
     ]);
 
     if (!rows && rows.length == 0) {

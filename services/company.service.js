@@ -184,6 +184,62 @@ const generateSlug = (name) => {
     .replace(/^-|-$/g, '');
 };
 
+// COMPANY DUPLICATION FIX: thrown by assertCompanyNameAvailable so callers
+// can distinguish "name already taken" from a generic DB failure and
+// respond 409 instead of a bare 500.
+class DuplicateCompanyNameError extends Error {
+  constructor(companyName) {
+    super(`A company named "${companyName}" already exists.`);
+    this.name = 'DuplicateCompanyNameError';
+    this.code = 'DUPLICATE_COMPANY_NAME';
+  }
+}
+
+// Case-insensitive, whitespace-trimmed exact-name match -- "Acme Inc",
+// "acme inc", and "  Acme Inc  " are all the same name for this check.
+// excludeCompanyId lets updateCompany check "does any OTHER company already
+// have this name" without a company always colliding with itself.
+const assertCompanyNameAvailable = async (companyName, excludeCompanyId = null) => {
+  const normalized = (companyName || '').trim();
+  if (!normalized) return;
+
+  const query = excludeCompanyId
+    ? `SELECT company_id FROM ${dbSchema}.companies
+       WHERE lower(trim(company_name)) = lower($1) AND company_id != $2 LIMIT 1`
+    : `SELECT company_id FROM ${dbSchema}.companies
+       WHERE lower(trim(company_name)) = lower($1) LIMIT 1`;
+  const params = excludeCompanyId ? [normalized, excludeCompanyId] : [normalized];
+
+  const { rows } = await dbQuery.query(query, params);
+  if (rows && rows.length > 0) {
+    throw new DuplicateCompanyNameError(normalized);
+  }
+};
+
+// Guarantees a unique company_slug even when generateSlug(name) alone would
+// collide -- e.g. "Acme Inc." and "Acme, Inc" normalize to the same base
+// slug despite being different exact strings, so this is real defense in
+// depth even with assertCompanyNameAvailable enforcing exact-name
+// uniqueness. Appends -2, -3, ... until no OTHER company (excludeCompanyId
+// excluded, same reasoning as above) already has that slug.
+const generateUniqueSlug = async (companyName, excludeCompanyId = null) => {
+  const base = generateSlug(companyName);
+  if (!base) return base;
+
+  let candidate = base;
+  let suffix = 2;
+  while (true) {
+    const query = excludeCompanyId
+      ? `SELECT company_id FROM ${dbSchema}.companies WHERE company_slug = $1 AND company_id != $2 LIMIT 1`
+      : `SELECT company_id FROM ${dbSchema}.companies WHERE company_slug = $1 LIMIT 1`;
+    const params = excludeCompanyId ? [candidate, excludeCompanyId] : [candidate];
+    const { rows } = await dbQuery.query(query, params);
+    if (!rows || rows.length === 0) return candidate;
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+};
+
 const mappedCompanyBasicInfo = async (raw) => {
   return {
     companyId: raw.company_id,
@@ -215,6 +271,11 @@ const mappedCompany = (raw) => {
     createdBy: raw.created_by,
     updatedAt: raw.updated_at,
     slug: raw.company_slug || generateSlug(raw.company_name),
+    // COMPANY DUPLICATION FIX: true only for a renamed duplicate ("Company
+    // Name #2", etc.) from the historical-duplicates backfill -- drives the
+    // "duplicate listing" banner on the public company page. undefined
+    // (falsy) until the is_duplicate column migration is applied.
+    isDuplicate: raw.is_duplicate === true,
   };
 };
 
@@ -451,6 +512,9 @@ export {
   companyDetailsById,
   companyDetailsBySlug,
   generateSlug,
+  generateUniqueSlug,
+  assertCompanyNameAvailable,
+  DuplicateCompanyNameError,
   companyUsers,
   assignEmployeeToCompany,
   getCompanyNameByCompanyId,
