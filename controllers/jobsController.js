@@ -40,6 +40,14 @@ import { getSavedJobStatus, toggleSavedJob } from "../services/savedJobsService"
 
 const dbSchema = env.schema;
 
+// Job banner is optional at create/edit time (job-post bug fix, 2026-08-30).
+// When the employer skips it, every job still needs *something* to render
+// in cards/detail/SEO — rather than patching every read-side mapper and
+// template that displays job_banner, the default is applied once here, at
+// write time, so job_banner in the DB is always either a real upload or
+// this shared fallback. Asset lives in get-hired-FE's public bundle.
+const DEFAULT_JOB_BANNER_URL = `${env.app_url}/assets/images/default_job_post_banner.png`;
+
 const createJobs = async (req, res) => {
   let questions = [];
 
@@ -104,6 +112,9 @@ const createJobs = async (req, res) => {
         "job_banner",
         { ownerType: "job", ownerId: jobId, companyId: companyId, jobId: jobId, createdBy: uid }
       );
+    }
+    if (!rawUrl) {
+      rawUrl = DEFAULT_JOB_BANNER_URL;
     }
 
     const { rows } = await dbQuery.query(insertQuery, [
@@ -385,6 +396,9 @@ const updateJob = async (req, res) => {
       );
     } else {
       rawUrl = jobBanner;
+    }
+    if (!rawUrl) {
+      rawUrl = DEFAULT_JOB_BANNER_URL;
     }
 
     const { rows } = await dbQuery.query(updateQuery, [
