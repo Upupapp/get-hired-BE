@@ -400,6 +400,36 @@ const saveJobArray = async (jobId, arrays) => {
 // This allows updateQuestionById to add a defence-in-depth company_id check
 // on each individual question update, scoped via job_interview_template.
 // The primary ownership gate is in the parent updateJob WHERE clause.
+//
+// BUG #4 FIX (2026-08-30) -- root cause of "12 duplicated interview
+// questions on edit": this function used to create a BRAND NEW
+// job_interview_template row every single time it was called with a falsy
+// interviewTemplateId, with no check for whether the job already had one.
+// The frontend's autosave path (JobCreateComponent.performAutosave()) and
+// the AI-Create background draft save (persistAssistantDraft()) BOTH call
+// JobService.saveJob() directly, bypassing the NgRx store on purpose (see
+// their own doc comments) -- which means a newly-added interview question
+// (no questionId yet, from CreateInterviewComponent.addQuestion(), which
+// never sets one) never gets patched with its real DB-assigned questionId
+// after its first successful insert, and interviewTemplateId is never
+// threaded back into the form either. Every subsequent autosave tick (fires
+// ~2s after each further form edit, for as long as jobId is set) resent the
+// exact same tagless question + a null interviewTemplateId -- and this
+// function, having no idea a template already existed, created ANOTHER
+// "default" template and inserted the question again. getJobInterviewQuestions()
+// (below) reads by job_id + template_name with no scoping to a single
+// template row, so once 2+ "default" templates existed for one job, it
+// silently summed every question across all of them -- 6 real questions +
+// 6 autosave-driven duplicate inserts of one new question read back as 12.
+//
+// Fix: look up any EXISTING template for this job before ever creating one
+// (find-or-create, not blind-create) -- a job never legitimately needs more
+// than one interview template today. This closes the duplicate-TEMPLATE
+// creation hole regardless of which caller (autosave, AI-Create, explicit
+// Save/Publish) omits interviewTemplateId. Also now returns the persisted
+// question set (with real questionIds) and the resolved templateId so
+// callers can patch their local form state and stop re-submitting
+// newly-created questions as if they were still new.
 const interviewQuestionsUpdate = async (
   jobId,
   interviewQuestions,
@@ -407,22 +437,34 @@ const interviewQuestionsUpdate = async (
   companyId = null
 ) => {
   let templateToUse = interviewTemplateId;
-  await Promise.all(interviewQuestions.map(async (question) => {
-    if (question.questionId) {
-      await updateQuestionById(question, companyId);
-    } else {
-      if (!templateToUse) {
-        //  Create template first
-        const newTemplate = await createInterviewTemplateQuestions(
-          jobId,
-          "default"
-        );
 
-        templateToUse = newTemplate.jobInterviewTemplateId;
-      }
-      await createQuestion(question, templateToUse);
+  // BUG #4 FIX: resolve (find-or-create) the template ONCE, up front,
+  // before touching any individual question -- not lazily inside the
+  // Promise.all below. interviewQuestions.map() starts every mapped async
+  // callback synchronously up to its first `await`; resolving the template
+  // lazily inside that loop meant N concurrently-starting callbacks could
+  // all observe `templateToUse` as still falsy at the same time and each
+  // create their own "default" template in parallel, before any of the
+  // find-or-create awaits had a chance to settle. Resolving it here,
+  // sequentially, guarantees every question in this call is attributed to
+  // the exact same, single template.
+  if (!templateToUse && interviewQuestions.some((q) => !q.questionId)) {
+    const existingTemplateId = await getInterviewTemplateId(jobId);
+    if (existingTemplateId) {
+      templateToUse = existingTemplateId;
+    } else {
+      const newTemplate = await createInterviewTemplateQuestions(jobId, "default");
+      templateToUse = newTemplate.jobInterviewTemplateId;
     }
+  }
+
+  const persisted = await Promise.all(interviewQuestions.map(async (question) => {
+    if (question.questionId) {
+      return await updateQuestionById(question, companyId);
+    }
+    return await createQuestion(question, templateToUse);
   }));
+  return { interviewQuestions: persisted, interviewTemplateId: templateToUse };
 };
 
 const jobDetails = async (jobId) => {

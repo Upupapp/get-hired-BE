@@ -134,6 +134,12 @@ const createJobs = async (req, res) => {
       return res.status(status.error).json(errorResponse("Failed to create Jobs"));
     }
 
+    // BUG #4 FIX: populated below only if interview questions were created,
+    // then relayed back on dbResponse so the caller can learn the real
+    // questionIds/templateId without a separate GET.
+    let interviewTemplateIdForResponse = null;
+    let questionsForResponse = null;
+
     if (rows[0].job_id) {
       await saveJobArray(rows[0].job_id, {
         badges,
@@ -157,6 +163,17 @@ const createJobs = async (req, res) => {
             createQuestion(question, template.jobInterviewTemplateId)
           )
         );
+        // BUG #4 FIX: relay the real, DB-assigned questionIds + templateId
+        // back to the caller. Without this, a caller that saves this same
+        // job again before ever re-fetching it (e.g. JobCreateComponent's
+        // performAutosave()/persistAssistantDraft(), which call
+        // JobService.saveJob() directly and never re-request job details)
+        // has no way to know these questions already exist -- it would
+        // resubmit them as if new, causing interviewQuestionsUpdate() to
+        // insert duplicates. See services/job.service.js's
+        // interviewQuestionsUpdate() for the matching update-path fix.
+        interviewTemplateIdForResponse = template.jobInterviewTemplateId;
+        questionsForResponse = questions;
       }
     }
 
@@ -167,6 +184,11 @@ const createJobs = async (req, res) => {
     }
 
     const dbResponse = await mappedJob(rows[0]);
+    // BUG #4 FIX: see comment above where these are populated.
+    if (questionsForResponse) {
+      dbResponse.interviewQuestions = questionsForResponse;
+      dbResponse.interviewTemplateId = interviewTemplateIdForResponse;
+    }
     // SEO: notify Google the new job URL is available (fire-and-forget).
     // No-op unless GOOGLE_INDEXING_API_ENABLED=true in the environment.
     notifyJobUrlUpdated(dbResponse);
@@ -404,11 +426,17 @@ const updateJob = async (req, res) => {
       certificationRequirements,
     });
 
+    // BUG #4 FIX: relay the persisted questionIds/templateId back on the
+    // response -- see interviewQuestionsUpdate() in services/job.service.js
+    // for why this matters (callers that save this job again before ever
+    // re-fetching it, e.g. background autosave, must learn which questions
+    // are already persisted so they aren't resubmitted as brand new).
+    let interviewResult = null;
     if (interviewQuestions) {
       // F-08 child-table hardening: pass callerCompany.companyId so that
       // updateQuestionById gains a defence-in-depth ownership scope on every
       // individual question update (joins back through job_interview_template).
-      await interviewQuestionsUpdate(
+      interviewResult = await interviewQuestionsUpdate(
         jobId,
         interviewQuestions,
         interviewTemplateId,
@@ -417,6 +445,10 @@ const updateJob = async (req, res) => {
     }
 
     const dbResponse = await mappedJob(rows[0]);
+    if (interviewResult) {
+      dbResponse.interviewQuestions = interviewResult.interviewQuestions;
+      dbResponse.interviewTemplateId = interviewResult.interviewTemplateId;
+    }
 
     return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
