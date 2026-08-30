@@ -295,7 +295,20 @@ const editContact = async (contact) => {
       return { ...dbResponse, message };
     }
   } catch (error) {
-    throw Error(error);
+    // BUGFIX: this used to `throw Error(error)`, which -- when `error` is
+    // already an Error instance (e.g. the `throw Error("FORBIDDEN")` above,
+    // for a contact_id/company_id that didn't match any row) -- wraps it
+    // into a NEW Error whose message becomes the string "Error: FORBIDDEN"
+    // (via Error's own toString()), not "FORBIDDEN". contactsController.js's
+    // catch checks `error.message === 'FORBIDDEN'` to return a clean 403;
+    // that strict-equality check always failed because of this double-wrap,
+    // so every "this contact doesn't belong to your company" case fell
+    // through to a generic 500 instead -- reproduced by editing any
+    // contact-list row that isn't a real gethired.contact row (e.g. a
+    // candidate/job-applicant entry the Contacts list also renders, which
+    // has no contact_id to match). Re-throw as-is so the controller's
+    // existing 403 branch actually works.
+    throw error;
   }
 };
 
