@@ -13,6 +13,9 @@ import {
 import { createApplicationSnapshots } from './applicationSnapshotService';
 import { validateDocumentFile } from './documentUploadValidationService';
 import { canAccessJob } from './accessControl.service';
+import { createNotification } from './notification.service';
+
+const SHORTLISTED_STATUS_ID = 4;
 
 const dbSchema = env.schema;
 
@@ -459,6 +462,35 @@ const updateApplicationStatus = async (applicationId, newStatusId, callerCompany
   } catch (emailErr) {
     console.warn('[applicationStatus] status-change email setup error (non-blocking):',
       emailErr && emailErr.message ? emailErr.message.substring(0, 80) : 'unknown');
+  }
+
+  // In-app "shortlisted" notification -- non-blocking, mirrors the email
+  // side effect above. Only fires on the transition INTO Shortlisted
+  // (id 4), not every status change, per the ask ("when im shortlisted...
+  // i get notified"). eventKey makes this idempotent per (applicationId,
+  // old->new) pair, same precedent as the email audit log's event_key.
+  if (newStatusIdInt === SHORTLISTED_STATUS_ID) {
+    (async () => {
+      try {
+        const job = await jobDetails(app.job_id);
+        createNotification({
+          recipientUid: app.candidate_id,
+          type: 'application_shortlisted',
+          title: "You've been shortlisted!",
+          body: `${job.companyName || 'An employer'} shortlisted you for ${job.jobTitle || 'a job'}.`,
+          linkRoute: '/user/applications/' + applicationId,
+          relatedApplicationId: applicationId,
+          relatedJobId: app.job_id,
+          eventKey: `application:${applicationId}:notif:status_change:${oldStatusId}->${newStatusIdInt}`,
+        }).catch((err) => {
+          console.error('[applicationStatus] SHORTLIST_NOTIFICATION_FAILED (non-blocking):',
+            err && err.message ? err.message.substring(0, 80) : 'unknown');
+        });
+      } catch (err) {
+        console.error('[applicationStatus] SHORTLIST_NOTIFICATION_SETUP_FAILED (non-blocking):',
+          err && err.message ? err.message.substring(0, 80) : 'unknown');
+      }
+    })();
   }
 
   return {
