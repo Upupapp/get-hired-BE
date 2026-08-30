@@ -92,6 +92,23 @@ const uploadInStorage = (folder, fileName, uploadedFile, withCodecs = 0) =>
 
 export default uploadInStorage;
 
+// Best-effort Storage cleanup for a file we're replacing (e.g. CV Builder's
+// "replace CV" -- see cvBuilderController.js's uploadCv()). Accepts the same
+// public download URL getDownloadURL() (above) returns; refFromURL() handles
+// that format directly, no manual path parsing needed. Never throws -- a
+// failure here must never block or fail the caller's actual request (the DB
+// row is already deleted by the time this runs; a stray orphaned blob in
+// Storage is a cheap, non-urgent cleanup miss, not a correctness problem).
+export async function deleteFromStorageByUrl(fileUrl) {
+  if (!fileUrl) return;
+  try {
+    const app = getCompatApp();
+    await app.storage().refFromURL(fileUrl).delete();
+  } catch (err) {
+    console.error('[uploader] deleteFromStorageByUrl failed (non-blocking):', err && err.message);
+  }
+}
+
 // ── Firebase admin bucket helper ─────────────────────────────────────────────
 
 function getAdminBucket() {

@@ -2,6 +2,7 @@ import dbQuery from "../db/dbQuery";
 import env from "../env";
 import { validateCvFile } from "../services/cvValidationService";
 import { appplicantProfile, uploadAndSaveAttachment } from "../services/applicant.service";
+import { deleteFromStorageByUrl } from "../helpers/uploader";
 
 const dbSchema = env.schema;
 
@@ -60,19 +61,27 @@ const uploadCv = async (req, res) => {
       ? filename.trim()
       : (validation.mimeType === "application/pdf" ? "resume.pdf" : "resume.docx");
 
-    // Clear any previously-flagged CV BEFORE the new upload attempt starts,
-    // not after it succeeds -- if the upload/insert below fails, the
-    // candidate is left with no is_cv=true row rather than two, which is
-    // the safer failure mode (an honest "no CV yet" beats a silently wrong
-    // "old CV is still current" once uploadCv has already told the caller
-    // the new one is being processed... but since we don't respond success
-    // until the insert below actually completes, either row set the caller
-    // observes -- old-cleared-only or old-cleared-plus-new -- is truthful
-    // for the request's actual outcome).
-    await dbQuery.query(
-      `UPDATE ${dbSchema}.documents SET is_cv = false WHERE applicant_id = $1 AND is_cv = true`,
+    // BUGFIX (replace CV leaves the old file behind): this used to just
+    // flip the old row's is_cv flag to false rather than deleting it.
+    // getApplicantArrayDetails()'s exclusion for the generic documents list
+    // (Profile Setup's "Upload documents" step, and any other "your
+    // documents" surface) only excludes rows where is_cv IS TRUE -- a row
+    // with is_cv=false passes that filter right through, so the "old" CV
+    // silently reappeared in every other documents list as if it were just
+    // an ordinary uploaded file, alongside (never actually replaced by) the
+    // new one. Deletes the old row outright instead, and best-effort cleans
+    // up its Storage blob (non-blocking -- a failure here never blocks the
+    // new upload). Still done BEFORE the new upload/insert attempt starts,
+    // same reasoning as before: if the new upload fails, the applicant is
+    // left with no CV rather than two, which is the safer, honest failure
+    // mode.
+    const { rows: oldCvRows } = await dbQuery.query(
+      `DELETE FROM ${dbSchema}.documents WHERE applicant_id = $1 AND is_cv = true RETURNING fileurl`,
       [profile.applicantProfileId]
     );
+    for (const oldRow of oldCvRows) {
+      deleteFromStorageByUrl(oldRow.fileurl).catch(() => {});
+    }
 
     const saved = await uploadAndSaveAttachment(
       { file, filename: safeFilename, size: validation.approxSizeBytes, type: validation.mimeType },
