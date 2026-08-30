@@ -270,4 +270,71 @@ const listRecruiterThreads = async (callerUid) => {
   }));
 };
 
-export { findOrCreateThread, listMessages, sendMessage, loadAuthorizedThread, listRecruiterThreads };
+/**
+ * Jobseeker Messages tab -- applicant-side equivalent of
+ * listRecruiterThreads() above. Returns all threads where the caller is the
+ * applicant, enriched with company/job context and a last-message snippet,
+ * so the applicant portal can render its own inbox the same way the
+ * recruiter portal does.
+ *
+ * Scoping mirrors listRecruiterThreads() exactly: derived server-side from
+ * the caller's own uid (`mt.applicant_uid = $1`), never from any
+ * client-supplied id. An applicant can only ever see threads where THEY are
+ * the applicant_uid -- never another jobseeker's threads, and never an
+ * employer's internal-only threads (there are none in this schema; every
+ * thread already requires an applicant_uid).
+ */
+const listApplicantThreads = async (callerUid) => {
+  const { rows } = await dbQuery.query(
+    `SELECT
+       mt.id            AS "threadId",
+       mt.job_id        AS "jobId",
+       mt.company_id    AS "companyId",
+       mt.updated_at    AS "lastMessageAt",
+       j.job_title      AS "jobTitle",
+       c.company_name   AS "companyName",
+       c.company_logo   AS "companyLogoUrl",
+       last_msg.body    AS "lastMessageSnippet",
+       last_msg.sender_role AS "lastSenderRole"
+     FROM ${dbSchema}.message_threads mt
+     LEFT JOIN ${dbSchema}.jobs j
+       ON j.job_id = mt.job_id
+     LEFT JOIN ${dbSchema}.companies c
+       ON c.company_id = mt.company_id
+     LEFT JOIN LATERAL (
+       SELECT body, sender_role
+       FROM   ${dbSchema}.messages
+       WHERE  thread_id = mt.id
+       ORDER  BY created_at DESC
+       LIMIT  1
+     ) last_msg ON true
+     WHERE mt.applicant_uid = $1
+     ORDER BY mt.updated_at DESC
+     LIMIT 200;`,
+    [callerUid]
+  );
+
+  return rows.map((row) => ({
+    threadId: row.threadId,
+    jobId: row.jobId,
+    companyId: row.companyId,
+    jobTitle: row.jobTitle || null,
+    companyName: row.companyName || null,
+    companyLogoUrl: row.companyLogoUrl || null,
+    lastMessageSnippet: row.lastMessageSnippet
+      ? row.lastMessageSnippet.slice(0, 120)
+      : null,
+    lastSenderRole: row.lastSenderRole || null,
+    lastMessageAt: row.lastMessageAt,
+    needsReply: row.lastSenderRole === "employer",
+  }));
+};
+
+export {
+  findOrCreateThread,
+  listMessages,
+  sendMessage,
+  loadAuthorizedThread,
+  listRecruiterThreads,
+  listApplicantThreads,
+};

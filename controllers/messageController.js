@@ -1,4 +1,4 @@
-import { findOrCreateThread, listMessages, sendMessage, listRecruiterThreads } from "../services/message.service";
+import { findOrCreateThread, listMessages, sendMessage, listRecruiterThreads, listApplicantThreads } from "../services/message.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
 
 const ERROR_STATUS_BY_CODE = {
@@ -89,4 +89,21 @@ const getRecruiterThreads = async (req, res) => {
   }
 };
 
-export { openThread, getThreadMessages, postMessage, getRecruiterThreads };
+// Jobseeker Messages tab -- returns all threads where the caller is the
+// applicant. Scoping is enforced server-side in listApplicantThreads()
+// via `mt.applicant_uid = callerUid`; there is no way to pass another
+// user's uid in from the request.
+const getApplicantThreads = async (req, res) => {
+  const { uid } = req.user;
+
+  try {
+    const threads = await listApplicantThreads(uid);
+    return res.status(status.success).json(successResponse(threads));
+  } catch (error) {
+    if (handleKnownError(error, res)) return;
+    console.error('[messageController] error:', error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
+export { openThread, getThreadMessages, postMessage, getRecruiterThreads, getApplicantThreads };

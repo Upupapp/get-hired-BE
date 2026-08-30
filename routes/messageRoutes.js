@@ -1,5 +1,5 @@
 ﻿import express from "express";
-import { openThread, getThreadMessages, postMessage, getRecruiterThreads } from "../controllers/messageController";
+import { openThread, getThreadMessages, postMessage, getRecruiterThreads, getApplicantThreads } from "../controllers/messageController";
 import verifyAuth from "../middleware/verifyAuth";
 
 // GH-EMP-B04 -- messaging foundation. Every route verifyAuth-protected
@@ -17,5 +17,11 @@ router.post("/messages/thread/send", verifyAuth, postMessage);
 // B01: Returns all threads scoped to the authenticated recruiter's company.
 // 403 if caller has no company; 200+[] if company has no threads yet.
 router.get("/messages/recruiter/threads", verifyAuth, getRecruiterThreads);
+
+// Jobseeker Messages tab: returns all threads scoped to the authenticated
+// applicant's own uid (message.service.listApplicantThreads). No
+// company/role check needed here -- any authenticated caller only ever
+// gets back threads where THEY are the applicant.
+router.get("/messages/applicant/threads", verifyAuth, getApplicantThreads);
 
 export default router;
