@@ -29,7 +29,19 @@ import env from "../env";
 const signInUserAndGetTokeninFirebase = async (email, password) => {
   try {
     const apiKey = env.apiKey;
-    const url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + apiKey;
+    // LOCAL DEV ONLY: this REST call previously always hit the real Google
+    // Identity Toolkit endpoint, bypassing FIREBASE_AUTH_EMULATOR_HOST
+    // entirely -- unlike the Admin SDK (auto-redirects) and the old Client
+    // SDK usage this replaced (connectAuthEmulator()). That silently broke
+    // email/password login against the local Auth Emulator (real prod
+    // EMAIL_NOT_FOUND for emulator-only accounts). Guarded exactly like the
+    // Admin SDK / Client SDK emulator branches elsewhere in this codebase:
+    // requires the env var AND a non-production NODE_ENV.
+    const isProduction = process.env.NODE_ENV === "production";
+    const emulatorHost = !isProduction && process.env.FIREBASE_AUTH_EMULATOR_HOST;
+    const url = emulatorHost
+      ? `http://${emulatorHost}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`
+      : 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=' + apiKey;
     const response = await axios.post(url, {
       email,
       password,
