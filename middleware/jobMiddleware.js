@@ -112,8 +112,15 @@ var sanitizeJobContent = function(req, res, next) {
  * Returns 422 with a structured error if validation fails.
  *
  * Mirrors the FE publishJobPost() gate exactly:
- *   jobTypeId, jobLevelId, jobCity, jobCountry, jobDescription,
- *   workSetupId, banner (file OR url), companyId
+ *   jobTypeId, jobLevelId, jobCity, jobCountry, jobDescription, workSetupId,
+ *   companyId
+ *
+ * Banner is NOT required here (job-create bug fix, 2026-08-30/31): it's
+ * optional on the FE form, and jobsController.js's createJobs/updateJob
+ * apply a shared default banner image when none is uploaded. Requiring it
+ * in this pre-controller gate made every publish with no banner (including
+ * the AI Assistant's direct "Post this job" path) fail with a 422 before
+ * the controller ever got a chance to apply that default.
  */
 var validateJobPublishPayload = function(req, res, next) {
   var body = req.body || {};
@@ -130,11 +137,6 @@ var validateJobPublishPayload = function(req, res, next) {
   if (!body.jobCountry || !String(body.jobCountry).trim()) missing.push('jobCountry');
   if (!body.jobDescription || !String(body.jobDescription).trim()) missing.push('jobDescription');
   if (!body.workSetupId) missing.push('workSetupId');
-
-  // Banner: either an uploaded file array OR an existing URL
-  var hasBannerFile = Array.isArray(body.bannerFile) && body.bannerFile.length > 0;
-  var hasBannerUrl = body.jobBanner && String(body.jobBanner).trim() !== '';
-  if (!hasBannerFile && !hasBannerUrl) missing.push('jobBanner');
 
   // companyId is derived server-side in the controller (from JWT) so we
   // don't require it in the body — but if present, validate it's a string.
