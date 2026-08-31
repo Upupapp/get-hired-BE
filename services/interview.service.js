@@ -14,8 +14,39 @@ import { sqlJobScopeFilter } from './accessControl.service'
 
 const createQuestion = async (questionDetails, templateId) => {
   const { question, answerDuration, retakes, sequence } = questionDetails
+
+  // PRODUCTION FIX: this used to always blindly INSERT, with no check for
+  // an existing row at the same template+sequence -- any caller that sent
+  // a question without its real questionId (a client-side sync gap, a
+  // retried/overlapping autosave, any future regression) silently created
+  // a brand-new duplicate row every single time, with no safety net at
+  // all. There's no DB-level UNIQUE constraint to fall back on either
+  // (existing production data already has duplicate template+sequence
+  // pairs from before this fix, so one can't be added without a data
+  // cleanup that hasn't been authorized) -- this is the application-level
+  // equivalent: if a row already exists at this exact template+sequence,
+  // update it in place instead of creating a second one.
+  try {
+    const existing = await dbQuery.query(
+      `SELECT template_question_id FROM ${dbSchema}.interview_template_question
+       WHERE job_interview_template_id=$1 AND sequence=$2`,
+      [templateId, sequence]
+    )
+    if (existing.rows && existing.rows.length > 0) {
+      return await updateQuestionById({
+        questionId: existing.rows[0].template_question_id,
+        question,
+        answerDuration,
+        retakes,
+        sequence,
+      })
+    }
+  } catch (error) {
+    throw error
+  }
+
   const insertQuery = `INSERT INTO ${dbSchema}.interview_template_question
-  (template_question_id, template_question, template_answer_duration, template_question_retakes, job_interview_template_id, created_at, sequence)  
+  (template_question_id, template_question, template_answer_duration, template_question_retakes, job_interview_template_id, created_at, sequence)
     VALUES($1, $2, $3, $4, $5, $6, $7) returning *;`
 
   const questionId = idGenerator(6, 'QN')
@@ -35,7 +66,18 @@ const createQuestion = async (questionDetails, templateId) => {
       throw 'Failed to create Question'
     }
 
-    const dbResponse = mappedQuestion(rows)
+    // ROOT-CAUSE FIX: this passed the whole `rows` array into mappedQuestion(),
+    // which reads properties directly off whatever it's given (raw.template_question_id,
+    // etc.) -- an array has none of those, so `dbResponse.questionId` was always
+    // undefined for every newly-created question. The frontend's whole
+    // "learn the real questionId from the create response" mechanism
+    // (patchInterviewQuestionsFromResponse in job-create.component.ts) had
+    // nothing valid to patch in, so every AI-generated question looked
+    // "new" again on the very next save -- creating another duplicate row
+    // every single time, compounding across however many save/autosave
+    // cycles occurred. This is the actual root cause of the reported
+    // duplicate-questions bug, not just a frontend sync gap.
+    const dbResponse = mappedQuestion(rows[0])
     return dbResponse
   } catch (error) {
     throw error

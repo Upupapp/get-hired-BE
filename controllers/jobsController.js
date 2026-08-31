@@ -900,9 +900,20 @@ const deleteInterviewQuestion = async (req, res) => {
 
     // QA10 FIX-13: was bare .map(async) without Promise.all — sequence
     // updates were fire-and-forget and errors were silently swallowed.
-    const dbResponse = await Promise.all(rawQuestions.map(async (question, index) => {
-      return await changeQuestionSequence(question.questionId, index + 1);
-    }));
+    // AUDIT FIX: switched from Promise.all (concurrent) to a sequential
+    // await loop -- ascending-order sequential renumbering is provably
+    // collision-free (each row always moves into a slot the delete itself
+    // just vacated, or that the immediately-preceding step in this same
+    // loop just vacated), whereas running them concurrently has no such
+    // guarantee. Harmless today (no DB constraint enforces sequence
+    // uniqueness yet), but this is exactly the kind of race that would
+    // start intermittently failing the moment one is added -- fixed now
+    // as part of the same interview-question-duplication audit rather
+    // than waiting to hit it later.
+    const dbResponse = [];
+    for (let index = 0; index < rawQuestions.length; index++) {
+      dbResponse.push(await changeQuestionSequence(rawQuestions[index].questionId, index + 1));
+    }
     return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[jobsController] error:', error);
