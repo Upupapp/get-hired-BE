@@ -1,0 +1,43 @@
+-- Messaging read-tracking (Messages Tab centralization pass).
+--
+-- Gap being closed: message.service.js's own doc comments on
+-- listRecruiterThreads()/listApplicantThreads() stated outright that "no
+-- is_read column exists in the schema" -- the only signal either portal
+-- had was needsReply, a thread-level boolean derived from
+-- lastSenderRole, not a real per-user unread MESSAGE count.
+--
+-- Design: message_threads is already strictly 1:1 per (job, applicant)
+-- with exactly two participant sides -- "the applicant" and "the
+-- employer side" (company_id, not a single uid, since multiple company
+-- employees can read a company's threads). A last-read timestamp per
+-- side, stored directly on the thread row, is the simplest model that is
+-- still correct: unread count for a side = count of messages in that
+-- thread newer than that side's last_read_at, sent by the OTHER side.
+-- A separate message_thread_reads(thread_id, uid, last_read_at) table
+-- was considered (and would be strictly necessary if reads needed to be
+-- tracked per individual company employee), but every current employer
+-- surface (listRecruiterThreads, needsReply) already treats "the
+-- employer side of a thread" as one unit scoped by company_id, not by
+-- individual employee uid -- adding per-employee granularity here would
+-- be new product surface, not a read-tracking fix. Two nullable columns
+-- keep this additive, avoid a new join on every thread-list query, and
+-- match the existing 1:1 thread shape exactly.
+--
+-- NULL last_read_at means "never opened" -- every message in the thread
+-- from the other side counts as unread, which is the correct default for
+-- both pre-existing threads (migrated with no read history) and brand
+-- new ones.
+--
+-- SAFE TO RUN: ADD COLUMN IF NOT EXISTS only, no existing column altered
+-- or dropped, no data migrated/backfilled (NULL is the correct default).
+-- Apply to local/dev only -- per project standing rule, all schema
+-- migrations require the human operator's own review + SSH session
+-- before touching production.
+--
+-- ROLLBACK: ALTER TABLE gethired.message_threads
+--             DROP COLUMN IF EXISTS applicant_last_read_at,
+--             DROP COLUMN IF EXISTS employer_last_read_at;
+
+ALTER TABLE gethired.message_threads
+  ADD COLUMN IF NOT EXISTS applicant_last_read_at timestamp,
+  ADD COLUMN IF NOT EXISTS employer_last_read_at  timestamp;

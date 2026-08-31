@@ -1,4 +1,4 @@
-import { findOrCreateThread, listMessages, sendMessage, listRecruiterThreads, listApplicantThreads } from "../services/message.service";
+import { findOrCreateThread, listMessages, sendMessage, listRecruiterThreads, listApplicantThreads, markThreadRead, getUnreadMessageCount } from "../services/message.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
 
 const ERROR_STATUS_BY_CODE = {
@@ -106,4 +106,38 @@ const getApplicantThreads = async (req, res) => {
   }
 };
 
-export { openThread, getThreadMessages, postMessage, getRecruiterThreads, getApplicantThreads };
+// Marks the caller's own side of a thread as read (up to now). threadId
+// comes from the URL param, but authorization is still fully derived
+// server-side inside markThreadRead() -> loadAuthorizedThread() from
+// req.user.uid -- a caller can never mark another user's thread read by
+// supplying a different id, same chokepoint every other thread route uses.
+const markThreadReadHandler = async (req, res) => {
+  const { uid } = req.user;
+  const { threadId } = req.params;
+
+  try {
+    await markThreadRead(threadId, uid);
+    return res.status(status.success).json(successResponse({ threadId }));
+  } catch (error) {
+    if (handleKnownError(error, res)) return;
+    console.error('[messageController] error:', error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
+// Lightweight total-unread count for the sidebar badge. Scoped server-side
+// to the caller's own uid/company via getUnreadMessageCount().
+const getUnreadCount = async (req, res) => {
+  const { uid } = req.user;
+
+  try {
+    const unreadCount = await getUnreadMessageCount(uid);
+    return res.status(status.success).json(successResponse({ unreadCount }));
+  } catch (error) {
+    if (handleKnownError(error, res)) return;
+    console.error('[messageController] error:', error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
+export { openThread, getThreadMessages, postMessage, getRecruiterThreads, getApplicantThreads, markThreadReadHandler, getUnreadCount };

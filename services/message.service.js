@@ -1,9 +1,10 @@
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import idGenerator from "../helpers/randomNumberForId";
-import { getJobCompanyId } from "./job.service";
+import { getJobCompanyId, jobDetails } from "./job.service";
 import { getUserCompany } from "../controllers/companiesController";
 import { getAccessContext, canAccessJob, sqlJobScopeFilter } from "./accessControl.service";
+import { createNotification } from "./notification.service";
 
 const dbSchema = env.schema;
 
@@ -157,7 +158,7 @@ const sendMessage = async (threadId, callerUid, body) => {
     throw err;
   }
 
-  const { callerIsEmployer } = await loadAuthorizedThread(threadId, callerUid);
+  const { thread, callerIsEmployer } = await loadAuthorizedThread(threadId, callerUid);
 
   if (callerIsEmployer) {
     const ctx = await getAccessContext(callerUid);
@@ -180,7 +181,137 @@ const sendMessage = async (threadId, callerUid, body) => {
     [threadId]
   );
 
+  // Feed the existing in-app notification bell (notification.service.js) --
+  // non-blocking, mirrors application.service.js's shortlist-notification
+  // idiom exactly. Fired to the OTHER party from the sender, never the
+  // sender themself.
+  notifyOtherParty(thread, callerIsEmployer, trimmedBody, messageId).catch((err) => {
+    console.error("[message.service] MESSAGE_NOTIFICATION_FAILED (non-blocking):",
+      err && err.message ? err.message.substring(0, 200) : "unknown");
+  });
+
   return rows[0];
+};
+
+/**
+ * Notifies the other participant in a thread that a new message arrived.
+ * Non-blocking by contract of its caller (sendMessage .catch()s this) --
+ * never allowed to fail a successful send.
+ *
+ * - Employer sent -> notify the applicant (single uid: thread.applicant_uid).
+ * - Applicant sent -> notify the employer SIDE of the thread. There is no
+ *   single "owning employer uid" for a thread (message_threads.company_id
+ *   is a company, not a person -- multiple company_employees can read a
+ *   company's threads, same model listRecruiterThreads() already assumes),
+ *   so every employee of that company is notified, mirroring how
+ *   listRecruiterThreads() itself scopes "can see this thread" by
+ *   company_id rather than by individual employee uid.
+ */
+const notifyOtherParty = async (thread, senderIsEmployer, body, messageId) => {
+  const snippet = body.length > 140 ? `${body.slice(0, 140)}…` : body;
+  const job = await jobDetails(thread.job_id).catch(() => null);
+  const jobTitle = (job && job.jobTitle) || "a job";
+
+  if (senderIsEmployer) {
+    const companyName = (job && job.companyName) || "An employer";
+    await createNotification({
+      recipientUid: thread.applicant_uid,
+      type: "new_message",
+      title: `New message from ${companyName}`,
+      body: snippet,
+      linkRoute: "/user/messages",
+      linkQuery: { threadId: thread.id },
+      relatedJobId: thread.job_id,
+      eventKey: `message:${messageId}:notif`,
+    });
+    return;
+  }
+
+  // Applicant sent -- notify every employee at the company that owns
+  // this thread.
+  const senderName = await resolveApplicantDisplayName(thread.applicant_uid);
+  const { rows: employees } = await dbQuery.query(
+    `SELECT employee_uuid FROM ${dbSchema}.company_employees WHERE company_id = $1;`,
+    [thread.company_id]
+  );
+  await Promise.all(
+    employees.map((row) =>
+      createNotification({
+        recipientUid: row.employee_uuid,
+        type: "new_message",
+        title: `New message from ${senderName}`,
+        body: snippet,
+        linkRoute: "/recruiter/messages",
+        linkQuery: { threadId: thread.id },
+        relatedJobId: thread.job_id,
+        eventKey: `message:${messageId}:notif:${row.employee_uuid}`,
+      })
+    )
+  );
+};
+
+const resolveApplicantDisplayName = async (applicantUid) => {
+  const { rows } = await dbQuery.query(
+    `SELECT u.firstname, u.lastname, uc.email
+     FROM ${dbSchema}.users u
+     LEFT JOIN ${dbSchema}.user_credentials uc ON uc.uid = u.uid
+     WHERE u.uid = $1 LIMIT 1;`,
+    [applicantUid]
+  );
+  const row = rows[0];
+  if (!row) return "an applicant";
+  if (row.firstname && row.lastname) return `${row.firstname} ${row.lastname}`.trim();
+  return row.email || "an applicant";
+};
+
+/**
+ * Marks a thread as read up to now for the caller's own side. Uses the
+ * exact same authorization chokepoint as every other thread mutation --
+ * loadAuthorizedThread() -- so a caller can never mark another user's
+ * thread read by guessing/supplying a different id.
+ */
+const markThreadRead = async (threadId, callerUid) => {
+  const { callerIsEmployer } = await loadAuthorizedThread(threadId, callerUid);
+  const column = callerIsEmployer ? "employer_last_read_at" : "applicant_last_read_at";
+  await dbQuery.query(
+    `UPDATE ${dbSchema}.message_threads SET ${column} = now() WHERE id = $1;`,
+    [threadId]
+  );
+  return true;
+};
+
+/**
+ * Total unread message count across every thread the caller participates
+ * in, for the sidebar badge. Unread = messages sent by the OTHER side,
+ * newer than the caller's own last_read_at for that thread (NULL =
+ * never read, so every such message counts).
+ */
+const getUnreadMessageCount = async (callerUid) => {
+  const callerCompany = await resolveCallerCompany(callerUid);
+
+  if (callerCompany) {
+    const { rows } = await dbQuery.query(
+      `SELECT COUNT(*)::int AS unread
+       FROM ${dbSchema}.messages m
+       JOIN ${dbSchema}.message_threads mt ON mt.id = m.thread_id
+       WHERE mt.company_id = $1
+         AND m.sender_role = 'applicant'
+         AND (mt.employer_last_read_at IS NULL OR m.created_at > mt.employer_last_read_at);`,
+      [callerCompany.companyId]
+    );
+    return rows[0] ? rows[0].unread : 0;
+  }
+
+  const { rows } = await dbQuery.query(
+    `SELECT COUNT(*)::int AS unread
+     FROM ${dbSchema}.messages m
+     JOIN ${dbSchema}.message_threads mt ON mt.id = m.thread_id
+     WHERE mt.applicant_uid = $1
+       AND m.sender_role = 'employer'
+       AND (mt.applicant_last_read_at IS NULL OR m.created_at > mt.applicant_last_read_at);`,
+    [callerUid]
+  );
+  return rows[0] ? rows[0].unread : 0;
 };
 
 /**
@@ -225,11 +356,16 @@ const listRecruiterThreads = async (callerUid) => {
        j.job_title      AS "jobTitle",
        last_msg.body    AS "lastMessageSnippet",
        last_msg.sender_role AS "lastSenderRole",
+       mt.employer_last_read_at AS "employerLastReadAt",
        -- STITCH QA11 FIX F-01: users table uses firstname/lastname (no underscores)
        u.firstname      AS "applicantFirstName",
        u.lastname       AS "applicantLastName",
        uc.email         AS "applicantEmail",
-       u.photo_url      AS "applicantPhotoUrl"
+       u.photo_url      AS "applicantPhotoUrl",
+       (SELECT COUNT(*)::int FROM ${dbSchema}.messages um
+         WHERE um.thread_id = mt.id AND um.sender_role = 'applicant'
+           AND (mt.employer_last_read_at IS NULL OR um.created_at > mt.employer_last_read_at)
+       ) AS "unreadCount"
      FROM ${dbSchema}.message_threads mt
      LEFT JOIN ${dbSchema}.jobs j
        ON j.job_id = mt.job_id
@@ -267,6 +403,7 @@ const listRecruiterThreads = async (callerUid) => {
     lastSenderRole: row.lastSenderRole || null,
     lastMessageAt: row.lastMessageAt,
     needsReply: row.lastSenderRole === "applicant",
+    unreadCount: row.unreadCount || 0,
   }));
 };
 
@@ -295,7 +432,11 @@ const listApplicantThreads = async (callerUid) => {
        c.company_name   AS "companyName",
        c.company_logo   AS "companyLogoUrl",
        last_msg.body    AS "lastMessageSnippet",
-       last_msg.sender_role AS "lastSenderRole"
+       last_msg.sender_role AS "lastSenderRole",
+       (SELECT COUNT(*)::int FROM ${dbSchema}.messages um
+         WHERE um.thread_id = mt.id AND um.sender_role = 'employer'
+           AND (mt.applicant_last_read_at IS NULL OR um.created_at > mt.applicant_last_read_at)
+       ) AS "unreadCount"
      FROM ${dbSchema}.message_threads mt
      LEFT JOIN ${dbSchema}.jobs j
        ON j.job_id = mt.job_id
@@ -327,6 +468,7 @@ const listApplicantThreads = async (callerUid) => {
     lastSenderRole: row.lastSenderRole || null,
     lastMessageAt: row.lastMessageAt,
     needsReply: row.lastSenderRole === "employer",
+    unreadCount: row.unreadCount || 0,
   }));
 };
 
@@ -337,4 +479,6 @@ export {
   loadAuthorizedThread,
   listRecruiterThreads,
   listApplicantThreads,
+  markThreadRead,
+  getUnreadMessageCount,
 };
