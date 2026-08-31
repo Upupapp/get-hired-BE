@@ -107,20 +107,26 @@ var sanitizeJobContent = function(req, res, next) {
 
 /**
  * Middleware: validateJobPublishPayload
- * Server-side gate: if jobStatusId === 2 (publish), enforce all required fields.
- * Draft saves (jobStatusId === 1) are always allowed with partial data.
+ * Server-side gate: if jobStatusId === 2 (publish), enforce the one true
+ * required field. Draft saves (jobStatusId === 1) are always allowed with
+ * partial data.
  * Returns 422 with a structured error if validation fails.
  *
- * Mirrors the FE publishJobPost() gate exactly:
- *   jobTypeId, jobLevelId, jobCity, jobCountry, jobDescription, workSetupId,
- *   companyId
+ * PRODUCTION FIX (universal, per explicit product decision): this used to
+ * require jobTypeId/jobLevelId/jobCity/jobCountry/jobDescription/workSetupId
+ * -- mirroring the frontend's own equally strict gate at the time. Both were
+ * relaxed together: job-create.component.ts's publishJobPost() now only
+ * hard-blocks on a missing jobTitle, offering a "Proceed Posting anyway /
+ * Cancel" confirmation for every other field instead of a hard block. This
+ * gate is kept in sync with that -- title only -- so a "Proceed anyway"
+ * click can't turn around and get rejected here with a 422 the Employer
+ * already explicitly chose to accept. jobTitle stays required because a
+ * title-less job can't be listed, searched, or displayed meaningfully
+ * anywhere in the product.
  *
- * Banner is NOT required here (job-create bug fix, 2026-08-30/31): it's
- * optional on the FE form, and jobsController.js's createJobs/updateJob
- * apply a shared default banner image when none is uploaded. Requiring it
- * in this pre-controller gate made every publish with no banner (including
- * the AI Assistant's direct "Post this job" path) fail with a 422 before
- * the controller ever got a chance to apply that default.
+ * Banner was already not required here (job-create bug fix, 2026-08-30/31):
+ * it's optional on the FE form, and jobsController.js's createJobs/updateJob
+ * apply a shared default banner image when none is uploaded.
  */
 var validateJobPublishPayload = function(req, res, next) {
   var body = req.body || {};
@@ -131,12 +137,7 @@ var validateJobPublishPayload = function(req, res, next) {
 
   var missing = [];
 
-  if (!body.jobTypeId) missing.push('jobTypeId');
-  if (!body.jobLevelId) missing.push('jobLevelId');
-  if (!body.jobCity || !String(body.jobCity).trim()) missing.push('jobCity');
-  if (!body.jobCountry || !String(body.jobCountry).trim()) missing.push('jobCountry');
-  if (!body.jobDescription || !String(body.jobDescription).trim()) missing.push('jobDescription');
-  if (!body.workSetupId) missing.push('workSetupId');
+  if (!body.jobTitle || !String(body.jobTitle).trim()) missing.push('jobTitle');
 
   // companyId is derived server-side in the controller (from JWT) so we
   // don't require it in the body — but if present, validate it's a string.
