@@ -61,27 +61,25 @@ const uploadCv = async (req, res) => {
       ? filename.trim()
       : (validation.mimeType === "application/pdf" ? "resume.pdf" : "resume.docx");
 
-    // BUGFIX (replace CV leaves the old file behind): this used to just
-    // flip the old row's is_cv flag to false rather than deleting it.
-    // getApplicantArrayDetails()'s exclusion for the generic documents list
-    // (Profile Setup's "Upload documents" step, and any other "your
-    // documents" surface) only excludes rows where is_cv IS TRUE -- a row
-    // with is_cv=false passes that filter right through, so the "old" CV
-    // silently reappeared in every other documents list as if it were just
-    // an ordinary uploaded file, alongside (never actually replaced by) the
-    // new one. Deletes the old row outright instead, and best-effort cleans
-    // up its Storage blob (non-blocking -- a failure here never blocks the
-    // new upload). Still done BEFORE the new upload/insert attempt starts,
-    // same reasoning as before: if the new upload fails, the applicant is
-    // left with no CV rather than two, which is the safer, honest failure
-    // mode.
-    const { rows: oldCvRows } = await dbQuery.query(
-      `DELETE FROM ${dbSchema}.documents WHERE applicant_id = $1 AND is_cv = true RETURNING fileurl`,
+    // CV VERSIONING (Phase B, 20260831c_cv_versioning.sql): an earlier fix
+    // hard-deleted the previous is_cv=true row here to stop it leaking into
+    // the generic "Profile Documents" list as an ordinary file (it was only
+    // being flagged is_cv=false, with nothing else marking it as
+    // CV-related). That closed the leak but destroyed all CV history in the
+    // process -- no way to see or restore a prior CV.
+    //
+    // Now: demote the old row (is_cv=false) instead of deleting it, and
+    // leave its ALREADY-true is_cv_version flag alone -- getApplicantArrayDetails()'s
+    // generic-documents-list exclusion was updated (applicant.service.js's
+    // mappedProfile(), applicantsController.js's saveDocuments) to key off
+    // is_cv_version instead of is_cv, so the demoted row stays correctly
+    // hidden from that list while remaining visible in Versions/History.
+    // Storage blob is kept too (no deleteFromStorageByUrl call) -- it's
+    // still a real, restorable version, not garbage.
+    await dbQuery.query(
+      `UPDATE ${dbSchema}.documents SET is_cv = false WHERE applicant_id = $1 AND is_cv = true`,
       [profile.applicantProfileId]
     );
-    for (const oldRow of oldCvRows) {
-      deleteFromStorageByUrl(oldRow.fileurl).catch(() => {});
-    }
 
     const saved = await uploadAndSaveAttachment(
       { file, filename: safeFilename, size: validation.approxSizeBytes, type: validation.mimeType },
@@ -89,7 +87,7 @@ const uploadCv = async (req, res) => {
       "documents",
       "applicant_id",
       0,
-      { is_cv: true }
+      { is_cv: true, is_cv_version: true }
     );
 
     return res.status(200).json({
@@ -141,4 +139,153 @@ const getCurrentCv = async (req, res) => {
   }
 };
 
-export { uploadCv, getCurrentCv };
+// CV VERSIONING (Phase B): lists every kept CV version for the caller
+// (is_cv_version=true rows -- the active one plus any prior versions kept
+// on replace, see uploadCv() above), newest first. Ownership derived from
+// the caller's own JWT-resolved profile, same as every other function
+// here -- never a client-supplied id.
+const getCvVersions = async (req, res) => {
+  const { uid } = req.user;
+  try {
+    const profile = await appplicantProfile(uid);
+    if (!profile) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    const { rows } = await dbQuery.query(
+      `SELECT id, fileurl, filename, "size", "type", created_at, is_cv
+       FROM ${dbSchema}.documents
+       WHERE applicant_id = $1 AND is_cv_version = true
+       ORDER BY created_at DESC`,
+      [profile.applicantProfileId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: rows.map((row) => ({ ...row, isActive: row.is_cv === true })),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "We couldn't load your CV versions right now. Please try again.",
+      code: "CV_VERSIONS_FETCH_FAILED",
+    });
+  }
+};
+
+// CV VERSIONING (Phase B): makes a prior version the active CV again,
+// without deleting the currently-active one -- it simply becomes an
+// inactive version in turn, exactly like a fresh upload demotes the
+// previous active row. Ownership check is folded into the UPDATE's WHERE
+// clause (applicant_id=$2) rather than a separate SELECT pre-check --
+// zero rows affected means either the id doesn't exist or belongs to a
+// different applicant; both are indistinguishable 404s to the caller, so
+// this can't be used to probe another applicant's document ids.
+const activateCvVersion = async (req, res) => {
+  const { uid } = req.user;
+  const { id } = req.params;
+  try {
+    const profile = await appplicantProfile(uid);
+    if (!profile) {
+      return res.status(409).json({
+        success: false,
+        message: "Create your profile before managing CV versions.",
+        code: "CV_PROFILE_REQUIRED",
+      });
+    }
+
+    const { rows: targetRows } = await dbQuery.query(
+      `SELECT id FROM ${dbSchema}.documents
+       WHERE id = $1 AND applicant_id = $2 AND is_cv_version = true`,
+      [id, profile.applicantProfileId]
+    );
+    if (!targetRows[0]) {
+      return res.status(404).json({
+        success: false,
+        message: "That CV version could not be found.",
+        code: "CV_VERSION_NOT_FOUND",
+      });
+    }
+
+    await dbQuery.query(
+      `UPDATE ${dbSchema}.documents SET is_cv = false
+       WHERE applicant_id = $1 AND is_cv = true`,
+      [profile.applicantProfileId]
+    );
+    await dbQuery.query(
+      `UPDATE ${dbSchema}.documents SET is_cv = true WHERE id = $1`,
+      [id]
+    );
+
+    return res.status(200).json({ success: true, message: "CV version activated." });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "We couldn't switch your active CV right now. Please try again.",
+      code: "CV_VERSION_ACTIVATE_FAILED",
+    });
+  }
+};
+
+// CV VERSIONING (Phase B): permanently deletes a kept-for-history version
+// -- real deletion, not a soft flag, matching Tab 09's rule that a delete
+// control must only ever be shown/wired when the backend genuinely
+// supports it. Refuses to delete the currently active version (is_cv=true)
+// -- the applicant must activate a different version first, so there is
+// never a moment with zero active CV as a side effect of this endpoint.
+const deleteCvVersion = async (req, res) => {
+  const { uid } = req.user;
+  const { id } = req.params;
+  try {
+    const profile = await appplicantProfile(uid);
+    if (!profile) {
+      return res.status(409).json({
+        success: false,
+        message: "Create your profile before managing CV versions.",
+        code: "CV_PROFILE_REQUIRED",
+      });
+    }
+
+    const { rows } = await dbQuery.query(
+      `DELETE FROM ${dbSchema}.documents
+       WHERE id = $1 AND applicant_id = $2 AND is_cv_version = true AND is_cv = false
+       RETURNING fileurl`,
+      [id, profile.applicantProfileId]
+    );
+
+    if (!rows[0]) {
+      // Zero rows: not found, belongs to someone else, or IS the active
+      // version (deliberately excluded above) -- all one indistinguishable
+      // response so this can't be used to probe another applicant's ids,
+      // and the active-version case gets an explicit, actionable reason.
+      const { rows: activeCheck } = await dbQuery.query(
+        `SELECT 1 FROM ${dbSchema}.documents WHERE id = $1 AND applicant_id = $2 AND is_cv = true`,
+        [id, profile.applicantProfileId]
+      );
+      if (activeCheck[0]) {
+        return res.status(409).json({
+          success: false,
+          message: "You can't delete your active CV. Activate a different version first.",
+          code: "CV_VERSION_IS_ACTIVE",
+        });
+      }
+      return res.status(404).json({
+        success: false,
+        message: "That CV version could not be found.",
+        code: "CV_VERSION_NOT_FOUND",
+      });
+    }
+
+    deleteFromStorageByUrl(rows[0].fileurl).catch(() => {});
+
+    return res.status(200).json({ success: true, message: "CV version deleted." });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "We couldn't delete that CV version right now. Please try again.",
+      code: "CV_VERSION_DELETE_FAILED",
+    });
+  }
+};
+
+export { uploadCv, getCurrentCv, getCvVersions, activateCvVersion, deleteCvVersion };

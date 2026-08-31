@@ -778,3 +778,85 @@ information.
 blocker for the production baseline.** Not fixed in this command (out of
 scope -- Phase 5 is audit-only, "do not silently add unrelated WIP code
 to the production baseline").
+
+---
+
+## 2026-08-31 — GETHIRED_CV_BUILDER_MATCH_COACH_MASTER_COMMAND_V1, Phase B
+
+### 1. No CV text-extraction or analysis engine exists — blocks CV Health, Surgical Review, Match Explorer, Action Plan
+
+**Capability:** Extract structured/analyzable text from an uploaded CV file
+(PDF/DOCX) and run a deterministic, explainable diagnostic against it
+(completeness, structure, clarity, evidence of impact, consistency,
+ATS-readiness signals per the master command's Tab 05), plus compare that
+extracted content against a specific job's requirements (Tab 07) and
+aggregate findings into a prioritized to-do list (Tab 08).
+
+**Why required:** Four of the eight CV Builder & Match Coach tabs (CV
+Health, Surgical Review, Match Explorer, Action Plan) are specified to
+show real, evidence-grounded findings sourced from the applicant's actual
+CV content. None of that is possible today — the backend stores the
+uploaded file (Firebase Storage) and its metadata only; nothing anywhere
+in `get-hired-BE` parses a PDF or DOCX into text, and there is no
+analysis/scoring/matching logic of any kind. Building UI that pretends
+otherwise would mean fabricating findings, which the master command
+explicitly and repeatedly prohibits (Tab 06's Non-Fabrication Contract,
+Tab 13's Prohibited Behavior list).
+
+**Expected contract (not built, proposed shape only):**
+- A text-extraction step (new dependency required — no PDF/DOCX parser
+  exists in this codebase's `package.json` at all) run either at upload
+  time or on-demand, producing a structured representation (sections,
+  raw text spans) tied to the specific `documents.id` (now doubling as
+  the CV version id, per the versioning work below).
+- `POST /cv-builder/versions/:id/analyze` (or similar) — runs the
+  deterministic CV Health checks against the extracted text, returns
+  evidence-tagged findings (category, evidence span, finding, why-it-
+  matters, recommended action — Tab 05's mandatory finding format).
+  Must NOT return a numeric score unless a real, explainable, deterministic
+  scoring model is deliberately designed and approved (Tab 05's Scoring
+  rule) — descriptive status only otherwise.
+- `POST /cv-builder/versions/:id/match?jobId=X` — compares extracted CV
+  content against `jobs` table fields (requirements/skills/responsibilities
+  already exist on the real job model) and returns per-requirement
+  evidence states (Strong / Some / Not found / Needs confirmation, per
+  Tab 07) — never a hiring-probability percentage (explicitly prohibited).
+- An aggregation read that dedupes findings from the above and exposes
+  them as prioritized Action Plan items (Tab 08).
+
+**Data impact:** New table(s) for persisted analysis runs (tied to the
+`documents.id`/version, not a mutable "current CV" pointer — Tab 02's
+non-negotiable identity rule) and structured findings; a new backend
+dependency for the text-extraction step.
+
+**Frontend status:** `get-hired-FE/src/app/applicant/cv-builder/
+cv-builder-shell.component.ts` now shows a distinct, honest explanatory
+state for each of these four tabs (naming this exact gap in plain
+language) instead of one generic "isn't ready yet" placeholder. No
+fabricated findings, scores, or match data are shown anywhere. This is
+intentionally the full extent of Phase B's frontend work on these four
+tabs — implementing real UI against a nonexistent contract was explicitly
+out of scope.
+
+**Proof:** `grep -ri "cv.?health|surgical|match.?explorer|action.?plan|cvVersion" get-hired-BE --include=*.js` 
+returns zero matches for any analysis/scoring/matching implementation
+(only this controller/route file naming and two unrelated matches in
+`publicCompanyController.js`/`searchController.js`).
+
+---
+
+### 2. What Phase B DID build on the backend (for context, not a gap)
+
+Real CV versioning was implemented and applied to production as part of
+this same command (explicitly authorized — no real applicant CV data
+existed yet to put at risk): `db/20260831c_cv_versioning.sql` adds
+`documents.is_cv_version` (additive, backfilled, non-destructive).
+`controllers/cvBuilderController.js` gained `getCvVersions`,
+`activateCvVersion`, `deleteCvVersion` (routes in
+`routes/cvBuilderRoutes.js`), and `uploadCv` now demotes-and-keeps the
+previous CV instead of deleting it. This closes part of the original
+CV-versioning gap (Tab 09) for real — Versions/History is now a genuinely
+working, non-fabricated feature, not a placeholder. It does NOT include
+compare/diff between versions (Tab 09's "Compare versions using an
+intelligible text/section diff" — that needs the same text-extraction
+capability as item 1 above, so it's listed there, not built here).

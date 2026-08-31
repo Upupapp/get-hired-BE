@@ -503,7 +503,11 @@ const saveDocuments = async (req, res) => {
         applicantProfileId,
         "documents",
         "applicant_id",
-        "is_cv"
+        // CV VERSIONING (Phase B): see mappedProfile()'s matching comment
+        // in applicant.service.js. Was "is_cv" alone -- resaving the
+        // generic "Profile Documents" list would otherwise delete kept-
+        // for-history prior CV versions along with real non-CV documents.
+        "is_cv_version"
       );
 
       if (documents.length != 0) {

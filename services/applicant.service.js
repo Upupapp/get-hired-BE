@@ -1130,7 +1130,13 @@ const mappedProfile = async (raw) => {
       raw.applicant_profile_id,
       "documents",
       "",
-      "is_cv"
+      // CV VERSIONING (Phase B): excludes every CV-related row, not just
+      // the active one -- is_cv_version=true on both the current CV
+      // (is_cv=true) and every kept-for-history prior version (is_cv=
+      // false once superseded). Was "is_cv" alone, which only hid the
+      // ACTIVE CV; a replaced CV kept for history would otherwise leak
+      // back into this generic "your documents" list as an ordinary file.
+      "is_cv_version"
     ),
   };
 };
