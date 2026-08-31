@@ -207,9 +207,11 @@ const listOfAppliedJobsById = async (candidateId) => {
       const listOfJobs = await Promise.all(
         rows.map(async (row) => {
           const job = await jobDetails(row.job_id);
+          const hasEmployerMessage = await employerHasMessaged(row.job_id, candidateId);
           return {
             ...job,
             ...mappedApplication(row),
+            hasEmployerMessage,
           };
         })
       );
@@ -220,6 +222,29 @@ const listOfAppliedJobsById = async (candidateId) => {
     }
   } catch (error) {
     throw error;
+  }
+};
+
+// "My Applications" list (applicant self-view): whether the employer has
+// ever sent a message for this job's thread with this applicant -- drives
+// the Pending/Reviewed status shown instead of the applicant's own
+// "Hello" test message (or no message at all) counting as contact.
+const employerHasMessaged = async (jobId, candidateId) => {
+  const query = `SELECT EXISTS (
+    SELECT 1 FROM ${dbSchema}.messages m
+    JOIN ${dbSchema}.message_threads t ON t.id = m.thread_id
+    WHERE t.job_id = $1 AND t.applicant_uid = $2 AND m.sender_uid <> $2
+  ) AS has_message;`;
+
+  try {
+    const { rows } = await dbQuery.query(query, [jobId, candidateId]);
+    return !!(rows && rows[0] && rows[0].has_message);
+  } catch (error) {
+    // Non-fatal: the applications list should never fail to load just
+    // because the message-status lookup errored -- default to "no
+    // employer message yet" (Pending), same as a genuine no-message case.
+    console.error('[candidate.service] employerHasMessaged error:', error);
+    return false;
   }
 };
 
