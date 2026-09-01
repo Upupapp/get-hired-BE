@@ -151,9 +151,34 @@ jobs:
             # Keep the real deploy fail-fast:
             set -e
             cd /var/www/_work/get-hired-BE
+
+            # BUGFIX (production, "[PM2][ERROR] Process or Namespace gethired
+            # not found"): PM2 keeps a separate process list per OS user (its
+            # own daemon under $PM2_HOME), and gethired has always been
+            # running under root's PM2 -- the "ROOT PM2 CHECK" diagnostic
+            # above already confirmed this. This deploy SSHes in as a
+            # non-root user, so plain `pm2 restart gethired` was hitting that
+            # user's own EMPTY pm2 list and failing every time. pm2_cmd
+            # resolves once here to whichever PM2 instance actually has
+            # gethired, so pre-deploy state, restart, save, and post-restart
+            # verification below all agree on the same target instead of
+            # each guessing separately.
+            echo "=== DIAG: locate gethired PM2 process ==="
+            PM2_CMD_PREFIX=""
+            if pm2 jlist 2>/dev/null | grep -q '"name":"gethired"'; then
+              echo "gethired found under current user's PM2"
+            elif sudo -n true 2>/dev/null && sudo -n -u root env PM2_HOME=/root/.pm2 pm2 jlist 2>/dev/null | grep -q '"name":"gethired"'; then
+              echo "gethired found under root's PM2 -- managing via sudo"
+              PM2_CMD_PREFIX="sudo -n -u root env PM2_HOME=/root/.pm2 "
+            else
+              echo "FATAL: gethired not found under current user's PM2 or root's PM2 (or no passwordless sudo to check root's)"
+              exit 1
+            fi
+            pm2_cmd() { eval "${PM2_CMD_PREFIX}pm2 \"\$@\""; }
+
             echo "=== DIAG: pre-deploy state ==="
             git rev-parse HEAD
-            pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');console.log(p?('gethired BEFORE: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime)):'gethired: NOT FOUND IN PM2 LIST')}catch(e){console.log('pm2 jlist parse failed:', e.message)}})"
+            pm2_cmd jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');console.log(p?('gethired BEFORE: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime)):'gethired: NOT FOUND IN PM2 LIST')}catch(e){console.log('pm2 jlist parse failed:', e.message)}})"
 
             echo "=== DIAG: git update ==="
             git fetch origin main
@@ -192,12 +217,12 @@ jobs:
             npm run migrate --if-present
 
             echo "=== DIAG: restart ==="
-            pm2 restart gethired --update-env
-            pm2 save
+            pm2_cmd restart gethired --update-env
+            pm2_cmd save
 
             echo "=== DIAG: post-restart verification ==="
             sleep 3
-            pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');if(!p){console.log('gethired: NOT FOUND IN PM2 LIST AFTER RESTART');process.exit(1)};console.log('gethired AFTER: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime));if(p.pm2_env.status!=='online'){console.log('FATAL: process not online after restart');process.exit(1)}}catch(e){console.log('pm2 jlist parse failed:', e.message);process.exit(1)}})"
+            pm2_cmd jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');if(!p){console.log('gethired: NOT FOUND IN PM2 LIST AFTER RESTART');process.exit(1)};console.log('gethired AFTER: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime));if(p.pm2_env.status!=='online'){console.log('FATAL: process not online after restart');process.exit(1)}}catch(e){console.log('pm2 jlist parse failed:', e.message);process.exit(1)}})"
 
             echo "=== DIAG: local health check (informational only -- port assumed, not verified) ==="
             curl -s -o /dev/null -w "local health check HTTP status: %{http_code}\n" --max-time 10 http://127.0.0.1:3000/api/auth/signin -X POST -H "Content-Type: application/json" -d '{}' || echo "local health check request itself failed (informational, not fatal)"
