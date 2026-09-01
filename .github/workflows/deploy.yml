@@ -164,17 +164,31 @@ jobs:
             # verification below all agree on the same target instead of
             # each guessing separately.
             echo "=== DIAG: locate gethired PM2 process ==="
-            PM2_CMD_PREFIX=""
+            # The deploy user has no blanket passwordless sudo (confirmed via
+            # the SUDO CAPABILITY diagnostic above) -- `sudo -n -u root env
+            # PM2_HOME=... pm2` is denied outright. /usr/local/bin/gethired-pm2
+            # is a narrow wrapper (sets PM2_HOME=/root/.pm2, execs the real
+            # pm2 binary) that the deploy user IS granted passwordless sudo
+            # for specifically, via /etc/sudoers.d/gethired-pm2-deploy -- see
+            # GETHIRED_LINODE_CLEAN_CHECKOUT_CUTOVER_RUNBOOK.md for how that
+            # was provisioned. Falls back to a plain `pm2` check first in
+            # case gethired is ever migrated to run as this deploy user
+            # directly (removing the need for the wrapper entirely).
+            # PM2_BIN_CMD is the full command that stands in for `pm2` --
+            # NOT a prefix pm2 gets appended to (the wrapper already execs
+            # the real pm2 binary internally, so appending "pm2" again would
+            # pass it as a bogus first argument).
             if pm2 jlist 2>/dev/null | grep -q '"name":"gethired"'; then
               echo "gethired found under current user's PM2"
-            elif sudo -n true 2>/dev/null && sudo -n -u root env PM2_HOME=/root/.pm2 pm2 jlist 2>/dev/null | grep -q '"name":"gethired"'; then
-              echo "gethired found under root's PM2 -- managing via sudo"
-              PM2_CMD_PREFIX="sudo -n -u root env PM2_HOME=/root/.pm2 "
+              PM2_BIN_CMD="pm2"
+            elif sudo -n /usr/local/bin/gethired-pm2 jlist 2>/dev/null | grep -q '"name":"gethired"'; then
+              echo "gethired found under root's PM2 -- managing via the gethired-pm2 sudo wrapper"
+              PM2_BIN_CMD="sudo -n /usr/local/bin/gethired-pm2"
             else
-              echo "FATAL: gethired not found under current user's PM2 or root's PM2 (or no passwordless sudo to check root's)"
+              echo "FATAL: gethired not found under current user's PM2, and the gethired-pm2 sudo wrapper is missing/denied/found nothing"
               exit 1
             fi
-            pm2_cmd() { eval "${PM2_CMD_PREFIX}pm2 \"\$@\""; }
+            pm2_cmd() { eval "${PM2_BIN_CMD} \"\$@\""; }
 
             echo "=== DIAG: pre-deploy state ==="
             git rev-parse HEAD
