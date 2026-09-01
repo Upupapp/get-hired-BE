@@ -27,7 +27,18 @@ const comparePassword = (hashedPassword, password) => {
  * @param {string} email
  * @returns {Boolean} True or False
  */
+// GETHIRED_QA_REMEDIATION V1 Phase 5 (EM-17, P2): neither this validator
+// nor the database column (users/user_credentials.email is `varchar` with
+// no length specified -- functionally unbounded in Postgres) enforced any
+// maximum length at all, so an arbitrarily long "email" (500+ chars) still
+// matched this loose regex and was accepted end to end. No other
+// backend/provider/DB limit was found anywhere in this codebase to defer
+// to, so this uses the conventional RFC 5321 practical maximum (254 chars)
+// as the evidence-based fallback.
+const MAX_EMAIL_LENGTH = 254;
+
 const isValidEmail = (email) => {
+  if (!email || typeof email !== 'string' || email.length > MAX_EMAIL_LENGTH) return false;
   const regEx = /\S+@\S+\.\S+/;
   return regEx.test(email);
 };
