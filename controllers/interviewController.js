@@ -280,11 +280,21 @@ const getInterviewHub = async (req, res) => {
        -- STITCH QA11 FIX F-01: users.email was dropped; join user_credentials for email
        LEFT JOIN ${dbSchema}.user_credentials uc
          ON uc.uid = ja.candidate_id
+       -- BUGFIX (production, "same applicant's other job shows the wrong
+       -- answer count"): this used to GROUP BY ia.applicant_id alone, which
+       -- counts a candidate's video answers across EVERY job they've ever
+       -- answered questions for, then joins that single total onto every
+       -- one of their applications at this company -- an applicant who
+       -- answered 3 questions for one job showed "3 video responses" on a
+       -- second, completely separate job application where they'd
+       -- answered zero. interview_answers has its own job_id; grouping and
+       -- joining on (applicant_id, job_id) together scopes the count to
+       -- the specific application it actually belongs to.
        LEFT JOIN (
-         SELECT ia.applicant_id, COUNT(*) AS video_answer_count
+         SELECT ia.applicant_id, ia.job_id, COUNT(*) AS video_answer_count
          FROM ${dbSchema}.interview_answers ia
-         GROUP BY ia.applicant_id
-       ) va ON va.applicant_id = ap.applicant_profile_id
+         GROUP BY ia.applicant_id, ia.job_id
+       ) va ON va.applicant_id = ap.applicant_profile_id AND va.job_id = ja.job_id
        WHERE j.company_id = $1
          AND ja.is_archived IS DISTINCT FROM true
        ORDER BY COALESCE(ja.updated_at, ja.date_applied) DESC
