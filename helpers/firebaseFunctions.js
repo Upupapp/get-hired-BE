@@ -134,11 +134,26 @@ const registerNewUserInFirebaseWithEmail = async (creds) => {
   }
 };
 
+// GETHIRED_QA_REMEDIATION V1 -- JS-02/EM-10 (P0): generateEmailVerificationLink()
+// called with no actionCodeSettings returns a link pointing at Firebase's own
+// default hosted handler (https://<project>.firebaseapp.com/__/auth/action),
+// never at this app's own /verify route -- even though the frontend
+// (account-authentication.component.ts) and this backend's own verifyEmail()
+// endpoint already exist specifically to receive mode/oobCode and finish the
+// verification themselves. The received email link therefore never lands
+// anywhere useful; only manually rebuilding the URL with the same oobCode
+// against gethiredonline.app/verify worked (matches the QA finding exactly).
+// handleCodeInApp: true makes Firebase append mode/oobCode/lang directly onto
+// this app's own URL instead of routing through Firebase's hosted page first.
 const sendEmailVerificationFirebase = async (email) => {
   try {
+    const actionCodeSettings = {
+      url: `${env.app_url}/verify`,
+      handleCodeInApp: true,
+    };
     const link = await firebaseAdmin
       .auth()
-      .generateEmailVerificationLink(email);
+      .generateEmailVerificationLink(email, actionCodeSettings);
     return link;
   } catch (err) {
     throw "Email " + err;
