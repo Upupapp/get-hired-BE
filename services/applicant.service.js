@@ -49,6 +49,7 @@ const createApplicationProfile = async (applicant) => {
     salaryMaximum,
     salaryCurrency,
     profileImage,
+    photoUrl,
     firstName,
     lastName,
     address,
@@ -61,12 +62,25 @@ const createApplicationProfile = async (applicant) => {
   const applicantProfileId = idGenerator(6, "AP");
 
   try {
+    // BUGFIX (production, "new applicant's avatar is blank after profile
+    // setup"): app-gh-image-upload already uploads the photo client-side
+    // and hands the form a ready hosted URL via photoUrl -- profileImage
+    // (a raw file) is only ever populated by a different, legacy upload
+    // path. updateProfileBasicInfo (the edit-existing-profile path) already
+    // falls back to the already-uploaded photoUrl when profileImage is
+    // empty; this create path (a brand-new applicant's very first save --
+    // exactly the "apply without a profile yet" flow) was missing that same
+    // fallback, so rawUrlPhoto silently stayed "" and every first-time
+    // profile was created with no photo at all, regardless of what the
+    // applicant had actually picked.
     if (profileImage && profileImage != "") {
       rawUrlPhoto = await uploadInStorage(
         "Applicant-Profile-Photo",
         `${applicantProfileId}-ProfilePhoto`,
         profileImage
       );
+    } else {
+      rawUrlPhoto = photoUrl || "";
     }
 
     const insertQuery = `INSERT INTO ${dbSchema}.applicants_profile
