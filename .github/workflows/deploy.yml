@@ -194,6 +194,32 @@ jobs:
             git rev-parse HEAD
             pm2_cmd jlist | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{try{const p=JSON.parse(d).find(x=>x.name==='gethired');console.log(p?('gethired BEFORE: pid='+p.pid+' status='+p.pm2_env.status+' restarts='+p.pm2_env.restart_time+' uptime_ms='+(Date.now()-p.pm2_env.pm_uptime)):'gethired: NOT FOUND IN PM2 LIST')}catch(e){console.log('pm2 jlist parse failed:', e.message)}})"
 
+            echo "=== DIAG: reclaim .git ownership if root-contaminated ==="
+            # BUGFIX (production, "error: insufficient permission for adding
+            # an object to repository database .git/objects" / "fatal:
+            # unpack-objects failed"): some earlier root-run process (a
+            # manual root SSH session, a sudo -u dev script, etc.) can leave
+            # files under .git owned by root while this deploy SSHes in as
+            # the non-root deploy user -- git fetch/reset then can't write
+            # new objects at all and the whole deploy dies before even
+            # reaching the code update. Same root-ownership contamination
+            # pattern as the node_modules fix below and the 2026-08-27
+            # outage; .git needs its own dedicated sudo wrapper
+            # (/usr/local/bin/gethired-git-fix, via
+            # /etc/sudoers.d/gethired-git-fix-deploy) since the existing
+            # gethired-pm2 wrapper is intentionally scoped to PM2 only.
+            if [ -d .git ] && [ "$(stat -c '%U' .git)" != "$(whoami)" ]; then
+              echo ".git owned by $(stat -c '%U' .git), not $(whoami) -- reclaiming"
+              if sudo -n /usr/local/bin/gethired-git-fix 2>/dev/null; then
+                echo ".git ownership reclaimed via the gethired-git-fix sudo wrapper"
+              else
+                echo "FATAL: .git is root-owned and the gethired-git-fix sudo wrapper is missing/denied."
+                echo "One-time manual fix required on the server (as root):"
+                echo "  chown -R $(whoami):$(whoami) /var/www/_work/get-hired-BE/.git"
+                exit 1
+              fi
+            fi
+
             echo "=== DIAG: git update ==="
             git fetch origin main
             git reset --hard origin/main
