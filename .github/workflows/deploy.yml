@@ -161,6 +161,31 @@ jobs:
             git clean -fd
             echo "post-reset HEAD: $(git rev-parse HEAD)"
 
+            echo "=== DIAG: reclaim node_modules ownership if root-contaminated ==="
+            # BUGFIX (production, "npm ci fails with EACCES on node_modules/.bin"):
+            # an earlier manual `npm install`/pm2 run as root left node_modules
+            # owned by root while this deploy SSHes in as a non-root user --
+            # npm ci's own cleanup phase then can't rmdir/recreate .bin and the
+            # whole deploy silently never reaches the restart step. .git stays
+            # correctly owned (git reset --hard above already proves that), so
+            # this is scoped to node_modules specifically, same root-ownership
+            # contamination pattern as the 2026-08-27 outage.
+            if [ -d node_modules ] && [ "$(stat -c '%U' node_modules)" != "$(whoami)" ]; then
+              echo "node_modules owned by $(stat -c '%U' node_modules), not $(whoami) -- reclaiming"
+              if sudo -n true 2>/dev/null; then
+                sudo -n chown -R "$(whoami):$(whoami)" node_modules
+                echo "node_modules ownership reclaimed via sudo"
+              else
+                echo "no passwordless sudo -- removing node_modules so npm ci recreates it cleanly"
+                rm -rf node_modules || {
+                  echo "FATAL: node_modules is root-owned, sudo is unavailable, and rm -rf failed."
+                  echo "One-time manual fix required on the server (as root):"
+                  echo "  chown -R $(whoami):$(whoami) /var/www/_work/get-hired-BE/node_modules"
+                  exit 1
+                }
+              fi
+            fi
+
             echo "=== DIAG: install/build ==="
             npm ci --omit=dev
             npm run build --if-present
