@@ -132,7 +132,45 @@ var validateJobPublishPayload = function(req, res, next) {
   var body = req.body || {};
   var statusId = parseInt(body.jobStatusId, 10) || 1;
 
-  // Only enforce on publish (status 2)
+  // GETHIRED_QA_REMEDIATION V1 Phase 3 (EM-21, P1): compensation had zero
+  // server-side validation at all -- createJobs/updateJob wrote
+  // salaryMinimum/salaryMaximum straight into the DB with no numeric,
+  // sign, or range check, so a negative or reversed value persisted
+  // regardless of what the frontend did (frontend now blocks it too, but
+  // this is the authoritative check -- a direct API call bypassing the FE
+  // entirely must still be rejected). Runs on every save, draft or
+  // publish, not gated behind the statusId !== 2 return below -- an
+  // invalid value should never be persisted at all, not just blocked at
+  // publish time. Both fields are genuinely optional (product decision,
+  // see the comment further down); only validate values actually sent.
+  var salaryMin = body.salaryMinimum;
+  var salaryMax = body.salaryMaximum;
+  var hasMin = salaryMin !== null && salaryMin !== undefined && salaryMin !== '';
+  var hasMax = salaryMax !== null && salaryMax !== undefined && salaryMax !== '';
+  var salaryErrors = [];
+
+  if (hasMin) {
+    var minNum = Number(salaryMin);
+    if (!Number.isFinite(minNum)) salaryErrors.push('Minimum salary must be a number.');
+    else if (minNum < 0) salaryErrors.push('Minimum salary cannot be negative.');
+  }
+  if (hasMax) {
+    var maxNum = Number(salaryMax);
+    if (!Number.isFinite(maxNum)) salaryErrors.push('Maximum salary must be a number.');
+    else if (maxNum < 0) salaryErrors.push('Maximum salary cannot be negative.');
+  }
+  if (salaryErrors.length === 0 && hasMin && hasMax && Number(salaryMax) < Number(salaryMin)) {
+    salaryErrors.push('Maximum salary cannot be less than minimum salary.');
+  }
+
+  if (salaryErrors.length > 0) {
+    return res.status(422).json({
+      message: salaryErrors.join(' '),
+      missing: [],
+    });
+  }
+
+  // Only enforce required-field gate on publish (status 2)
   if (statusId !== 2) return next();
 
   var missing = [];
