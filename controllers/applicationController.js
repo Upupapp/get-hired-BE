@@ -38,13 +38,27 @@ const submitApplication = async (req, res) => {
     return res.status(status.bad).json(errorResponse("jobId is required."));
   }
 
+  // GETHIRED_QA_REMEDIATION V1 Phase 4 (JS-16, P2): this used to set the
+  // BRAND NEW application's initial status to 3 ("Under review" --
+  // APPLICANT_SAFE_STATUS_MAP) whenever the applicant answered any
+  // interview questions, and 2 ("Application received") otherwise --
+  // conflating "the applicant answered screening questions" with "an
+  // employer has reviewed this application," which is a completely
+  // different, later event that hasn't happened yet at submission time.
+  // This is exactly why a fresh application could show as already
+  // reviewed/under-review within seconds of being submitted. Every new
+  // application now starts in the same truthful, neutral state
+  // regardless of what was answered; "Under review" only happens later,
+  // via the existing explicit employer-initiated status-change endpoint
+  // (updateApplicationStatus) -- a real, deliberate employer action, not
+  // an automatic side effect of submission.
   const application = {
     jobId,
     coverLetter,
     resume,
     governmentFiles,
     interviewAnswers,
-    applicationStatusId: interviewAnswers.length > 0 ? 3:2
+    applicationStatusId: 2
   };
 
   try {
