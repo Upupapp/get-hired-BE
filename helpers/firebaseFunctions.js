@@ -78,11 +78,22 @@ const signInUserAndGetTokeninFirebase = async (email, password) => {
   }
 };
 
+// GETHIRED_QA_REMEDIATION V1 Phase 2 (JS-22, P1): same root cause and fix as
+// sendEmailVerificationFirebase's JS-02/EM-10 fix above -- no
+// actionCodeSettings meant Firebase generated a link to its own default
+// hosted handler instead of this app's own /verify route, which already
+// handles mode=resetPassword by redirecting into ../change-password with
+// the oobCode. handleCodeInApp: true appends mode/oobCode/lang directly
+// onto this app's own URL instead.
 const getForgetPwLinkInFirebase = async (email) => {
   try {
     const auth = firebaseAdmin.auth();
 
-    const url = await auth.generatePasswordResetLink(email);
+    const actionCodeSettings = {
+      url: `${env.app_url}/verify`,
+      handleCodeInApp: true,
+    };
+    const url = await auth.generatePasswordResetLink(email, actionCodeSettings);
     return url;
   } catch (err) {
     console.log(err);

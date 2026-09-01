@@ -304,24 +304,57 @@ const getRefreshToken = async (req, res) => {
   }
 };
 
+// GETHIRED_QA_REMEDIATION V1 Phase 2 (JS-21/JS-22, P1):
+// - JS-21 (enumeration): this used to return status.success (200) with a
+//   "sent" message for a known email, but let a thrown error (Firebase
+//   throws for an unknown email -- generatePasswordResetLink rejects with
+//   auth/user-not-found) fall through to the catch block's status.error
+//   (500) with a different body. A known vs unknown email was trivially
+//   distinguishable by HTTP status code alone. Now returns the exact same
+//   200 + generic message in every case -- known email, unknown email, or
+//   any internal failure -- and never leaks which one occurred.
+// - JS-22 (delivery): send() was called without await and its result was
+//   never checked (send() itself never throws by design -- see mailer.js --
+//   so a misconfigured/failing provider was invisible here), meaning
+//   "Link Send to your provided Email" was returned regardless of whether
+//   the email actually went out. Delivery is now awaited and failures are
+//   logged server-side (safe telemetry only, no token/secret values) so a
+//   real production delivery problem is at least visible in logs, without
+//   changing what the user sees (still the same generic message either way
+//   -- see the enumeration fix above for why).
+const GENERIC_RESET_MESSAGE = "If an account exists for this email, password reset instructions have been sent.";
+
 const passwordResetLink = async (req, res) => {
   const { email } = req.query;
+
+  if (isEmpty(email) || !isValidEmail(email)) {
+    // Still generic -- an obviously malformed value gets the same response
+    // as everything else, not a distinct "invalid email" signal.
+    return res.status(status.success).json(successResponse(GENERIC_RESET_MESSAGE));
+  }
+
   try {
     const pwRequestLink = await getForgetPwLinkInFirebase(email);
     const name = await getUserNameByEmail(email);
     const userRole = await getUserRoleByEmail(email);
 
-    send(email, "pw_reset", {
+    const mailResult = await send(email, "pw_reset", {
       url: pwRequestLink + `&role=${userRole}&email=${email}`,
       name,
       email,
     });
 
-    return res.status(status.success).json(successResponse("Link Send to your provided Email"));
+    if (!mailResult || !mailResult.sent) {
+      console.warn('[passwordResetLink] Reset link generated but email delivery failed:', email, mailResult && mailResult.reason);
+    }
   } catch (error) {
-    console.error('[passwordResetLink] error:', error);
-    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+    // Covers "email not registered" (Firebase auth/user-not-found) and any
+    // other internal failure alike -- safe to log in full server-side,
+    // never surfaced to the caller.
+    console.error('[passwordResetLink] error (not shown to caller):', email, error && error.message);
   }
+
+  return res.status(status.success).json(successResponse(GENERIC_RESET_MESSAGE));
 };
 
 const getUserProfile = async (req, res) => {
