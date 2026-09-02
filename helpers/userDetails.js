@@ -26,7 +26,17 @@ const getUserRoleByEmail = async (email) => {
 };
 
 const getUserProfileById = async (uid) => {
-  const searchQuery = `Select * from ${dbSchema}.users where uid = $1`;
+  // BUGFIX: users.email was dropped in a DDL migration (db/user_ddl.sql:
+  // "ALTER TABLE gethired.users DROP COLUMN email") -- email lives on
+  // user_credentials only, same as every other fixed lookup in this file
+  // (see getUserNameByEmail above). This function backs GET /auth/getprofile
+  // directly, so its missing join left every profile response (and every
+  // page reading from it -- Profile Details' Contact Details card,
+  // Settings' Account Settings form) with a permanently blank email field,
+  // despite userMap already expecting raw.email.
+  const searchQuery = `Select u.*, c.email from ${dbSchema}.users u
+    left join ${dbSchema}.user_credentials c on c.uid = u.uid
+    where u.uid = $1`;
 
   try {
     const { rows } = await dbQuery.query(searchQuery, [uid]);
