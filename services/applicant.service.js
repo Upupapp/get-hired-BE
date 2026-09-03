@@ -850,11 +850,23 @@ const appplicantProfile = async (userId) => {
   // Swapping the order makes ap.* win for every overlapping column, which
   // is correct in all three cases (the applicant-profile-specific value
   // is always what should display, not the legacy users-table one).
-  const searchQuery = `SELECT u.*, ap.*,
+  // BUGFIX: mappedProfile() below reads raw.email, but neither
+  // applicants_profile nor users has an email column (same schema history
+  // as getUserProfileById() -- users.email was dropped; email lives on
+  // user_credentials only). This query never joined user_credentials at
+  // all, so email was always undefined here -- the Jobseeker Profile
+  // "Contact Details" card's {{ user.email }} binding was already correct;
+  // the value it received never had email in it. c.email is placed after
+  // u.*/ap.* (neither defines an "email" column, so there's no shadowing
+  // risk of the kind the short_bio fix above guards against) and aliased
+  // explicitly for clarity.
+  const searchQuery = `SELECT u.*, ap.*, c.email,
     jt.job_type_name, jl.job_level_name, ws.work_setup_name
     FROM ${dbSchema}.applicants_profile ap
     left join ${dbSchema}.users u
     on u.uid = ap.user_id
+    left join ${dbSchema}.user_credentials c
+    on c.uid = ap.user_id
     left join ${dbSchema}.work_setup ws
     on ws.work_setup_id  = ap.work_setup_id
     left join ${dbSchema}.job_type jt

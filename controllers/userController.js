@@ -408,11 +408,28 @@ const updateUserProfile = async(req, res) => {
 const changePw = async (req, res) => {
   const { oobCode, pw, email } = req.body;
 
+  // BUGFIX (root cause of "reset succeeds but neither old nor new password
+  // signs in"): changePWinDB below does a case-sensitive Postgres lookup
+  // (`where email=$2`), but `email` here comes from the reset link's query
+  // param chain, not a form the user typed into with client-side
+  // lowercasing (unlike sign-in). Any case mismatch made the UPDATE match
+  // zero rows -- changeInDB came back undefined, this function threw and
+  // told the user their link "may have expired" -- while
+  // verifyPwResetInFirebase above had ALREADY genuinely changed the
+  // Firebase password. The two credential stores (Postgres bcrypt hash,
+  // consulted first by loginUserInDBAndFirebase; Firebase itself,
+  // consulted second) were left out of sync: the NEW password only
+  // matched Firebase, the OLD password only matched the stale DB hash --
+  // neither alone satisfies both checks, so both failed to sign in.
+  // Same root-cause class as the passwordResetLink email-normalization
+  // fix; normalizing here keeps both stores in lockstep.
+  const normalizedEmail = (email || '').trim().toLowerCase();
+
   const hashPw = hashPassword(pw);
 
   try {
     const changePWinFirebase = await verifyPwResetInFirebase(oobCode, pw);
-    const changeInDB = await changePWinDB(email, hashPw);
+    const changeInDB = await changePWinDB(normalizedEmail, hashPw);
 
     if (!changeInDB) {
       throw Error("Failed to change password in Database");
@@ -420,7 +437,9 @@ const changePw = async (req, res) => {
 
     return res.status(status.success).json(successResponse("Password Successfuly Change"));
   } catch (error) {
-    console.error('[changePw] error:', error);
+    // Never log pw/oobCode -- only the error's own message (Firebase/DB
+    // errors don't echo back submitted credential values).
+    console.error('[changePw] error:', error && error.message);
     return res.status(status.error).json(errorResponse("Your password reset link may have expired. Please request a new one."));
   }
 };
@@ -759,10 +778,23 @@ const changePasswordInSession = async (req, res) => {
 
     const userRecord = credResult.rows[0];
     const userEmail = userRecord.email || '';
-    const storedHash = userRecord.pw_hash || '';
     const firstName = userRecord.firstname || '';
 
-    if (!comparePassword(storedHash, currentPassword)) {
+    // AUTHORITATIVE CURRENT-PASSWORD VERIFICATION (bugfix): previously
+    // compared currentPassword against the DB-stored bcrypt hash
+    // (comparePassword(storedHash, currentPassword)) -- but that hash is
+    // NOT guaranteed to reflect the account's real Firebase credential
+    // (see the passwordResetLink/changePw email-case-sensitivity fixes:
+    // the two stores can desync, exactly the failure mode that produced
+    // "reset succeeds but neither old nor new password signs in"). Firebase
+    // is the actual authentication authority, so verify the current
+    // password by attempting a real Firebase sign-in with it (the same
+    // stateless Identity Toolkit REST call regular sign-in already uses --
+    // no new auth mechanism introduced). A wrong current password throws
+    // here and is reported identically to before; a correct one proceeds.
+    try {
+      await signInUserAndGetTokeninFirebase(userEmail, currentPassword);
+    } catch (verifyErr) {
       console.error('[changePasswordInSession] wrong-current-password uid=' + uid.substring(0, 8));
       return res.status(401).json({
         success: false,
@@ -790,7 +822,11 @@ const changePasswordInSession = async (req, res) => {
       });
     }
 
-    if (comparePassword(storedHash, newPassword)) {
+    // Direct comparison against the just-verified plaintext currentPassword
+    // (in-memory only, never stored) -- more accurate than re-checking
+    // against the DB hash a second time, and doesn't depend on that hash
+    // being in sync with the real Firebase credential.
+    if (newPassword === currentPassword) {
       return res.status(400).json({
         success: false,
         error: { code: 'same_as_old', message: 'Your new password must be different from your current password.' },
