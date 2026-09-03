@@ -54,12 +54,16 @@ const loginUser = async (req, res) => {
   }
 
   try {
+    // SECURITY (EMP-005 remediation): a nonexistent email must fail
+    // identically to a wrong password for an existing one -- returning a
+    // distinct "User does not exist" 404 here let an attacker enumerate
+    // registered accounts one probe at a time. Only an EXISTING,
+    // unverified account still gets its own distinct message below (that's
+    // not an enumeration leak -- a real user needs to see it for their own
+    // email); a nonexistent email now falls through to the same generic
+    // credential-failure branch as a wrong password, in the catch block.
     const firebaseAuthentication = await checkUserIfExistInFirebase(email);
-    if (firebaseAuthentication.length === 0) {
-      return res.status(status.notfound).json(errorResponse("User does not exist. Please Register."));
-    }
-
-    if (!firebaseAuthentication.emailVerified) {
+    if (firebaseAuthentication.length !== 0 && !firebaseAuthentication.emailVerified) {
       return res.status(status.unauthorized).json(errorResponse("Please Verify Email with the link sent to your registered email address."));
     }
 
@@ -97,6 +101,15 @@ const loginUser = async (req, res) => {
       withActiveSubscription: isActive
     }));
   } catch (err) {
+    // SECURITY (EMP-005 remediation): Firebase's own credential-rejection
+    // codes (nonexistent email OR wrong password) all collapse into the
+    // SAME generic 401 -- neither response text nor status code may differ
+    // between "no such account" and "wrong password" for an existing one.
+    var errMsg = (err && err.message) ? String(err.message) : '';
+    var isCredentialFailure = /EMAIL_NOT_FOUND|INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS/.test(errMsg);
+    if (isCredentialFailure) {
+      return res.status(status.unauthorized).json(errorResponse("Email or password is incorrect."));
+    }
     console.error('[loginUser] error:', err);
     return res.status(status.error).json(errorResponse("Login failed. Please check your credentials and try again."));
   }
