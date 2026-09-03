@@ -427,19 +427,46 @@ const changePw = async (req, res) => {
 
   const hashPw = hashPassword(pw);
 
+  let firebaseUpdateSucceeded = false;
+
   try {
     const changePWinFirebase = await verifyPwResetInFirebase(oobCode, pw);
-    const changeInDB = await changePWinDB(normalizedEmail, hashPw);
+    firebaseUpdateSucceeded = true;
 
-    if (!changeInDB) {
-      throw Error("Failed to change password in Database");
+    // DIVERGENCE-RISK FIX: previously this DB step's failure fell into the
+    // same catch as a genuinely bad/expired oobCode, telling the user their
+    // "link may have expired" -- actively wrong once Firebase has already
+    // been updated (the honest state is "your new password IS live,
+    // something else failed"), and giving them no reason to just try the
+    // new password. Isolated into its own try/catch so a post-Firebase-
+    // success DB failure (transient connection error, deadlock, anything
+    // other than the case-mismatch already fixed above) is reported
+    // truthfully and logged as a distinct, loud CRITICAL event for manual
+    // reconciliation, instead of being folded into the generic failure path.
+    try {
+      const changeInDB = await changePWinDB(normalizedEmail, hashPw);
+      if (!changeInDB) {
+        throw Error("changePWinDB matched zero rows");
+      }
+    } catch (dbError) {
+      console.error(
+        '[changePw] CRITICAL credential-store divergence: Firebase password',
+        'updated successfully but the Postgres credential record was NOT.',
+        'email(normalized)=', normalizedEmail,
+        'reason=', dbError && dbError.message
+      );
+      return res.status(status.success).json(successResponse(
+        "Your new password is active. If you have trouble signing in, please try again in a few minutes or contact support."
+      ));
     }
 
     return res.status(status.success).json(successResponse("Password Successfuly Change"));
   } catch (error) {
     // Never log pw/oobCode -- only the error's own message (Firebase/DB
-    // errors don't echo back submitted credential values).
-    console.error('[changePw] error:', error && error.message);
+    // errors don't echo back submitted credential values). Reaching here
+    // means Firebase itself never succeeded (bad/expired oobCode etc.) --
+    // "link may have expired" is accurate for this branch specifically.
+    console.error('[changePw] error:', error && error.message, 'firebaseUpdateSucceeded=', firebaseUpdateSucceeded);
     return res.status(status.error).json(errorResponse("Your password reset link may have expired. Please request a new one."));
   }
 };
@@ -836,11 +863,36 @@ const changePasswordInSession = async (req, res) => {
 
     await updateUserPasswordInFirebase(uid, newPassword);
 
-    const newHash = hashPassword(newPassword);
-    await dbQuery.query(
-      'UPDATE ' + dbSchema + '.user_credentials SET password = $1 WHERE uid = $2',
-      [newHash, uid]
-    );
+    // DIVERGENCE-RISK FIX (same class as changePw's): if this DB step
+    // throws after Firebase has already been updated, letting it fall into
+    // the outer catch would tell the user the change failed -- wrong, and
+    // actively misleading (they'd assume their old password still works).
+    // Isolated so a post-Firebase-success DB failure is reported truthfully
+    // and logged as a distinct CRITICAL event for manual reconciliation.
+    try {
+      const newHash = hashPassword(newPassword);
+      await dbQuery.query(
+        'UPDATE ' + dbSchema + '.user_credentials SET password = $1 WHERE uid = $2',
+        [newHash, uid]
+      );
+    } catch (dbError) {
+      console.error(
+        '[changePasswordInSession] CRITICAL credential-store divergence:',
+        'Firebase password updated successfully but the Postgres credential',
+        'record was NOT. uid=' + uid.substring(0, 8), 'reason=', dbError && dbError.message
+      );
+      return res.status(200).json({
+        success: true,
+        copyKey: 'account.password.change.success',
+        feedback: {
+          state: 'success',
+          title: 'Password updated',
+          body: 'Your new password is active. If you have trouble signing in, please try again in a few minutes or contact support.',
+          primaryCta: 'Done'
+        },
+        security: { notificationQueued: false, otherSessionsRevoked: false },
+      });
+    }
 
     let otherSessionsRevoked = false;
     if (signOutOtherSessions) {
