@@ -45,15 +45,39 @@ function checkIpRateLimit(ip) {
   return ipRateCounts[ip].count <= limit;
 }
 
-// Exchange Google ID token (from GIS) for Firebase credentials via Firebase REST API.
-// This is safe: the Firebase REST API verifies the Google JWT signature internally.
-// We then verify the returned Firebase ID token with Firebase Admin for double assurance.
-async function exchangeGoogleTokenForFirebase(googleIdToken) {
+// Server-controlled allowlist of accepted Google credential types. The client
+// selects only which TYPE of credential it is sending (an exact enum value) —
+// it never supplies postBody/providerId itself, so it cannot inject an
+// arbitrary IdP or arbitrary Firebase REST parameters.
+var CREDENTIAL_TYPES = {
+  google_id_token: 'id_token',
+  google_access_token: 'access_token'
+};
+
+// Exchange a Google credential (GIS ID token, or an OAuth2 access token from
+// the custom-button token-client flow) for Firebase credentials via Firebase's
+// REST API. This is safe: Firebase's REST API verifies the Google credential
+// with Google directly (signature verification for an ID token; a Google
+// tokeninfo/userinfo check for an access token) internally, server-side. We
+// then independently verify the returned Firebase ID token with Firebase
+// Admin for double assurance — unchanged for either credential type.
+//
+// providerId is always the literal 'google.com' here, never client-supplied.
+async function exchangeGoogleTokenForFirebase(credential, credentialType) {
+  var postBodyField = CREDENTIAL_TYPES[credentialType];
+  if (!postBodyField) {
+    // Should be unreachable — callers validate credentialType before this point.
+    throw new Error('unsupported_credential_type');
+  }
   var apiKey = env.apiKey;
-  var url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + apiKey;
-  var response = await axios.post(url, {
+  var isProduction = process.env.NODE_ENV === 'production';
+  var emulatorHost = !isProduction && process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  var base = emulatorHost
+    ? 'http://' + emulatorHost + '/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + apiKey
+    : 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=' + apiKey;
+  var response = await axios.post(base, {
     requestUri: 'https://gethiredonline.app',
-    postBody: 'id_token=' + encodeURIComponent(googleIdToken) + '&providerId=google.com',
+    postBody: postBodyField + '=' + encodeURIComponent(credential) + '&providerId=google.com',
     returnSecureToken: true,
     returnIdpCredential: false
   }, { timeout: 10000 });
@@ -109,18 +133,37 @@ const googleFirebaseSession = async (req, res) => {
   }
 
   var body = req.body || {};
-  var googleIdToken = body.googleIdToken ? String(body.googleIdToken) : '';
   var source = body.source ? String(body.source).substring(0, 64) : 'unknown';
   var returnUrl = sanitizeReturnUrl(body.returnUrl);
 
-  // Basic token sanity check — Google JWTs are always > 200 chars
-  if (!googleIdToken || googleIdToken.length < 200) {
+  // Two supported shapes on the wire:
+  //  - legacy: { googleIdToken } — always the GIS ID-token flow (unchanged)
+  //  - new:    { credential, credentialType } — credentialType is an exact
+  //    allowlisted enum value (see CREDENTIAL_TYPES); the client never
+  //    supplies postBody/providerId, only which TYPE of credential this is.
+  var credentialType = 'google_id_token';
+  var credential = '';
+  if (body.credential) {
+    credential = String(body.credential);
+    credentialType = body.credentialType ? String(body.credentialType) : '';
+  } else {
+    credential = body.googleIdToken ? String(body.googleIdToken) : '';
+  }
+
+  if (!CREDENTIAL_TYPES[credentialType]) {
+    return res.status(400).json({ message: 'Unsupported Google credential type.' });
+  }
+
+  // Basic sanity/bound check — Google JWTs and OAuth access tokens are both
+  // comfortably under this ceiling in normal operation; this only exists to
+  // reject empty/garbage input and cap payload size, not to validate shape.
+  if (!credential || credential.length < 20 || credential.length > 4096) {
     return res.status(400).json({ message: 'Missing or invalid Google credential.' });
   }
 
   try {
-    // Exchange Google ID token for Firebase session via Firebase REST API
-    var fbData = await exchangeGoogleTokenForFirebase(googleIdToken);
+    // Exchange the Google credential for a Firebase session via Firebase's REST API
+    var fbData = await exchangeGoogleTokenForFirebase(credential, credentialType);
     var firebaseIdToken = fbData && fbData.idToken;
     var refreshToken = (fbData && fbData.refreshToken) || '';
 
