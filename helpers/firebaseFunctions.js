@@ -66,10 +66,10 @@ const signInUserAndGetTokeninFirebase = async (email, password) => {
   } catch (err) {
     // Firebase's REST API error shape is nested under response.data.error --
     // surface its message (e.g. INVALID_PASSWORD, EMAIL_NOT_FOUND) instead
-    // of a generic Axios error object where available. The caller
-    // (loginUserInDBAndFirebase) already validates the password against our
-    // own DB copy before this ever runs, and the final user-facing message
-    // is generic either way (userController.js's loginUser catch block), so
+    // of a generic Axios error object where available. This is Firebase's
+    // authoritative password check (loginUserInDBAndFirebase has no
+    // Postgres bcrypt gate anymore); the final user-facing message is still
+    // generic either way (userController.js's loginUser catch block), so
     // exact wording here only matters for server-side error logs.
     if (err && err.response && err.response.data && err.response.data.error) {
       throw Error(err.response.data.error.message || 'Authentication failed.');

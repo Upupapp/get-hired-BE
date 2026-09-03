@@ -1,7 +1,6 @@
 import { status, successResponse, errorResponse } from "../helpers/status";
 import {
   hashPassword,
-  comparePassword,
   isValidEmail,
   isEmpty,
   validatePassword,
@@ -433,31 +432,26 @@ const changePw = async (req, res) => {
     const changePWinFirebase = await verifyPwResetInFirebase(oobCode, pw);
     firebaseUpdateSucceeded = true;
 
-    // DIVERGENCE-RISK FIX: previously this DB step's failure fell into the
-    // same catch as a genuinely bad/expired oobCode, telling the user their
-    // "link may have expired" -- actively wrong once Firebase has already
-    // been updated (the honest state is "your new password IS live,
-    // something else failed"), and giving them no reason to just try the
-    // new password. Isolated into its own try/catch so a post-Firebase-
-    // success DB failure (transient connection error, deadlock, anything
-    // other than the case-mismatch already fixed above) is reported
-    // truthfully and logged as a distinct, loud CRITICAL event for manual
-    // reconciliation, instead of being folded into the generic failure path.
+    // Isolated so this DB step's failure never falls into the same catch as
+    // a genuinely bad/expired oobCode, which would tell the user their
+    // "link may have expired" -- wrong once Firebase has already been
+    // updated. Firebase is the sole password-correctness authority
+    // (loginUserInDBAndFirebase no longer reads this column at all), so a
+    // failure here is a legacy-hash sync miss, not a credential-store
+    // divergence that can lock anyone out -- logged as a non-critical
+    // warning for optional cleanup, not a CRITICAL page-worthy event.
     try {
       const changeInDB = await changePWinDB(normalizedEmail, hashPw);
       if (!changeInDB) {
         throw Error("changePWinDB matched zero rows");
       }
     } catch (dbError) {
-      console.error(
-        '[changePw] CRITICAL credential-store divergence: Firebase password',
-        'updated successfully but the Postgres credential record was NOT.',
-        'email(normalized)=', normalizedEmail,
+      console.warn(
+        '[changePw] legacy Postgres password hash not updated (no auth impact --',
+        'Firebase is the sole sign-in authority). email(normalized)=', normalizedEmail,
         'reason=', dbError && dbError.message
       );
-      return res.status(status.success).json(successResponse(
-        "Your new password is active. If you have trouble signing in, please try again in a few minutes or contact support."
-      ));
+      return res.status(status.success).json(successResponse("Password Successfuly Change"));
     }
 
     return res.status(status.success).json(successResponse("Password Successfuly Change"));
@@ -643,17 +637,17 @@ const registerUserInDB = async (user) => {
 
 const loginUserInDBAndFirebase = async (email, password) => {
   try {
+    // Firebase is the sole password-correctness authority. The Postgres
+    // bcrypt hash is written at signup/reset/change-password but never
+    // read as an auth gate here, so a Postgres write failure after a
+    // Firebase success can no longer cause a signin lockout.
+    const firebaseUser = await signInUserAndGetTokeninFirebase(email, password);
+
     const dbCredentials = await getUserCredentialsByEmail(email);
 
     if (!dbCredentials) {
-      throw Error("User does not exist");
-    }
-
-    if (!comparePassword(dbCredentials.password, password)) {
       throw Error("Please enter a valid Password");
     }
-
-    const firebaseUser = await signInUserAndGetTokeninFirebase(email, password);
 
     const credentials = {
       id: firebaseUser.uid,
@@ -863,12 +857,13 @@ const changePasswordInSession = async (req, res) => {
 
     await updateUserPasswordInFirebase(uid, newPassword);
 
-    // DIVERGENCE-RISK FIX (same class as changePw's): if this DB step
-    // throws after Firebase has already been updated, letting it fall into
-    // the outer catch would tell the user the change failed -- wrong, and
-    // actively misleading (they'd assume their old password still works).
-    // Isolated so a post-Firebase-success DB failure is reported truthfully
-    // and logged as a distinct CRITICAL event for manual reconciliation.
+    // Isolated so this DB step's failure never falls into the outer catch,
+    // which would tell the user the change failed -- wrong once Firebase
+    // has already been updated. Firebase is the sole password-correctness
+    // authority (loginUserInDBAndFirebase no longer reads this column at
+    // all), so a failure here is a legacy-hash sync miss, not a
+    // credential-store divergence that can lock anyone out -- logged as a
+    // non-critical warning for optional cleanup, not a CRITICAL event.
     try {
       const newHash = hashPassword(newPassword);
       await dbQuery.query(
@@ -876,22 +871,11 @@ const changePasswordInSession = async (req, res) => {
         [newHash, uid]
       );
     } catch (dbError) {
-      console.error(
-        '[changePasswordInSession] CRITICAL credential-store divergence:',
-        'Firebase password updated successfully but the Postgres credential',
-        'record was NOT. uid=' + uid.substring(0, 8), 'reason=', dbError && dbError.message
+      console.warn(
+        '[changePasswordInSession] legacy Postgres password hash not updated',
+        '(no auth impact -- Firebase is the sole sign-in authority).',
+        'uid=' + uid.substring(0, 8), 'reason=', dbError && dbError.message
       );
-      return res.status(200).json({
-        success: true,
-        copyKey: 'account.password.change.success',
-        feedback: {
-          state: 'success',
-          title: 'Password updated',
-          body: 'Your new password is active. If you have trouble signing in, please try again in a few minutes or contact support.',
-          primaryCta: 'Done'
-        },
-        security: { notificationQueued: false, otherSessionsRevoked: false },
-      });
     }
 
     let otherSessionsRevoked = false;
