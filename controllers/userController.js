@@ -333,25 +333,47 @@ const passwordResetLink = async (req, res) => {
     return res.status(status.success).json(successResponse(GENERIC_RESET_MESSAGE));
   }
 
-  try {
-    const pwRequestLink = await getForgetPwLinkInFirebase(email);
-    const name = await getUserNameByEmail(email);
-    const userRole = await getUserRoleByEmail(email);
+  // BUGFIX (live-reproduced): same root cause already documented in
+  // notes.md's 2026-08-20 email-case-sensitivity entry for registerUser/
+  // resendVerification, present here too and never fixed for this path.
+  // Firebase normalizes/matches emails case-insensitively and
+  // user_credentials.email is stored lowercase (Firebase's own
+  // normalization on account creation), but this function queried
+  // Postgres with whatever case the caller submitted. Any mixed-case
+  // email (the overwhelmingly common case -- "Name@Gmail.com" etc.)
+  // returned zero rows from getUserNameByEmail/getUserRoleByEmail, which
+  // threw on `rows[0].firstname`/`rows[0].role` of undefined -- caught by
+  // the try/catch below, logged as "TypeError: Cannot read properties of
+  // undefined (reading 'firstname')" and swallowed BEFORE send() ever
+  // ran, so no email was ever sent, while the generic "instructions have
+  // been sent" success response still returned (this is what a real user
+  // of this exact form observed and reported: a genuine registered
+  // account, reset "succeeded" on screen, no email ever arrived).
+  // Normalizing once here fixes every downstream lookup and the Firebase
+  // Admin call alike; Firebase itself already matched case-insensitively,
+  // so this changes nothing about which account matches -- it removes a
+  // needless case-sensitive Postgres gap.
+  const normalizedEmail = email.trim().toLowerCase();
 
-    const mailResult = await send(email, "pw_reset", {
-      url: pwRequestLink + `&role=${userRole}&email=${email}`,
+  try {
+    const pwRequestLink = await getForgetPwLinkInFirebase(normalizedEmail);
+    const name = await getUserNameByEmail(normalizedEmail);
+    const userRole = await getUserRoleByEmail(normalizedEmail);
+
+    const mailResult = await send(normalizedEmail, "pw_reset", {
+      url: pwRequestLink + `&role=${userRole}&email=${normalizedEmail}`,
       name,
-      email,
+      email: normalizedEmail,
     });
 
     if (!mailResult || !mailResult.sent) {
-      console.warn('[passwordResetLink] Reset link generated but email delivery failed:', email, mailResult && mailResult.reason);
+      console.warn('[passwordResetLink] Reset link generated but email delivery failed:', normalizedEmail, mailResult && mailResult.reason);
     }
   } catch (error) {
     // Covers "email not registered" (Firebase auth/user-not-found) and any
     // other internal failure alike -- safe to log in full server-side,
     // never surfaced to the caller.
-    console.error('[passwordResetLink] error (not shown to caller):', email, error && error.message);
+    console.error('[passwordResetLink] error (not shown to caller):', normalizedEmail, error && error.message);
   }
 
   return res.status(status.success).json(successResponse(GENERIC_RESET_MESSAGE));
