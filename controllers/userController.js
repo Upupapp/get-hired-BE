@@ -80,7 +80,21 @@ const loginUser = async (req, res) => {
       withCompany: userCompany && userCompany.length != 0,
       companyName: userCompany.companyName || "",
       companyId: userCompany.companyId || null,
-      withActiveSubscription: userCompany.withActiveSubscription
+      // BUGFIX (production, "Employer/Recruiter signin redirects to
+      // Subscription & Billing instead of Dashboard"): isActive above is
+      // computed from a real, live query against the subscriptions table
+      // (companySubscriptions -> subs[0].endAt > now) -- but this response
+      // field previously read userCompany.withActiveSubscription instead,
+      // which maps to companies.with_active_subscription, a DB column no
+      // application code anywhere ever writes (confirmed via repo-wide
+      // search: only ever read, never set). That column is permanently
+      // stale/undefined, so every employer -- regardless of actual
+      // subscription status -- got withActiveSubscription: undefined,
+      // which the frontend's `if (user.withActiveSubscription)` always
+      // read as false, sending every employer to Subscription & Billing
+      // instead of Dashboard. isActive is the value this field was always
+      // meant to carry.
+      withActiveSubscription: isActive
     }));
   } catch (err) {
     console.error('[loginUser] error:', err);
