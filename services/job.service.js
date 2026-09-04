@@ -609,12 +609,42 @@ const jobApplicants = async (jobId) => {
   }
 };
 
+// EMP-021 BOLA hardening: confirms `id` actually has a job_applicants row
+// for `jobId` before any profile/document lookup runs. Without this,
+// applicationOfApplicant() would happily look up ANY authenticated user's
+// profile/documents for an employer's own job, as long as the jobId
+// ownership check upstream (in jobsController.js) passed -- there was no
+// check that a real application relationship exists between the two.
+const hasAppliedToJob = async (jobId, candidateId) => {
+  const searchQuery = `SELECT job_application_id
+    FROM ${dbSchema}.job_applicants
+    WHERE job_id = $1 AND candidate_id = $2
+    LIMIT 1;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, [jobId, candidateId]);
+    return rows && rows.length !== 0;
+  } catch (error) {
+    throw error;
+  }
+};
+
 const applicationOfApplicant = async (jobId, id) => {
   let docCoveredLetter = [];
   let docResume = [];
   let docGovFiles = [];
 
   try {
+    // Relationship authorization: the caller's job ownership was already
+    // verified upstream, but that alone doesn't authorize looking up an
+    // arbitrary candidate's profile/documents -- the candidate must have a
+    // real application to THIS job. No relationship -> no data, and this is
+    // the only place we stop before ever touching profile/document tables.
+    const applied = await hasAppliedToJob(jobId, id);
+    if (!applied) {
+      return null;
+    }
+
     const profile = await appplicantProfile(id);
     const job = await jobDetails(jobId);
 
@@ -638,7 +668,11 @@ const applicationOfApplicant = async (jobId, id) => {
         resume: docResume && docResume.length !=0 ? [docResume]: [],
         governmentFiles: docGovFiles && docGovFiles.length !=0 ? [docGovFiles]: [],
       },
-      answers: await getInterviewAnswers(profile.applicantProfileId, jobId),
+      // Guard against a genuinely-applied candidate whose applicants_profile
+      // row is somehow missing (data anomaly, not the common case) -- an
+      // applied-but-profileless candidate should still get a valid empty
+      // answers list, never a crash on `profile.applicantProfileId`.
+      answers: profile ? await getInterviewAnswers(profile.applicantProfileId, jobId) : [],
     };
     return dbResponse;
   } catch (error) {

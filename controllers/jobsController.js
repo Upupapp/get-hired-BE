@@ -231,7 +231,14 @@ const getJobApplicantDetails = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
 
+    // EMP-021 BOLA hardening: applicationOfApplicant() returns null when
+    // `id` has no job_applicants row for `jobId` -- i.e. this candidate
+    // never applied to this job. Job ownership alone doesn't authorize
+    // looking up an arbitrary candidate's profile/documents.
     const applicants = await applicationOfApplicant(jobId, id);
+    if (!applicants) {
+      return res.status(403).json({ message: "You don't have permission to do that." });
+    }
 
     return res.status(status.success).json(successResponse(applicants));
   } catch (error) {
