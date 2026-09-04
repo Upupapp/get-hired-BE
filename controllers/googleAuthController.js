@@ -254,7 +254,21 @@ const googleFirebaseSession = async (req, res) => {
     if (err && err.response && err.response.data && err.response.data.error) {
       var apiErr = err.response.data.error;
       var apiMsg = apiErr.message || '';
-      console.error('[googleFirebaseSession] Firebase REST API error:', apiMsg);
+
+      // SECURITY: apiMsg is Firebase's raw error text. For malformed input
+      // it can echo back a fragment of the submitted credential (verified
+      // via a synthetic sentinel test -- e.g. "Unable to parse id_token:
+      // <the bad value we sent>"). Never log apiMsg itself. Only ever log a
+      // normalized code drawn from this fixed, code-controlled set, so no
+      // credential-bearing text can reach application logs. apiMsg is still
+      // used below for the existing branch comparisons -- only what gets
+      // logged has changed.
+      var safeApiErrCode = 'UNKNOWN_FIREBASE_ERROR';
+      if (apiMsg === 'EMAIL_EXISTS') safeApiErrCode = 'EMAIL_EXISTS';
+      else if (apiMsg === 'INVALID_IDP_RESPONSE') safeApiErrCode = 'INVALID_IDP_RESPONSE';
+      else if (apiMsg === 'MISSING_OR_INVALID_NONCE') safeApiErrCode = 'MISSING_OR_INVALID_NONCE';
+      else if (apiMsg.indexOf('INVALID') === 0) safeApiErrCode = 'INVALID_OTHER';
+      console.error('[googleFirebaseSession] Firebase REST API error code=' + safeApiErrCode + ' credentialType=' + credentialType);
 
       if (apiMsg === 'EMAIL_EXISTS') {
         // This email exists via a different provider (e.g. email+password)
