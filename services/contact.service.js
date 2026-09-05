@@ -461,6 +461,28 @@ const addInGroupList = async (groupId, email) => {
   }
 };
 
+// GETHIRED_TALENT_CANDIDATE_GROUP_MEMBER_REMOVAL_V1: deletes only the
+// group_list junction row -- group_list has exactly two columns
+// (group_id, email) and its only FK is group_id -> "group" (cascading
+// group->group_list on group delete, never the reverse), so this can never
+// touch contact/candidates/users/job_applicants. Keeps the existing
+// email-based membership contract unchanged (no composite identity).
+// Idempotent by design: if the row is already gone (already removed, or
+// never existed), rowCount is simply 0 -- the desired end state ("this
+// email is not a member of this group") already holds, so the caller
+// still gets a normal success response rather than an error.
+const removeFromGroupList = async (groupId, email) => {
+  try {
+    await dbQuery.query(
+      `DELETE FROM ${dbSchema}.group_list WHERE group_id=$1 AND email=$2`,
+      [groupId, email]
+    );
+    return true;
+  } catch (error) {
+    throw Error(error);
+  }
+};
+
 const checkIfExistInGroup = async (email, groupId) => {
   const searchQuery = `SELECT email FROM ${dbSchema}.group_list WHERE email = $1 and group_id=$2;`;
 
@@ -555,6 +577,16 @@ const getCompanyName = async (companyId) => {
 
 const listOfContacts = async (companyId, groupName) => {
   try {
+    // TALENT_BACKEND_PHASE1_BOUNDED_REPAIR_V1: this was a 2-branch UNION,
+    // missing the legacy `candidates`+`jobs` source entirely, and its
+    // job_applicants branch read email directly off `users` (dropped/empty
+    // column) instead of `user_credentials` -- reproducing, for this
+    // endpoint only, the exact bug `contactList()` (backing /contacts/list)
+    // already fixed via the STITCH QA11 FIX F-01 comment below. Both
+    // branches/join chains are now mirrored from contactList()'s
+    // searchQuery2/searchQuery3 so the two endpoints resolve email for the
+    // same person the same way. Phase 1 only -- output columns (full_name,
+    // email, contact_id) are unchanged; no composite identity introduced.
     const searchQuery = `SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.contact_id
                             FROM ${dbSchema}.contact c
                             where not exists(select email from ${dbSchema}.group_list
@@ -563,15 +595,26 @@ const listOfContacts = async (companyId, groupName) => {
                             and g.group_name = $1)
                             and c.company_id = $2
                             union
-                            SELECT concat(c.firstname , ' ', c.lastname) as full_name, c.email, c.uid
+                            SELECT concat(u.firstname, ' ', u.lastname) as full_name, uc.email, u.uid
                             FROM ${dbSchema}.job_applicants j
-                            left join ${dbSchema}.users c on c.uid = j.candidate_id
                             left join ${dbSchema}.jobs j2 on j2.job_id = j.job_id
+                            left join ${dbSchema}.applicants_profile ap on ap.user_id = j.candidate_id
+                            left join ${dbSchema}.users u on u.uid = ap.user_id
+                            left join ${dbSchema}.user_credentials uc on uc.uid = u.uid
+                            where not exists(select email from ${dbSchema}.group_list
+                            right join ${dbSchema}."group" g on g.group_id = group_list.group_id
+                            where group_list.email = uc.email
+                            and g.group_name = $1)
+                            and j2.company_id = $2
+                            union
+                            SELECT concat(c.first_name, ' ', c.last_name) as full_name, c.email, c.candidate_id
+                            FROM ${dbSchema}.candidates c
+                            right join ${dbSchema}.jobs j on j.job_id = c.job_id
                             where not exists(select email from ${dbSchema}.group_list
                             right join ${dbSchema}."group" g on g.group_id = group_list.group_id
                             where group_list.email = c.email
                             and g.group_name = $1)
-                            and j2.company_id = $2`;
+                            and c.company_id = $2`;
 
     const { rows } = await dbQuery.query(searchQuery, [groupName, companyId]);
 
@@ -587,15 +630,32 @@ const listOfContacts = async (companyId, groupName) => {
   }
 };
 
+// TALENT_GROUP_LIST_DEV_PROD_PARITY_CLEANUP_V1: this joined `users` directly
+// on `u.email = l.email` and selected `u.email` -- users.email was dropped
+// (STITCH QA11 FIX F-01, same class of bug already fixed for contactList()/
+// listOfContacts() by joining user_credentials instead). Locally the column
+// doesn't exist at all (hard 500); reproducing the exact same authoritative
+// email source used everywhere else in this codebase, not a new pattern.
+// Also added the missing `candidates` (legacy) branch, mirroring
+// contactList()'s/listOfContacts()'s 3-source coverage, so a member added
+// from that source resolves correctly here too instead of coming back
+// blank. Response shape (email, firstname, lastname, cell_number, address)
+// is unchanged -- only the resolution/coverage is fixed.
 const checkContacts = async (complete) => {
-  const searchQuery = ` SELECT l.email, u.firstname, u.lastname, u.email, u.cell_number, u.address
+  const searchQuery = ` SELECT l.email, u.firstname, u.lastname, uc.email, u.cell_number, u.address
                         FROM ${dbSchema}.group_list l
-                        right join ${dbSchema}.users u on u.email = l.email
+                        right join ${dbSchema}.user_credentials uc on uc.email = l.email
+                        left join ${dbSchema}.users u on u.uid = uc.uid
                         where l.group_id = $1
                         union
                         SELECT l.email, c.first_name, c.last_name, c.email, c.mobile_number, c.address
                         FROM ${dbSchema}.group_list l
                         right join ${dbSchema}.contact c on c.email = l.email
+                        where l.group_id = $1
+                        union
+                        SELECT l.email, ca.first_name, ca.last_name, ca.email, ca.mobile_number, ca.address
+                        FROM ${dbSchema}.group_list l
+                        right join ${dbSchema}.candidates ca on ca.email = l.email
                         where l.group_id = $1;`;
   let value = "";
   try {
@@ -669,6 +729,7 @@ export {
   checkGroupIfExist,
   addGroup,
   addInGroupList,
+  removeFromGroupList,
   getGroupId,
   checkIfExistInGroup,
   addMultipleContact,

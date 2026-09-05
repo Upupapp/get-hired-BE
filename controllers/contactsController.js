@@ -1,7 +1,7 @@
 import dbQuery from "../db/dbQuery";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
-import { addContact, addGroup, addInGroupList, checkContactIfExist, contactList, editContact, addMultipleContact, listOfGroup, listOfContacts, checkGroupIfExist, editGroup, checkEmailIfExistInContact, groupList } from "../services/contact.service";
+import { addContact, addGroup, addInGroupList, removeFromGroupList, checkContactIfExist, contactList, editContact, addMultipleContact, listOfGroup, listOfContacts, checkGroupIfExist, editGroup, checkEmailIfExistInContact, groupList } from "../services/contact.service";
 import { checkEmailIfExist } from "../helpers/userDetails";
 import { getUserCompanyForRequest } from "./companiesController";
 import { getAccessContextForRequest } from "../services/accessControl.service";
@@ -85,10 +85,23 @@ const multipleContact = async (req, res) => {
 const deleteContact = async (req, res) => {
     const { contactId } = req.query;
 
-    const checkInDb = await checkContactIfExist(contactId);
+    // TALENT_BACKEND_PHASE1_BOUNDED_REPAIR_V1: malformed/missing contactId is a
+    // client input error (400), not "contact does not exist" (404) or a server
+    // failure (500) -- distinguish before any DB round-trip.
+    if (!contactId || typeof contactId !== 'string' || contactId.trim().length === 0) {
+        return res.status(400).json({ message: "A valid contactId is required." });
+    }
+
     try {
-        if (!contactId || !checkInDb) {
-            return res.status(status.error).send("Contact does not Exist");
+        // TALENT_BACKEND_PHASE1_BOUNDED_REPAIR_V1: checkContactIfExist() used to be
+        // called before this try block opened, so a thrown Error from its own
+        // internal catch became an unhandled rejection reaching Express's default
+        // error handler (a raw framework 500 instead of this controller's clean
+        // JSON error shape). Moved inside the try so every failure path here is
+        // caught and reported through errorResponse(), never a bare stack trace.
+        const checkInDb = await checkContactIfExist(contactId);
+        if (!checkInDb) {
+            return res.status(404).json({ message: "Contact does not exist." });
         }
 
         // QA7 FIX-5 BOLA: verify caller's company owns this contact before deleting.
@@ -360,6 +373,54 @@ const deleteGroup = async (req, res) => {
     }
 };
 
+// GETHIRED_TALENT_CANDIDATE_GROUP_MEMBER_REMOVAL_V1: removes one candidate
+// from a group without deleting the group itself or the underlying
+// contact/candidate/applicant record. Mirrors deleteContact's ownership
+// pattern: companyId is JWT-derived (never client-supplied); the group's
+// existence and company ownership are both verified with a single query
+// before any group_list row is touched (404 if the group truly doesn't
+// exist anywhere, 403 if it exists but belongs to a different company --
+// same distinction deleteContact already makes). removeFromGroupList()
+// itself is a no-op-safe DELETE (see its own comment) -- removing an
+// already-removed or never-a-member email is not an error.
+const removeGroupMember = async (req, res) => {
+    const { groupId, email } = req.query;
+
+    if (!groupId || typeof groupId !== 'string' || groupId.trim().length === 0) {
+        return res.status(400).json({ message: "A valid groupId is required." });
+    }
+    if (!email || typeof email !== 'string' || email.trim().length === 0) {
+        return res.status(400).json({ message: "A valid member email is required." });
+    }
+
+    try {
+        const { rows: groupRows } = await dbQuery.query(
+            `SELECT company_id FROM ${dbSchema}."group" WHERE group_id=$1`,
+            [groupId]
+        );
+        if (groupRows.length === 0) {
+            return res.status(404).json({ message: "Group does not exist." });
+        }
+
+        const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
+        if (Array.isArray(callerCompany) || !callerCompany || !callerCompany.companyId) {
+            return res.status(403).json({ message: "You don't have permission to do that." });
+        }
+
+        if (groupRows[0].company_id !== callerCompany.companyId) {
+            return res.status(403).json({ message: "You don't have permission to do that." });
+        }
+
+        await removeFromGroupList(groupId, email);
+
+        return res.status(status.success).json(successResponse("Candidate removed from group."));
+
+    } catch (error) {
+        console.error('[contactsController] error:', error);
+        return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+    }
+};
+
 const list2 = async (req, res) => {
 
     let contact = [];
@@ -388,4 +449,4 @@ const list2 = async (req, res) => {
 };
 
 export {createContact, multipleContact, deleteContact, updateContact, list, createGroup, grouplist, contactslist, deleteGroup, updateGroup,
-    list2}
+    list2, removeGroupMember}
