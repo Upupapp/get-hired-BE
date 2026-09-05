@@ -860,3 +860,459 @@ working, non-fabricated feature, not a placeholder. It does NOT include
 compare/diff between versions (Tab 09's "Compare versions using an
 intelligible text/section diff" — that needs the same text-extraction
 capability as item 1 above, so it's listed there, not built here).
+
+---
+
+## 2026-09-05 — GETHIRED_OVERLAY_BANNER_AUDIT_IMPLEMENTATION_SECURITY_QA
+
+### 1. `job_banner` is never left empty — a shared default placeholder URL is written into every job row that has no real banner
+
+**Observed limitation:** `createJobs` and `updateJobs` in
+`controllers/jobsController.js` both fall back to a constant when no real
+banner is supplied:
+
+```js
+const DEFAULT_JOB_BANNER_URL = `${env.app_url}/assets/images/default_job_post_banner.png`;
+...
+if (!rawUrl) {
+  rawUrl = DEFAULT_JOB_BANNER_URL;
+}
+```
+
+This runs on every create, and again on every update where neither a new
+`bannerFile` nor an existing `jobBanner` is present. Confirmed live against
+local data: a job created without a banner has `job_banner` permanently set
+to this placeholder URL in the database, not `NULL`.
+
+**Root cause / why this matters:** `get-hired-FE` already has real,
+purpose-built fallback presentation for "no custom banner" — a CSS gradient
+hero on the job detail page (`jobs/job-posts-details`), an initials avatar
+on job cards (`jobs/job-card-list-view`, `public/public-list`) — each gated
+behind `*ngIf="jobBanner"` / `*ngIf="!jobBanner"` pairs. Because the backend
+never actually leaves `job_banner` falsy, those `*ngIf` branches can never
+take the "no banner" path for any job that ever passed through
+`createJobs`/`updateJobs` — every such job looks, to the frontend, exactly
+like a job that legitimately uploaded this specific placeholder image as
+its real banner. The two systems (backend default-at-write-time,
+frontend fallback-at-read-time) were each built to solve the same problem
+independently, and only one of them can ever actually run.
+
+**Required behavior:** persist `NULL` (or omit the column) when no genuine
+banner was uploaded, on both `createJobs` and `updateJobs`. Let the
+consuming surface decide how to present a bannerless job — the frontend
+fallbacks described above already exist and are ready to receive a falsy
+`job_banner` the moment the backend stops overwriting it.
+
+**Proposed contract:** remove the two `if (!rawUrl) { rawUrl =
+DEFAULT_JOB_BANNER_URL; }` blocks (createJobs and updateJobs) so `rawUrl`
+stays `null`/`undefined` through to the INSERT/UPDATE when no real banner
+exists. If any specific downstream consumer genuinely cannot tolerate a
+null `job_banner` (e.g. an OpenGraph/share-card crawler, or an email
+template that has no client-side fallback), apply a default at that one
+read boundary instead of at write time, so it doesn't permanently
+overwrite the column's actual semantic state for every other consumer.
+
+**Compatibility implications:** any code path that currently assumes
+`job_banner` is always a non-empty string (frontend or backend) needs to
+tolerate `null` once this ships. A frontend-side compatibility check for
+this was evaluated as part of this same audit pass (see below) and found
+not safely implementable without backend cooperation — the placeholder
+URL is not currently identifiable as "the default" from the frontend in a
+way that's guaranteed not to also match a legitimately re-uploaded copy of
+the same image, since nothing distinguishes the two at the URL level.
+
+**Existing-row normalization:** rows already carrying the placeholder URL
+are indistinguishable, from stored data alone, from a job whose employer
+manually uploaded that exact same file as their real banner (unlikely in
+practice, but not something a backfill script can safely assume away). A
+backfill should not be automatic; it would need to check, per row, whether
+`job_banner` equals the exact current `DEFAULT_JOB_BANNER_URL` for that
+environment before nulling it out, and should be run once as a reviewed,
+explicitly authorized migration — not bundled into this fix.
+
+**Recommended backend acceptance tests:**
+- `POST /api/job/createjobs` with no `bannerFile`/`jobBanner` in the
+  payload → created row has `job_banner IS NULL`, not the placeholder URL.
+- `PUT /api/job/updatejobs` on an existing job that has never had a real
+  banner, with no `bannerFile` in the payload → `job_banner` remains
+  `NULL` after the update (not silently defaulted).
+- `PUT /api/job/updatejobs` on a job that already has a real uploaded
+  banner, with no new `bannerFile` → the existing real `job_banner` value
+  is preserved unchanged (this path was already correct; regression-test
+  it alongside the fix above since both branches share the same
+  `if (!rawUrl)` guard).
+
+**Frontend dependency:** none blocking — `get-hired-FE`'s own `*ngIf`
+fallbacks are already correct and require no change once this ships; they
+were built for exactly this null case. This entry alone is the complete
+backend-side requirement.
+
+**Disposition:** `BACKEND_FIX_REQUIRED — DOCUMENTED ONLY / BE FROZEN`. No
+backend implementation code was modified as part of this pass.
+
+## 2026-09-05 — GETHIRED_SESSION_SILENT_REFRESH_AND_EXPIRY_RECOVERY_V1
+
+### 1. Password change: initial source-reading assumption corrected by live QA — refresh token IS actually invalidated
+
+**UPDATE (live QA, same day, real production account, both directions
+OLD→NEW and NEW→OLD password changes tested):** the paragraph below
+originally concluded from source reading alone that the refresh token
+remains valid after a `signOutOtherSessions: false` password change.
+Live testing against production disproves that: immediately after a
+real password change, the pre-change refresh token was submitted
+directly to `https://securetoken.googleapis.com/v1/token` and was
+rejected — `400 { error: "TOKEN_EXPIRED" }`, no new ID token issued.
+So despite `revokeTokenInFirebase`/`revokeRefreshTokens(uid)` only being
+called conditionally in `changePasswordInSession`'s own code (see
+below), the underlying Firebase Admin `updateUser({ password })` call
+that changes the password apparently invalidates existing refresh
+tokens as its own platform-level side effect, independent of the
+explicit `signOutOtherSessions` branch. **No security gap exists here
+in practice** — this section is kept (rather than deleted) as a record
+of a source-reading assumption that live QA corrected, and because the
+frontend guard described below is still worth keeping regardless (it's
+cheap, and does not depend on this backend behavior to be correct).
+
+**Original (source-reading-only) observation, now empirically
+superseded above:** `changePasswordInSession` (`controllers/
+userController.js`, around line 908) only calls
+`revokeTokenInFirebase(uid)` (which calls
+`firebaseAdmin.auth().revokeRefreshTokens(uid)`) when the request
+body's `signOutOtherSessions` flag is `true`. Both frontend call sites
+that use this endpoint — `applicant-settings.component.ts` and
+`employer-account-settings.component.ts` — hardcode
+`signOutOtherSessions: false` in every request. Read in isolation, this
+looked like it meant a normal password change never revokes anything
+server-side — live testing shows the actual user-facing outcome is
+correct regardless.
+
+**Why this matters now:** this pass ("Session Silent Refresh and Expiry
+Recovery") added real client-side silent token refresh (see
+`get-hired-FE`'s `TokenLifecycleService`), which uses exactly that
+refresh token. The existing post-password-change flow
+(`SecurityLogoutCountdownComponent`, a prior pass) shows a mandatory
+countdown and then force-logs-out the browser locally — but because the
+refresh token is never actually revoked server-side, a background
+request that happened to 401 during that countdown window would, without
+a specific guard, have successfully silently refreshed and continued as
+if nothing happened, quietly undoing the mandatory logout the countdown
+exists to enforce. This was caught and mitigated entirely on the frontend
+(`CoreService.suppressExpiryHandling`, checked by
+`UnAuthorizedInterceptor` before attempting any refresh) — while that
+countdown is active, the interceptor takes no action at all (no refresh
+attempt, no hard logout) and simply lets requests fail, so nothing can
+silently resurrect the session mid-countdown. That frontend guard is now
+load-bearing given the backend's current behavior, not just defense in
+depth.
+
+**Root cause:** `signOutOtherSessions` was almost certainly intended as
+the mechanism for exactly this ("actually end the session, not just
+clear local state"), but nothing on the frontend ever sets it `true` for
+a self-service password change, so the parameter is effectively dead in
+every real call path.
+
+**Recommended backend-side fix:** none. Live QA (below) confirms the
+refresh token is already correctly invalidated by a normal password
+change in its only real call pattern (`signOutOtherSessions: false`).
+No BE change is needed for this specific concern.
+
+**Backend acceptance test — RESULT: PASS (verified live, 2026-09-05):**
+after a real password change via `POST /account/change-password` with
+`signOutOtherSessions: false` (today's only real call pattern) against
+production, the previously-issued refresh token was submitted directly
+to `https://securetoken.googleapis.com/v1/token` and rejected
+(`400 TOKEN_EXPIRED`, no new ID token issued). Tested in both
+directions (password A→B and the reverting B→A change) with consistent
+results both times.
+
+**Frontend dependency:** none blocking either way — the frontend-side
+guard (`CoreService.suppressExpiryHandling`) is kept regardless, since
+it costs nothing and adds defense in depth against any future change to
+this backend behavior.
+
+**Disposition:** `VERIFIED — NO BACKEND ACTION NEEDED`. No backend
+implementation code was modified as part of this pass.
+
+## 2026-09-05 — GETHIRED_TALENT_WORKSPACE_AUDIT_AND_BOUNDED_IMPLEMENTATION_V1
+
+### 1. No endpoint exists to remove a single member from a Candidate Group (formerly Contact Group)
+
+**Observed limitation:** `get-hired-FE`'s group-list.component.html (the
+"view members of this group" detail page) is read-only today — no
+delete/edit event binding exists on its table at all. Route inspection
+(`routes/contactRoutes.js`) and controller inspection
+(`controllers/contactsController.js`) confirm the only group-related
+mutations available are `POST /groups/creategroup`, `PUT /groups/
+updategroup` (rename/re-select the group's full member list), and
+`DELETE /groups/deletegroup` (deletes the whole group). There is no
+`DELETE`/`PUT` endpoint scoped to "remove this one candidate from this
+one group" — the only way to change membership today is to re-open
+"Edit Group" and resubmit the complete member list with one person
+excluded (a full-list PUT, not a per-member removal).
+
+**Why this matters:** a natural, expected recruiter action ("Remove
+[Candidate] from [Group]", called out explicitly in this pass's own
+target UX) has no backing capability today. This is a real product
+gap, not a frontend oversight — no UI stub or fabricated button was
+added for it in this pass, per the instruction not to invent workflows
+the backend doesn't support.
+
+**Recommended backend addition (not implemented — BE frozen):** a
+narrow endpoint, e.g. `PUT /groups/removemember` (`groupId`, `email` or
+`candidate_id`), that updates only the group's member list rather than
+requiring the full `updategroup` payload. Left to a future,
+separately-authorized pass.
+
+**Disposition:** `PRODUCT_DECISION_REQUIRED / BACKEND_ADDITION_RECOMMENDED — DOCUMENTED ONLY / BE FROZEN`.
+No backend implementation code was modified as part of this pass.
+
+---
+
+## 2026-09-05 — GETHIRED_TALENT_WORKSPACE_RUNTIME_QA_CERTIFICATION_V1
+
+### `GET /groups/contactlist` returns `email: null` for candidates who have a real, populated email elsewhere — breaks multi-candidate group creation in the FE
+
+**Observed limitation (live production API, verified via direct authenticated
+`fetch` against `https://api.gethiredonline.app/api/groups/contactlist?groupName=`
+using a real employer test account):** the response returns one row per
+candidate available to add to a group, e.g.:
+
+```json
+{
+  "status": "success",
+  "data": [
+    { "full_name": "QA JobSeekerTest",   "email": null, "contact_id": "vLvJ..." },
+    { "full_name": "Keith Cortes",       "email": null, "contact_id": "LO6S..." },
+    { "full_name": "Christopher Cortes", "email": "11corteschristopher@gmail.com", "contact_id": "2PuU..." },
+    { "full_name": "John Doe",           "email": null, "contact_id": "NxUM..." }
+  ]
+}
+```
+
+Every one of these same four people has a real, non-null email address in
+`GET /contacts/list` (the Talent Pool endpoint) — e.g. Keith Cortes ->
+`113728cortes@gmail.com`, John Doe -> `ochrlcr.notifications@gmail.com`,
+QA JobSeekerTest -> `c9clu20kiapgi4pcav@bltiwd.com`. So the data exists on
+the backend; this specific endpoint's query/join for `groups/contactlist`
+is failing to populate `email` for candidates who aren't a true
+`gethired.contact` row (i.e. the same union-of-sources distinction already
+documented earlier in this file for `contacts/list`), even though the
+*same underlying person* has a populated email through the sibling
+endpoint.
+
+**Frontend impact (confirmed live, `get-hired-FE`,
+`add-contact-group.component.html`/`.ts`):** the "Add Candidates to Group"
+dialog renders one checkbox per row, bound via `[value]="item.email"`. When
+`item.email` is `null` for multiple rows, every one of those checkboxes is
+bound to the *same* `null` value — Angular's `contains()`/`addOrRemove()`
+array-membership check on the form's `emails` control can't distinguish
+between them. Toggling any one null-valued checkbox toggles the checked
+state of *all* null-valued checkboxes simultaneously, and clicking a second
+one removes `null` from the array again (since it's already present) rather
+than adding a second real selection. In practice: only the one candidate
+in a given company whose `groups/contactlist` row happens to have a
+non-null email can be reliably added to a group through this dialog;
+attempting to select any of the others, or a combination including them,
+silently fails to add them (submits an empty/short candidate list, or
+`Create Group` reverts as if nothing were selected).
+
+**This is a data-completeness bug in `groups/contactlist`'s own query, not
+something the frontend can work around**: switching the checkbox's bound
+value from `item.email` to `item.contact_id` would fix the multi-select
+UI-toggle behavior, but the dialog's `submitForm()` maps the selected
+values into `{email: element}` objects and dispatches them to
+`POST /groups/creategroup`, which (per its existing contract) expects real
+email addresses to add candidates to a group -- swapping in `contact_id`
+values there would require a corresponding backend change to accept and
+resolve `contact_id`-keyed candidates on that endpoint too. A frontend-only
+fix is not safe without knowing which side `creategroup` actually keys on.
+
+**Required backend behavior:** `groups/contactlist`'s query should resolve
+each candidate's email the same way `contacts/list`'s existing union query
+already does (real `contact` rows, `candidates`+`jobs`, and
+`job_applicants`+`users`/`applicants_profile` all joined and deduped) so
+every returned row has a populated, real email — not `null` for any
+candidate who has one on file anywhere in that union.
+
+**Frontend dependency:** none required once the backend fix lands — the
+existing `[value]="item.email"` binding and `submitForm()` mapping already
+work correctly for the one candidate type that currently gets a populated
+email (confirmed live: single-candidate group creation, the dynamic
+"Add N Candidate(s)" label, reload-persistence of group membership, and
+group deletion with candidates remaining in the Talent Pool afterward all
+passed runtime QA cleanly for that path).
+
+**Acceptance test:** `GET /groups/contactlist?groupName=` for a company
+with candidates sourced from all three underlying data types (a real
+`contact` row, a legacy `candidates`+`jobs` row, and a `job_applicants` row)
+returns a non-null `email` for every one of them; the FE dialog's checkboxes
+then toggle independently and the resulting group is created with all
+selected candidates as members.
+
+**Disposition:** `BACKEND_ADDITION_RECOMMENDED / BACKEND REQUIRED — DOCUMENTED ONLY / BE FROZEN`.
+No backend implementation code was modified as part of this pass. No
+frontend code was modified either — the existing FE binding is correct for
+well-formed data; the defect is upstream of it.
+
+**UPDATE (2026-09-05, GETHIRED_TALENT_BACKEND_PHASE1_BOUNDED_REPAIR_V1):**
+Phase 1 fix implemented and runtime-verified (local dev DB + real seeded
+data covering all 3 source types; controller-level harness calling the
+real, edited `contactslist`/`listOfContacts` code path directly). Root
+cause fixed exactly as described above: `listOfContacts()`
+(`services/contact.service.js`) now has the previously-missing
+`candidates`+`jobs` branch, and its `job_applicants` branch now resolves
+email via `user_credentials` (mirroring `contactList()`). Output columns
+unchanged (`full_name`, `email`, `contact_id`) — no composite identity
+introduced, no schema change, no FE change required. **Disposition updated:
+`RESOLVED — PHASE 1 SHIPPED`.** Phase 2 (composite `source_type`/`source_id`
+stable identity, schema migration, `createGroup`/`updateGroup` contract
+change) remains `NOT IMPLEMENTED`, deferred pending separate authorization
+per `GETHIRED_TALENT_BACKEND_GAPS_REMEDIATION_PLAN_V1`.
+
+---
+
+## 2026-09-05 — GETHIRED_TALENT_BACKEND_PHASE1_BOUNDED_REPAIR_V1 — invalid contact-delete error handling
+
+**Fixed:** `deleteContact()` (`controllers/contactsController.js`) previously
+(a) called `checkContactIfExist(contactId)` *before* its own `try` block
+opened, so an internal exception from that helper became an unhandled
+rejection reaching Express's default error handler (a raw framework 500),
+and (b) used `status.error` (hardcoded 500 in `helpers/status.js`) for the
+"contact does not exist" case, conflating not-found with server error.
+
+**Fixed to:** malformed/missing `contactId` → `400`; well-formed but
+nonexistent contact → `404`; existing contact owned by a different company
+→ unchanged `403` (ownership check folded into the DELETE's `WHERE`, not
+touched by this fix); genuine DB/server failure → unchanged generic `500`
+JSON body (no SQL/stack trace exposed, confirmed by reading
+`errorResponse()`'s implementation — it only ever surfaces `error.message`,
+already true before this fix). `checkContactIfExist()` call moved inside
+the `try` block so no exception path can escape it uncaught.
+
+**Runtime verified** (local dev DB, controller functions called directly
+with mocked req/res, real seeded data, no HTTP/Firebase layer involved):
+missing contactId → 400; nonexistent contactId → 404; valid owned contact
+→ 200 + actual deletion; re-delete of the same now-deleted contact → 404;
+contact owned by a different seeded company → 403 (unchanged). All test
+seed data removed after verification; no residue left in the local dev DB.
+
+**Disposition:** `RESOLVED — PHASE 1 SHIPPED`.
+
+---
+
+## 2026-09-05 — GETHIRED_TALENT_CANDIDATE_GROUP_MEMBER_REMOVAL_V1
+
+**Implemented:** `DELETE /groups/removemember?groupId=<id>&email=<email>` (`routes/contactRoutes.js`,
+`controllers/contactsController.js`'s `removeGroupMember`, `services/contact.service.js`'s
+`removeFromGroupList`). Deletes only the matching `group_list` junction row —
+`group_list` has exactly two columns (`group_id`, `email`) and its only FK is
+`group_id -> "group"` (cascading group->group_list, never the reverse), so
+this can never touch `contact`/`candidates`/`users`/`job_applicants`. Keeps
+the existing email-based membership contract unchanged — no composite
+identity, no schema change. Ownership: `companyId` derived from JWT via
+`getUserCompanyForRequest`, group existence+ownership verified via a single
+query before any mutation (404 if the group doesn't exist anywhere, 403 if
+it exists but belongs to a different company — mirrors the pattern already
+established by the Phase 1 `deleteContact` fix). Removal is idempotent by
+design (removing an already-removed or never-a-member email returns the
+same success response, not an error).
+
+**FE:** `group-list.component.ts/html` gained a "Remove from Group" action
+(`app-reusable-table`'s `action_button` column type, `customButtonEvent`),
+a `ConfirmationDialogComponent` confirmation naming the candidate and group
+and stating the candidate remains in the Talent Pool, and a meaningful
+empty state ("No candidates in this group yet." + "Add Candidates" CTA)
+for a group whose last member was just removed. `groups.service.ts` gained
+`removeGroupMember()`. On success the component re-dispatches
+`GET_GROUP_LIST` (same pattern `contact-list.component.ts`'s `deleteRow()`
+already uses after its own mutations) rather than splicing the local array —
+`app-reusable-table` has no `ngOnChanges`, so it only reads
+`[listDataSource]` once in its own `ngOnInit()`; the existing
+`*ngIf="listView && !loading"` wrapper's destroy/recreate cycle (already
+relied on elsewhere in this codebase for the same reason) is what actually
+refreshes the rendered list.
+
+**Runtime verified** (local dev DB + patched local BE + real FE, dedicated
+local QA employer account): full matrix (remove valid member, idempotent
+repeat, nonexistent member, foreign-company group, nonexistent group,
+missing groupId/email, spoofed companyId ignored, unauthenticated) all
+returned the expected status/behavior; confirmed at the DB level that
+other group members and the underlying `contact`/`candidates`/
+`job_applicants` records were never touched; confirmed all three candidate
+source types (manual contact, legacy candidate, applicant) can be removed
+via the same endpoint; confirmed through the real browser UI (button
+label, confirmation copy, Cancel performing no request, real removal
+updating the list, empty state on last-member removal).
+
+**Local/prod parity note:** the pre-existing, separately-tracked
+`GET /groups/list`/`checkContacts()` `users.email` defect
+(`TALENT_GROUP_LIST_DEV_PROD_PARITY_CLEANUP`) still reproduces locally and
+was **not** touched in this pass — the FE browser verification above
+worked around it via a Playwright network-level mock of that one call
+(backed by real, live DB queries against `group_list`, so the mock only
+supplied correctly-shaped data for the one call the local schema itself
+can't yet serve — no application code was changed to route around it).
+Production's real `/groups/list` already works correctly, unaffected by
+this local-only gap.
+
+**Disposition:** `RESOLVED — CANDIDATE GROUP MEMBER REMOVAL SHIPPED`.
+Composite `source_type`/`source_id` identity, further schema changes, and
+RBAC expansion remain `NOT IMPLEMENTED`, deferred per
+`GETHIRED_TALENT_BACKEND_GAPS_REMEDIATION_PLAN_V1`.
+
+---
+
+## 2026-09-05 — GETHIRED_TALENT_GROUP_LIST_DEV_PROD_PARITY_CLEANUP_V1
+
+**Root cause:** `checkContacts()` (`services/contact.service.js`, backing
+`GET /groups/list`'s per-group member details) joined `users` directly on
+`u.email = l.email` and selected `u.email` — the exact same
+"`users.email` was dropped" class of bug already fixed for `contactList()`/
+`listOfContacts()` via the `STITCH QA11 FIX F-01` / Phase 1 pattern (join
+`user_credentials` instead), just never applied here. Locally the column
+doesn't exist at all (hard `column u.email does not exist` 500); this
+function was the one remaining place in the Contacts/Groups feature area
+still reading email off `users` directly. It also only ever resolved 2 of
+the 3 candidate source types (`users` and `contact`) — a member added from
+the legacy `candidates` table would silently come back with no matching
+row (blank), the same class of coverage gap the Phase 1 `listOfContacts()`
+fix already closed for the "available to add" list.
+
+**Exact query change:** `checkContacts()`'s first UNION branch now joins
+`group_list` to `user_credentials` (by email) then to `users` (by uid) —
+selecting `uc.email` instead of the nonexistent `u.email`. Added a third
+UNION branch joining `candidates` directly (by email), mirroring
+`contactList()`'s/`listOfContacts()`'s established 3-source coverage.
+Output columns (`email, firstname, lastname, cell_number, address`) and
+the endpoint's response shape are byte-for-byte unchanged — only
+resolution/coverage was fixed, exactly as scoped.
+
+**Before/after behavior:** before, `GET /groups/list` 500'd locally for any
+company with even one group (`column u.email does not exist`); a
+legacy-candidate-sourced member would have shown blank even where the
+query didn't crash. After: returns `200` with every member's email/name/
+contact details correctly resolved across all three source types, and an
+empty group correctly returns `details: []`.
+
+**Runtime verified** (local dev DB + patched local BE + real FE, no mock/
+workaround of any kind): direct query test (3 source types + empty group);
+real unmocked `GET /groups/list` HTTP call (200, correct data); real
+browser navigation to Candidate Groups and Candidate Group Members pages
+(both load and render correctly, no console/network errors); Remove from
+Group (from the immediately preceding pass) re-verified still works end-to-
+end with the fixed query; Delete Group re-verified to still preserve
+Talent Pool candidate count; cross-company isolation re-confirmed (a
+company only ever sees its own groups via this endpoint, unchanged from
+before -- `groupList()`'s outer query was already, and remains,
+company-scoped).
+
+**Security regression:** none. `groupList()`'s own `WHERE company_id = $1`
+(unchanged) is what scopes which groups a caller can see in the first
+place; `checkContacts()` itself was never company-scoped even before this
+fix (it resolves member details for a group_id already proven to belong to
+the caller's company by the outer query) -- this fix doesn't change that
+boundary in either direction.
+
+**Disposition:** `RESOLVED — DEV/PROD PARITY SHIPPED`. Composite identity,
+schema changes, and the remove-member feature were not touched (regression-
+verified unaffected).
