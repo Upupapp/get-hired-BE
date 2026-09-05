@@ -17,6 +17,7 @@ import {
   getAllApplicantOfJob,
   getJobApplicantFitSignals,
   getJobApplicantDetails,
+  getJobApplicantSummary,
   deleteInterviewQuestion,
   getSubscriptionRestrictions,
   toggleSaveJobHandler,
@@ -66,6 +67,10 @@ router.get("/job/applicants", verifyAuth, getAllApplicantOfJob);
 // inside the service layer (see employerApplicantSignalsService.js).
 router.get("/job/applicants/signals", verifyAuth, getJobApplicantFitSignals);
 router.get("/job/applicantdetails", verifyAuth, getJobApplicantDetails);
+// CANDIDATE-GROUP-V1: per-job applicant count summary (total/hired/rejected),
+// scoped to the caller's company + RBAC job access. Powers the new
+// "Candidate Group" job-cards and the new standalone Applicants job-picker.
+router.get("/job/applicant-summary", verifyAuth, getJobApplicantSummary);
 router.delete("/job/deleteinterviewquestion", verifyAuth, deleteInterviewQuestion);
 router.get("/job/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestrictions);
 

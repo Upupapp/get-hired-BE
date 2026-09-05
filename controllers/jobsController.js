@@ -689,6 +689,62 @@ const getBasicJobList = async (companyId, statusId, ctx) => {
   }
 };
 
+// CANDIDATE-GROUP-V1: powers both the new "Candidate Group" job-cards
+// (Talent restructure) and the new standalone "Applicants" job-picker
+// landing page -- a per-job applicant count summary, scoped to this
+// company (and further scoped by accessCtx, same RBAC rule as every
+// other job list) and restricted to jobs that actually have at least
+// one applicant (HAVING COUNT(*) > 0) -- a job with zero applicants has
+// nothing to show in either surface.
+const getJobApplicantSummaryList = async (companyId, ctx) => {
+  let jobScopeClause = "";
+  const params = [companyId];
+  if (ctx !== undefined) {
+    const filter = sqlJobScopeFilter(ctx, "j.job_id", 2);
+    jobScopeClause = filter.clause;
+    if (filter.param) params.push(filter.param);
+  }
+
+  const searchQuery = `SELECT
+    j.job_id, j.job_title,
+    COUNT(*) AS total_applicants,
+    COUNT(*) FILTER (WHERE ja.application_status_id = 6) AS hired_count,
+    COUNT(*) FILTER (WHERE ja.application_status_id = 5) AS rejected_count
+  FROM ${dbSchema}.job_applicants ja
+  JOIN ${dbSchema}.jobs j ON j.job_id = ja.job_id
+  WHERE j.company_id = $1
+    AND (ja.is_archived IS NULL OR ja.is_archived = false)
+    ${jobScopeClause}
+  GROUP BY j.job_id, j.job_title
+  HAVING COUNT(*) > 0
+  ORDER BY j.job_id DESC;`;
+
+  try {
+    const { rows } = await dbQuery.query(searchQuery, params);
+    return rows.map((row) => ({
+      jobId: row.job_id,
+      jobTitle: row.job_title,
+      totalApplicants: parseInt(row.total_applicants, 10) || 0,
+      hiredCount: parseInt(row.hired_count, 10) || 0,
+      rejectedCount: parseInt(row.rejected_count, 10) || 0,
+    }));
+  } catch (error) {
+    throw error;
+  }
+};
+
+const getJobApplicantSummary = async (req, res) => {
+  try {
+    const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
+    const accessCtx = await getAccessContextForRequest(req, req.user.uid);
+    const list = await getJobApplicantSummaryList(callerCompany.companyId, accessCtx);
+    return res.status(status.success).json(successResponse(list));
+  } catch (error) {
+    console.error('[jobsController] error:', error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
 const getPublishedJobsWithinDateRange = async (companyId, startRange, newest) => {
   const endMili = new Date(newest);
   const startMili = new Date(startRange);
@@ -1144,6 +1200,7 @@ export {
   getCategoryList,
   getBasicJobList,
   getJobBasicListOfCompany,
+  getJobApplicantSummary,
   getExpiredJobListOfCompany,
   updateStatusOfJob,
   industryList,
