@@ -18,6 +18,7 @@ import {
   getJobApplicantFitSignals,
   getJobApplicantDetails,
   getJobApplicantSummary,
+  getApplicantStatusOptions,
   deleteInterviewQuestion,
   getSubscriptionRestrictions,
   toggleSaveJobHandler,
@@ -71,6 +72,10 @@ router.get("/job/applicantdetails", verifyAuth, getJobApplicantDetails);
 // scoped to the caller's company + RBAC job access. Powers the new
 // "Candidate Group" job-cards and the new standalone Applicants job-picker.
 router.get("/job/applicant-summary", verifyAuth, getJobApplicantSummary);
+// CANDIDATE-GROUP-V1: read-only global lookup dump -- lets the Change
+// Status modal resolve "Hired"/"Rejected" by name to their real ids
+// instead of assuming ids from the (proven-wrong-live) seed migration.
+router.get("/job/applicant-status-options", verifyAuth, getApplicantStatusOptions);
 router.delete("/job/deleteinterviewquestion", verifyAuth, deleteInterviewQuestion);
 router.get("/job/getsubscriptionrestrictions", verifyAuth, getSubscriptionRestrictions);
 
