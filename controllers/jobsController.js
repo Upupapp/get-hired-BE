@@ -705,13 +705,24 @@ const getJobApplicantSummaryList = async (companyId, ctx) => {
     if (filter.param) params.push(filter.param);
   }
 
+  // BUGFIX: originally filtered on hardcoded application_status_id values
+  // (5/6) taken from the seed migration (db/applicant_application_ddl.sql:
+  // 5='Rejected', 6='Hired'). Live production data does NOT match that
+  // seed -- confirmed via the existing /job/applicants endpoint that a
+  // real applicant with application_status_id=6 has job_applicant_status_name
+  // "Rejected", not "Hired" (the seed's `ON CONFLICT DO NOTHING` silently
+  // skipped correcting whatever id->name mapping already existed live).
+  // Matching on the status NAME (joined live from job_applicant_status)
+  // instead of an assumed id is correct regardless of what the real
+  // numbering turns out to be in production.
   const searchQuery = `SELECT
     j.job_id, j.job_title,
     COUNT(*) AS total_applicants,
-    COUNT(*) FILTER (WHERE ja.application_status_id = 6) AS hired_count,
-    COUNT(*) FILTER (WHERE ja.application_status_id = 5) AS rejected_count
+    COUNT(*) FILTER (WHERE s.job_applicant_status_name = 'Hired') AS hired_count,
+    COUNT(*) FILTER (WHERE s.job_applicant_status_name = 'Rejected') AS rejected_count
   FROM ${dbSchema}.job_applicants ja
   JOIN ${dbSchema}.jobs j ON j.job_id = ja.job_id
+  LEFT JOIN ${dbSchema}.job_applicant_status s ON s.job_applicant_status_id = ja.application_status_id
   WHERE j.company_id = $1
     AND (ja.is_archived IS NULL OR ja.is_archived = false)
     ${jobScopeClause}
@@ -738,6 +749,33 @@ const getJobApplicantSummary = async (req, res) => {
     const callerCompany = await getUserCompanyForRequest(req, req.user.uid);
     const accessCtx = await getAccessContextForRequest(req, req.user.uid);
     const list = await getJobApplicantSummaryList(callerCompany.companyId, accessCtx);
+    return res.status(status.success).json(successResponse(list));
+  } catch (error) {
+    console.error('[jobsController] error:', error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
+// CANDIDATE-GROUP-V1: the Change Status action (applicant-action-modal.
+// component.ts) must submit a real numeric application_status_id, but no
+// endpoint previously exposed job_applicant_status's actual live id->name
+// mapping -- the frontend hardcoded ids from the seed migration, which
+// live data proved wrong (see getJobApplicantSummaryList's BUGFIX note
+// above). This is a simple, global, read-only lookup table dump -- no
+// company scoping needed, just an authenticated caller -- so the
+// frontend can resolve "Hired"/"Rejected" by name to whatever id they
+// actually are in production, instead of guessing.
+const getApplicantStatusOptions = async (req, res) => {
+  try {
+    const { rows } = await dbQuery.query(
+      `SELECT job_applicant_status_id, job_applicant_status_name
+       FROM ${dbSchema}.job_applicant_status
+       ORDER BY job_applicant_status_id;`
+    );
+    const list = rows.map((row) => ({
+      id: row.job_applicant_status_id,
+      name: row.job_applicant_status_name,
+    }));
     return res.status(status.success).json(successResponse(list));
   } catch (error) {
     console.error('[jobsController] error:', error);
@@ -1201,6 +1239,7 @@ export {
   getBasicJobList,
   getJobBasicListOfCompany,
   getJobApplicantSummary,
+  getApplicantStatusOptions,
   getExpiredJobListOfCompany,
   updateStatusOfJob,
   industryList,
