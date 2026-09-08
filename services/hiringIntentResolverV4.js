@@ -63,11 +63,20 @@ var ROLE_FAMILIES = [
   {
     id: 'it_software_data',
     label: 'IT / Software / Data',
+    // BUGFIX: QA/testing roles beyond "qa engineer"/"test engineer" (e.g.
+    // "QA Analyst", "Software Tester", "Quality Assurance Analyst", "Manual
+    // Tester", "Automation Tester", "SDET", "Test Analyst") fell through to
+    // no match at all -- generating a draft under the wrong role family
+    // (see the no-match default fix below) instead of the correct
+    // IT/Software/Data one.
     keywords: ['developer', 'programmer', 'software engineer', 'full stack', 'fullstack', 'frontend', 'back end',
       'backend', 'web developer', 'mobile developer', 'ios developer', 'android developer', 'devops',
       'data engineer', 'data scientist', 'machine learning', 'ai engineer', 'cloud engineer',
       'systems analyst', 'network engineer', 'database admin', 'qa engineer', 'test engineer',
-      'it specialist', 'it administrator', 'it support', 'technical lead', 'tech lead', 'angular', 'react developer'],
+      'it specialist', 'it administrator', 'it support', 'technical lead', 'tech lead', 'angular', 'react developer',
+      'qa analyst', 'qa specialist', 'quality assurance', 'quality analyst', 'software tester',
+      'software testing', 'manual tester', 'automation tester', 'test analyst', 'sdet',
+      'sqa', 'qa tester', 'quality engineer'],
     ambiguous: false,
   },
   {
