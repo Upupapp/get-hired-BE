@@ -22,10 +22,81 @@ import {
   mapTextToJobFields,
 } from '../services/easyJobPostExtractionService';
 import { getUserCompanyForRequest } from './companiesController';
+import { jobDetails } from '../services/job.service';
 import dbQuery from '../db/dbQuery';
 import env from '../env';
 
 var dbSchema = env.schema;
+
+// BUGFIX: "Paste a job link" scraped the raw HTTP response with no JS
+// execution -- for GetHired's OWN job pages (Angular, client-rendered),
+// that returned only the generic app shell (default title/meta, no real
+// job content) regardless of how real the pasted job link was, which the
+// new missingRequiredFields gate below now (correctly) rejects as
+// unreadable. A link to our own job posting shouldn't need scraping at
+// all -- resolve it directly against the database instead, which is both
+// faster and exactly accurate (no heuristic text-parsing involved).
+function tryResolveSelfJobLink(urlStr) {
+  // Same simple regex-based parsing easyJobPostExtractionService.js's
+  // parseUrlSafe() uses instead of the WHATWG URL class, for the same
+  // Node-compat reason (kept local rather than importing a non-exported
+  // helper).
+  var pastedMatch = urlStr.match(/^https?:\/\/([^/?#]+)(\/[^?#]*)?/i);
+  if (!pastedMatch) return null;
+  var pastedHost = pastedMatch[1].toLowerCase().split(':')[0];
+  var pastedPath = pastedMatch[2] || '';
+
+  var appHost = null;
+  var appMatch = (env.app_url || '').match(/^https?:\/\/([^/?#]+)/i);
+  if (appMatch) appHost = appMatch[1].toLowerCase().split(':')[0];
+
+  if (pastedHost !== appHost && pastedHost !== 'gethiredonline.app') return null;
+
+  var pathMatch = pastedPath.match(/\/jobs\/details\/([^/?#]+)/i);
+  return pathMatch ? pathMatch[1] : null;
+}
+
+function mapOwnJobToExtractionResult(job) {
+  var confidence = {};
+  ['jobTitle', 'jobCity', 'jobDescription', 'jobDuties'].forEach(function(key) {
+    if (job[key]) confidence[key] = 'high';
+  });
+  if (job.workSetupName) confidence.workSetupHint = 'high';
+  if (job.jobTypeName) confidence.jobTypeHint = 'high';
+  if (job.jobLevelName) confidence.jobLevelHint = 'high';
+  if (job.salaryMinimum || job.salaryMaximum) confidence.salary = 'high';
+
+  var missingRequiredFields = [];
+  if (!job.jobTitle) missingRequiredFields.push('jobTitle');
+  if (!job.jobCity) missingRequiredFields.push('jobCity');
+  if (!job.jobDescription || job.jobDescription.length < 20) missingRequiredFields.push('jobDescription');
+  if (!job.jobTypeName) missingRequiredFields.push('jobTypeId');
+  if (!job.jobLevelName) missingRequiredFields.push('jobLevelId');
+  if (!job.workSetupName) missingRequiredFields.push('workSetupId');
+
+  return {
+    jobTitle: job.jobTitle || null,
+    jobCity: job.jobCity || null,
+    jobCountry: job.jobCountry || 'Philippines',
+    jobDescription: job.jobDescription || null,
+    jobDuties: job.jobDuties || null,
+    workSetupHint: job.workSetupName || null,
+    jobTypeHint: job.jobTypeName || null,
+    jobLevelHint: job.jobLevelName || null,
+    salaryMinimum: job.salaryMinimum || null,
+    salaryMaximum: job.salaryMaximum || null,
+    salaryCurrency: job.salaryCurrency || 'PHP',
+    requirements: job.requirements || [],
+    goodToHave: job.goodToHave || [],
+    skills: job.skills || [],
+    confidence: confidence,
+    missingRequiredFields: missingRequiredFields,
+    warnings: [],
+    jobRoleId: job.jobRoleId || null,
+    industryId: job.industryId || null,
+    categoryId: job.jobCategoryId || null,
+  };
+}
 
 async function resolveJobRoleId(jobTitle) {
   if (!jobTitle) return null;
@@ -154,6 +225,24 @@ export async function linkAndExtract(req, res) {
 
     if (urlStr.length > 2048) {
       return res.status(422).json({ message: 'URL is too long.' });
+    }
+
+    // Self-referential job link: resolve directly from the database
+    // instead of scraping -- see tryResolveSelfJobLink()'s comment above.
+    var selfJobId = tryResolveSelfJobLink(urlStr);
+    if (selfJobId) {
+      var ownJob = await jobDetails(selfJobId);
+      if (!ownJob || Array.isArray(ownJob)) {
+        return res.status(422).json({
+          message: 'This job posting could not be found. It may have been removed or the link may be incorrect.',
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        source: 'link',
+        url: urlStr,
+        extractedFields: mapOwnJobToExtractionResult(ownJob),
+      });
     }
 
     // Extract text from URL (SSRF protection is inside extractTextFromUrl)
