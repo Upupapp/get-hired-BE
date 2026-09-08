@@ -207,7 +207,26 @@ const updateJobInterviewQuestion = async (req, res) => {
       templateId: raw.job_interview_template_id,
       sequence: raw.sequence,
     }
-    return res.status(status.success).json(successResponse(question))
+
+    // BUGFIX (production, "editing one question vanishes all the others"):
+    // this response used to return ONLY the single edited question. The FE's
+    // NgRx reducer (updateJobQuestionSuccess) had no other authoritative
+    // source to merge that edit into, so it fell back to whatever the store
+    // already happened to have cached (state.selected / state.interview) --
+    // which for an AI-Created job whose other questions were only ever
+    // persisted through a separate, store-bypassing autosave path, can be
+    // stale or completely empty. The FormArray then got wiped and rebuilt
+    // from that incomplete snapshot, visibly dropping every other question
+    // even though they were never actually touched or lost server-side.
+    // Including the template's full, current question list here (same shape
+    // interviewQuestionsUpdate() already returns for the bulk save path)
+    // gives the reducer genuine ground truth instead of a guess.
+    const interviewQuestions = await getTemplateQuestions(raw.job_interview_template_id)
+
+    return res.status(status.success).json(successResponse({
+      ...question,
+      interviewQuestions,
+    }))
   } catch (error) {
     console.error('[interviewController] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."))
