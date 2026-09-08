@@ -104,6 +104,20 @@ export async function uploadAndExtract(req, res) {
 
     // Map to job fields
     var extractionResult = mapTextToJobFields(rawText);
+
+    // BUGFIX: same failure class as the link-import path below (see its
+    // matching comment) -- a file can contain readable text (passing the
+    // length check above) that still isn't a job posting at all (a scanned
+    // cover page, unrelated boilerplate, a garbled OCR result). If 5 or
+    // more of the 6 core fields came back empty, this isn't a usable
+    // extraction -- tell the recruiter clearly instead of silently handing
+    // them a near-empty draft that reads as a successful import.
+    if (extractionResult.missingRequiredFields.length >= 5) {
+      return res.status(422).json({
+        message: "We couldn't read a job posting from that file. Please check the file content, or paste the job details manually.",
+      });
+    }
+
     extractionResult.jobRoleId = await resolveJobRoleId(extractionResult.jobTitle);
 
     return res.status(200).json({
@@ -174,6 +188,24 @@ export async function linkAndExtract(req, res) {
     }
 
     var extractionResult = mapTextToJobFields(rawText);
+
+    // BUGFIX: a broken/dead link often still returns something with a 200
+    // status -- a generic landing page, a "moved" placeholder, or (for any
+    // single-page app, including this one) the default shell served for
+    // literally any unmatched route. There's no HTTP-level signal that
+    // distinguishes that from a real job posting; extractTextFromUrl above
+    // has no way to know the content it fetched isn't a job listing at all.
+    // mapTextToJobFields already tracks which of the 6 core fields came
+    // back empty (missingRequiredFields) -- if 5 or more did (i.e. only the
+    // title, or nothing, was actually found), this isn't a usable
+    // extraction. Tell the recruiter clearly instead of silently handing
+    // them a near-empty draft that reads as a successful import.
+    if (extractionResult.missingRequiredFields.length >= 5) {
+      return res.status(422).json({
+        message: "We couldn't read a job posting from that link. The page may not contain a real job listing, or the link may be broken. Please check the URL, or paste the job details manually.",
+      });
+    }
+
     extractionResult.jobRoleId = await resolveJobRoleId(extractionResult.jobTitle);
 
     return res.status(200).json({
