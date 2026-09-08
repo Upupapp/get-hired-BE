@@ -55,14 +55,21 @@ const APPLICANT_SAFE_LABEL_BY_NAME = {
   'Offer': 'Offer extended',
   'Hired': 'Selected',
   'Rejected': 'Not selected',
+  // SHORTLIST-01: a real, dedicated status row (id 7), added instead of
+  // repurposing Interview/Offer -- those already carry other meaning
+  // (Interview ties into the Interview Hub feature; Offer is a distinct,
+  // later pipeline stage) and reusing either risked disrupting them.
+  'Shortlisted': 'Shortlisted',
 };
 
 // In-app notification copy -- fires for every status this app actually
-// notifies on. Keyed by REAL status name, same reasoning as above. Only
-// Hired/Rejected for now (the two that were live and previously
-// backwards); a third "shortlist-equivalent" entry (Interview vs Offer)
-// is a pending product decision, deliberately not guessed at here.
+// notifies on. Keyed by REAL status name, same reasoning as above.
 const STATUS_NOTIFICATION_COPY = {
+  'Shortlisted': {
+    type: 'application_shortlisted',
+    title: "You've been shortlisted!",
+    body: (job) => `${job.companyName || 'An employer'} shortlisted you for ${job.jobTitle || 'a job'}. You may hear from them soon.`,
+  },
   'Hired': {
     type: 'application_hired',
     title: "You've been selected!",
