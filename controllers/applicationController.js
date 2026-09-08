@@ -297,9 +297,19 @@ const updateApplicationStatus = async (req, res) => {
     return res.status(status.bad).json(errorResponse('applicationId and newStatusId are required.'));
   }
 
+  // BUGFIX: hardcoded upper bound (6) predated the Shortlisted status
+  // (id 7, added directly to job_applicant_status) -- every Shortlisted
+  // attempt was rejected here with a 400 before ever reaching the
+  // service layer. Validate against the real table instead of a
+  // hardcoded range, same reasoning as getStatusNameById() resolving
+  // every other status by name rather than assumed ids.
   const newStatusIdInt = parseInt(newStatusId);
-  if (isNaN(newStatusIdInt) || newStatusIdInt < 1 || newStatusIdInt > 6) {
-    return res.status(status.bad).json(errorResponse('Invalid status. Must be an integer between 1 and 6.'));
+  if (isNaN(newStatusIdInt)) {
+    return res.status(status.bad).json(errorResponse('Invalid status. newStatusId must be an integer.'));
+  }
+  const newStatusNameCheck = await getStatusNameById(newStatusIdInt);
+  if (!newStatusNameCheck) {
+    return res.status(status.bad).json(errorResponse('Invalid status. No such status exists.'));
   }
 
   try {
