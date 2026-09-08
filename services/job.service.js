@@ -453,7 +453,22 @@ const interviewQuestionsUpdate = async (
     if (existingTemplateId) {
       templateToUse = existingTemplateId;
     } else {
-      const newTemplate = await createInterviewTemplateQuestions(jobId, "default");
+      // BUGFIX (500 on autosave after adding an interview question): this
+      // omitted companyId (and createdBy), so every template created via
+      // this find-or-create path got company_id=NULL in job_interview_
+      // template. That's harmless for the create itself, but the NEXT save
+      // of that same question (now carrying its real questionId) routes
+      // through updateQuestionById(question, companyId), whose UPDATE is
+      // scoped via "job_interview_template.company_id = $companyId" -- a
+      // NULL company_id can never match a real one, so that UPDATE always
+      // matched zero rows, and the resulting thrown string ('Failed to
+      // update question') was never caught, surfacing as a bare 500 on
+      // PUT /job/updatejobs. Threading companyId through here (already in
+      // scope as this function's own parameter) matches the two other call
+      // sites of createInterviewTemplateQuestions (jobsController.js
+      // createJobs, interviewController.js), which both already do this
+      // correctly.
+      const newTemplate = await createInterviewTemplateQuestions(jobId, "default", companyId);
       templateToUse = newTemplate.jobInterviewTemplateId;
     }
   }
