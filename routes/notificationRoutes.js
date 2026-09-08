@@ -1,5 +1,5 @@
 import express from "express";
-import { getNotifications, postMarkRead, postMarkAllRead } from "../controllers/notificationController";
+import { getNotifications, postMarkRead, postMarkAllRead, deleteNotificationHandler } from "../controllers/notificationController";
 import verifyAuth from "../middleware/verifyAuth";
 
 // Notification bell/center routes. Every route verifyAuth-protected;
@@ -11,5 +11,6 @@ const router = express.Router();
 router.get("/notifications", verifyAuth, getNotifications);
 router.post("/notifications/:id/read", verifyAuth, postMarkRead);
 router.post("/notifications/read-all", verifyAuth, postMarkAllRead);
+router.delete("/notifications/:id", verifyAuth, deleteNotificationHandler);
 
 export default router;
