@@ -16,6 +16,33 @@ import { canAccessJob } from './accessControl.service';
 import { createNotification } from './notification.service';
 
 const SHORTLISTED_STATUS_ID = 4;
+const REJECTED_STATUS_ID = 5;
+const HIRED_STATUS_ID = 6;
+
+// BUGFIX (jobseeker notification center): the in-app notification below
+// used to fire ONLY for the Shortlisted transition -- Hired and Rejected
+// updated the DB and sent an email, but never created anything the
+// applicant could actually see inside the app itself (the job seeker
+// portal had no notification bell to show it in at all until now; see
+// applicant-panel's topbar). Table-driven per status id so adding a
+// notified status later is a one-line addition here, not a new branch.
+const STATUS_NOTIFICATION_COPY = {
+  [SHORTLISTED_STATUS_ID]: {
+    type: 'application_shortlisted',
+    title: "You've been shortlisted!",
+    body: (job) => `${job.companyName || 'An employer'} shortlisted you for ${job.jobTitle || 'a job'}.`,
+  },
+  [HIRED_STATUS_ID]: {
+    type: 'application_hired',
+    title: "You've been selected!",
+    body: (job) => `Congratulations! ${job.companyName || 'An employer'} selected you for ${job.jobTitle || 'a job'}.`,
+  },
+  [REJECTED_STATUS_ID]: {
+    type: 'application_rejected',
+    title: 'Application update',
+    body: (job) => `${job.companyName || 'An employer'} has updated your application status for ${job.jobTitle || 'a job'}.`,
+  },
+};
 
 const dbSchema = env.schema;
 
@@ -464,30 +491,34 @@ const updateApplicationStatus = async (applicationId, newStatusId, callerCompany
       emailErr && emailErr.message ? emailErr.message.substring(0, 80) : 'unknown');
   }
 
-  // In-app "shortlisted" notification -- non-blocking, mirrors the email
-  // side effect above. Only fires on the transition INTO Shortlisted
-  // (id 4), not every status change, per the ask ("when im shortlisted...
-  // i get notified"). eventKey makes this idempotent per (applicationId,
-  // old->new) pair, same precedent as the email audit log's event_key.
-  if (newStatusIdInt === SHORTLISTED_STATUS_ID) {
+  // In-app status-change notification -- non-blocking, mirrors the email
+  // side effect above. Fires for every status this app actually notifies
+  // on (Shortlisted/Hired/Rejected -- see STATUS_NOTIFICATION_COPY above;
+  // originally Shortlisted-only, per the ask "when im shortlisted... i
+  // get notified", now covers every terminal/notable transition so the
+  // jobseeker notification bell reflects every real status change).
+  // eventKey makes this idempotent per (applicationId, old->new) pair,
+  // same precedent as the email audit log's event_key.
+  const notifCopy = STATUS_NOTIFICATION_COPY[newStatusIdInt];
+  if (notifCopy) {
     (async () => {
       try {
         const job = await jobDetails(app.job_id);
         createNotification({
           recipientUid: app.candidate_id,
-          type: 'application_shortlisted',
-          title: "You've been shortlisted!",
-          body: `${job.companyName || 'An employer'} shortlisted you for ${job.jobTitle || 'a job'}.`,
+          type: notifCopy.type,
+          title: notifCopy.title,
+          body: notifCopy.body(job),
           linkRoute: '/user/applications/' + applicationId,
           relatedApplicationId: applicationId,
           relatedJobId: app.job_id,
           eventKey: `application:${applicationId}:notif:status_change:${oldStatusId}->${newStatusIdInt}`,
         }).catch((err) => {
-          console.error('[applicationStatus] SHORTLIST_NOTIFICATION_FAILED (non-blocking):',
+          console.error('[applicationStatus] STATUS_NOTIFICATION_FAILED (non-blocking):',
             err && err.message ? err.message.substring(0, 80) : 'unknown');
         });
       } catch (err) {
-        console.error('[applicationStatus] SHORTLIST_NOTIFICATION_SETUP_FAILED (non-blocking):',
+        console.error('[applicationStatus] STATUS_NOTIFICATION_SETUP_FAILED (non-blocking):',
           err && err.message ? err.message.substring(0, 80) : 'unknown');
       }
     })();
