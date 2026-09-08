@@ -15,45 +15,64 @@ import { validateDocumentFile } from './documentUploadValidationService';
 import { canAccessJob } from './accessControl.service';
 import { createNotification } from './notification.service';
 
-const SHORTLISTED_STATUS_ID = 4;
-const REJECTED_STATUS_ID = 5;
-const HIRED_STATUS_ID = 6;
+const dbSchema = env.schema;
 
-// BUGFIX (jobseeker notification center): the in-app notification below
-// used to fire ONLY for the Shortlisted transition -- Hired and Rejected
-// updated the DB and sent an email, but never created anything the
-// applicant could actually see inside the app itself (the job seeker
-// portal had no notification bell to show it in at all until now; see
-// applicant-panel's topbar). Table-driven per status id so adding a
-// notified status later is a one-line addition here, not a new branch.
+// CRITICAL BUGFIX: every hardcoded id->label/behavior mapping in this file
+// (APPLICANT_SAFE_STATUS_MAP, is_selected/is_rejected, and the in-app
+// notification copy) assumed ids that do NOT match production's real
+// gethired.job_applicant_status table -- confirmed live:
+//   1 Applied, 2 Reviewed, 3 Interview, 4 Offer, 5 HIRED, 6 REJECTED
+// (the old assumption had 5=Rejected/6=Hired -- backwards). This was
+// live and active: a REJECTED applicant (real id 6) was receiving the
+// "You've been selected!" notification/email flags, and a HIRED
+// applicant (real id 5) was getting the neutral rejection-flavored
+// copy. Same root-cause class the FE's own Change Status modal already
+// had to fix once (see applicant-action-modal.component.ts) -- ids from
+// a seed migration silently drifted from what's actually in the DB.
+// Fixed permanently by resolving every status this function cares about
+// by its REAL NAME, fetched from the DB at call time, never a hardcoded
+// id. getStatusNameById() below is the one place that ever reads this
+// table for this purpose.
+let _statusNameByIdCache = null;
+async function getStatusNameById(statusId) {
+  if (!_statusNameByIdCache) {
+    const { rows } = await dbQuery.query(
+      `SELECT job_applicant_status_id, job_applicant_status_name FROM ${dbSchema}.job_applicant_status`
+    );
+    _statusNameByIdCache = {};
+    rows.forEach((r) => { _statusNameByIdCache[r.job_applicant_status_id] = r.job_applicant_status_name; });
+  }
+  return _statusNameByIdCache[statusId] || null;
+}
+
+// LAUNCH-02: applicant-safe status labels — never expose internal enum IDs
+// or raw internal-sounding names (e.g. blunt "Rejected") directly. Keyed by
+// the REAL status name now, not a hardcoded id -- see CRITICAL BUGFIX above.
+const APPLICANT_SAFE_LABEL_BY_NAME = {
+  'Applied': 'Application received',
+  'Reviewed': 'Application received',
+  'Interview': 'Interview stage',
+  'Offer': 'Offer extended',
+  'Hired': 'Selected',
+  'Rejected': 'Not selected',
+};
+
+// In-app notification copy -- fires for every status this app actually
+// notifies on. Keyed by REAL status name, same reasoning as above. Only
+// Hired/Rejected for now (the two that were live and previously
+// backwards); a third "shortlist-equivalent" entry (Interview vs Offer)
+// is a pending product decision, deliberately not guessed at here.
 const STATUS_NOTIFICATION_COPY = {
-  [SHORTLISTED_STATUS_ID]: {
-    type: 'application_shortlisted',
-    title: "You've been shortlisted!",
-    body: (job) => `${job.companyName || 'An employer'} shortlisted you for ${job.jobTitle || 'a job'}.`,
-  },
-  [HIRED_STATUS_ID]: {
+  'Hired': {
     type: 'application_hired',
     title: "You've been selected!",
     body: (job) => `Congratulations! ${job.companyName || 'An employer'} selected you for ${job.jobTitle || 'a job'}.`,
   },
-  [REJECTED_STATUS_ID]: {
+  'Rejected': {
     type: 'application_rejected',
     title: 'Application update',
     body: (job) => `${job.companyName || 'An employer'} has updated your application status for ${job.jobTitle || 'a job'}.`,
   },
-};
-
-const dbSchema = env.schema;
-
-// LAUNCH-02: applicant-safe status labels — never expose internal enum IDs directly.
-const APPLICANT_SAFE_STATUS_MAP = {
-  1: 'Application received',
-  2: 'Application received',
-  3: 'Under review',
-  4: 'Shortlisted',
-  5: 'Not selected',
-  6: 'Selected',
 };
 
 // GH-FOUND-B01 -- "active" means not archived. Checked before every
@@ -250,7 +269,8 @@ const jobApply = async (jobApplication, userId) => {
     // checks) -- reused here instead of querying it a second time.
 
     // LAUNCH-02: confirmation email — non-blocking, failure never blocks submission.
-    const statusLabel = APPLICANT_SAFE_STATUS_MAP[applicationStatusId] || 'Application received';
+    const submittedStatusName = await getStatusNameById(applicationStatusId);
+    const statusLabel = APPLICANT_SAFE_LABEL_BY_NAME[submittedStatusName] || 'Application received';
     const emailData = {
       job_name: job.jobTitle,
       company_name: job.companyName,
@@ -458,22 +478,24 @@ const updateApplicationStatus = async (applicationId, newStatusId, callerCompany
     throw new Error('Status update failed');
   }
 
-  const newStatusLabel = APPLICANT_SAFE_STATUS_MAP[newStatusIdInt] || 'Status updated';
+  const newStatusName = await getStatusNameById(newStatusIdInt);
+  const newStatusLabel = APPLICANT_SAFE_LABEL_BY_NAME[newStatusName] || 'Status updated';
 
   // LAUNCH-02: status-change email — non-blocking, post-commit.
   try {
     const job = await jobDetails(app.job_id);
     const applicant = await getUserProfileById(app.candidate_id);
     if (applicant && applicant.email) {
-      const oldStatusLabel = APPLICANT_SAFE_STATUS_MAP[oldStatusId] || 'Application received';
+      const oldStatusName = await getStatusNameById(oldStatusId);
+      const oldStatusLabel = APPLICANT_SAFE_LABEL_BY_NAME[oldStatusName] || 'Application received';
       const emailData = {
         job_name: job.jobTitle,
         company_name: job.companyName,
         first_name: applicant.firstName || '',
         status_label: newStatusLabel,
         old_status_label: oldStatusLabel,
-        is_selected: newStatusIdInt === 6,
-        is_rejected: newStatusIdInt === 5,
+        is_selected: newStatusName === 'Hired',
+        is_rejected: newStatusName === 'Rejected',
         app_url: env.app_url + '/user/applications',
       };
       send(applicant.email, 'application_status_changed', emailData).catch(function(err) {
@@ -493,13 +515,13 @@ const updateApplicationStatus = async (applicationId, newStatusId, callerCompany
 
   // In-app status-change notification -- non-blocking, mirrors the email
   // side effect above. Fires for every status this app actually notifies
-  // on (Shortlisted/Hired/Rejected -- see STATUS_NOTIFICATION_COPY above;
-  // originally Shortlisted-only, per the ask "when im shortlisted... i
-  // get notified", now covers every terminal/notable transition so the
-  // jobseeker notification bell reflects every real status change).
-  // eventKey makes this idempotent per (applicationId, old->new) pair,
-  // same precedent as the email audit log's event_key.
-  const notifCopy = STATUS_NOTIFICATION_COPY[newStatusIdInt];
+  // on (Hired/Rejected -- see STATUS_NOTIFICATION_COPY above; originally
+  // Shortlisted-only, per the ask "when im shortlisted... i get
+  // notified", broadened so the jobseeker notification bell reflects
+  // every real status change). eventKey makes this idempotent per
+  // (applicationId, old->new) pair, same precedent as the email audit
+  // log's event_key.
+  const notifCopy = STATUS_NOTIFICATION_COPY[newStatusName];
   if (notifCopy) {
     (async () => {
       try {
@@ -654,4 +676,4 @@ const totalJobs = async (uid) => {
   };
 };
 
-export { jobApply, updateApplicationStatus, APPLICANT_SAFE_STATUS_MAP, charts, graph, statistic, totalJobs };
+export { jobApply, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };

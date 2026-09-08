@@ -1,4 +1,4 @@
-import { jobApply, updateApplicationStatus as updateApplicationStatusService, APPLICANT_SAFE_STATUS_MAP } from "../services/application.service";
+import { jobApply, updateApplicationStatus as updateApplicationStatusService, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById } from "../services/application.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import {
   getApplicationSnapshot,
@@ -132,10 +132,12 @@ const getApplicantApplicationSnapshot = async (req, res) => {
       getCompletenessSnapshot(applicationId),
     ]);
 
+    const currentStatusName = await getStatusNameById(appRows[0].application_status_id);
+
     return res.status(status.success).json(successResponse({
       applicationId,
       applicationStatusId: appRows[0].application_status_id,
-      statusLabel: APPLICANT_SAFE_STATUS_MAP[appRows[0].application_status_id] || 'Application received',
+      statusLabel: APPLICANT_SAFE_LABEL_BY_NAME[currentStatusName] || 'Application received',
       hasSnapshot: !!snap,
       snapshotCreatedAt: snap ? snap.created_at : null,
       completenessScore: comp ? comp.completeness_score : null,
