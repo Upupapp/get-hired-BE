@@ -2,6 +2,7 @@ import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
 } from "../services/notification.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
 
@@ -46,4 +47,16 @@ const postMarkAllRead = async (req, res) => {
   }
 };
 
-export { getNotifications, postMarkRead, postMarkAllRead };
+const deleteNotificationHandler = async (req, res) => {
+  const { uid } = req.user;
+  const { id } = req.params;
+  try {
+    const found = await deleteNotification(id, uid);
+    return res.status(status.success).json(successResponse({ found }));
+  } catch (error) {
+    console.error("[notificationController] error:", error);
+    return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
+  }
+};
+
+export { getNotifications, postMarkRead, postMarkAllRead, deleteNotificationHandler };

@@ -74,6 +74,18 @@ const markAllNotificationsRead = async (callerUid) => {
   return rowCount;
 };
 
+const deleteNotification = async (notificationId, callerUid) => {
+  const { rows } = await dbQuery.query(
+    `DELETE FROM ${dbSchema}.notifications
+     WHERE id = $1 AND recipient_uid = $2
+     RETURNING id;`,
+    [notificationId, callerUid]
+  );
+  // Not found / not owned by caller -- treated identically (no leak of
+  // whether the id exists for someone else), same as markNotificationRead.
+  return rows.length > 0;
+};
+
 /**
  * Creates a notification for recipientUid. Non-blocking by contract of
  * its callers (they .catch() this) -- never throws upward into a request
@@ -131,5 +143,6 @@ export {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
   createNotification,
 };
