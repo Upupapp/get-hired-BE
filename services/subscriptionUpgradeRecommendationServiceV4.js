@@ -347,7 +347,7 @@ function buildEnterpriseOrNoPlanResponse(companyId, currentPlan, resolved) {
     trigger: resolved.trigger || 'enterprise_contact',
     priority: PRIORITY_GENERAL,
     copyKey: 'enterprise_contact',
-    currentPlan: { slug: currentPlan ? currentPlan.slug : 'business', name: currentPlan ? currentPlan.name : 'Business' },
+    currentPlan: { slug: currentPlan ? currentPlan.slug : 'business', name: currentPlan ? currentPlan.name : 'Premium' },
     recommendedPlan: null,
     isEnterprise: true,
     billingOptions: null,
