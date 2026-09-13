@@ -78,7 +78,7 @@ d('stored_media migration against a real PostgreSQL', () => {
 
     await db.query("DELETE FROM gethired.stored_media WHERE company_id = 'MIGCO1';");
     await db.query("DELETE FROM gethired.companies WHERE company_id = 'MIGCO1';");
-    await db.query("INSERT INTO gethired.companies(company_id, company_name) VALUES ('MIGCO1', 'Migration test');");
+    await db.query("INSERT INTO gethired.companies(company_id, company_name, company_logo, created_date, created_by) VALUES ('MIGCO1', 'Migration test', 'logo.png', now(), 'test-uid');");
     await db.query(
       "INSERT INTO gethired.stored_media (company_id, media_type, object_key, size_bytes) VALUES ('MIGCO1', 'candidate_cv', 'gs://mig/cv.pdf', 1234);"
     );

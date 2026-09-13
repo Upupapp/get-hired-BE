@@ -38,7 +38,7 @@ d('storedMediaService', () => {
     await dbQuery.query("DELETE FROM gethired.stored_media WHERE company_id LIKE 'TCO%';");
     await dbQuery.query("DELETE FROM gethired.companies WHERE company_id LIKE 'TCO%';");
     await dbQuery.query(
-      "INSERT INTO gethired.companies(company_id, company_name) VALUES ($1,$2),($3,$4);",
+      "INSERT INTO gethired.companies(company_id, company_name, company_logo, created_date, created_by) VALUES ($1,$2,'logo.png',now(),'test-uid'),($3,$4,'logo.png',now(),'test-uid');",
       [CO, 'Test Employer', 'TCO2', 'Other Employer']
     );
   });
@@ -205,14 +205,14 @@ d2('recordApplicationMedia (apply-flow wiring)', () => {
     await db2.query("DELETE FROM gethired.jobs WHERE job_id LIKE 'WJOB%';");
     await db2.query("DELETE FROM gethired.companies WHERE company_id LIKE 'WCO%';");
     await db2.query("DELETE FROM gethired.job_applicants WHERE job_application_id LIKE 'APPL%';");
-    await db2.query("INSERT INTO gethired.companies(company_id, company_name) VALUES ('WCO1','A'),('WCO2','B');");
-    await db2.query("INSERT INTO gethired.jobs(job_id, company_id) VALUES ('WJOB1','WCO1'),('WJOB2','WCO2');");
+    await db2.query("INSERT INTO gethired.companies(company_id, company_name, company_logo, created_date, created_by) VALUES ('WCO1','A','logo.png',now(),'test-uid'),('WCO2','B','logo.png',now(),'test-uid');");
+    await db2.query("INSERT INTO gethired.jobs(job_id, company_id, job_title) VALUES ('WJOB1','WCO1','Test job'),('WJOB2','WCO2','Test job');");
     // Mirrors production ordering: application.service.js inserts the
     // job_applicants row BEFORE uploading any attachment, so application_id is
     // always a live FK target by the time media is recorded. stored_media has a
     // real FK to it, so a fixture that skips this step fails exactly as a
     // wrong-order change in the apply flow would.
-    await db2.query("INSERT INTO gethired.job_applicants(job_application_id, job_id) VALUES ('APPL1','WJOB1'),('APPL2','WJOB2');");
+    await db2.query("INSERT INTO gethired.job_applicants(job_application_id, job_id, candidate_id) VALUES ('APPL1','WJOB1','test-candidate'),('APPL2','WJOB2','test-candidate');");
   });
 
   afterAll(async () => {

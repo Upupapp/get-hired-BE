@@ -107,11 +107,11 @@ afterAll(async () => {
   if (HAS_DB) await dbQuery.close();
 });
 
-describe('recruitment_storage when stored_media is unavailable (deploys run no migrations)', () => {
+describe('recruitment_storage when stored_media cannot be read', () => {
   it('answers 200 with an unavailable count, never a 500 or a confident zero', async () => {
     const querySpy = jest.spyOn(dbQuery, 'query')
-      .mockRejectedValueOnce(new Error('relation "gethired.stored_media" does not exist'));
-    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      .mockRejectedValueOnce(Object.assign(new Error('relation "gethired.stored_media" does not exist'), { code: '42P01' }));
+    const errSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const res = await summaryFor('A2CO-NOTABLE', planRow(3, 'Growth', 3490));
       expect(res.statusCode).toBe(200);
@@ -124,6 +124,27 @@ describe('recruitment_storage when stored_media is unavailable (deploys run no m
       // The storage count is the handler's only database call; everything else is mocked.
       expect(querySpy).toHaveBeenCalledTimes(1);
       expect(res.body.summary.usage.active_job_posts.used).toBe(3);
+    } finally {
+      querySpy.mockRestore();
+      errSpy.mockRestore();
+    }
+  });
+
+  it('any other database failure answers 200 with countConfidence "error", distinguishable from unavailable', async () => {
+    const querySpy = jest.spyOn(dbQuery, 'query')
+      .mockRejectedValueOnce(Object.assign(new Error('canceling statement due to statement timeout'), { code: '57014' }));
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await summaryFor('A2CO-NOTABLE', planRow(3, 'Growth', 3490));
+      expect(res.statusCode).toBe(200);
+      const block = res.body.summary.usage.recruitment_storage;
+      expect(Object.keys(block).sort()).toEqual(BLOCK_KEYS);
+      expect(block.countConfidence).toBe('error');
+      expect(block.storageStatus).toBeNull();
+      expect(errSpy).toHaveBeenCalled();
+      // The rest of the summary still answers.
+      expect(res.body.summary.usage.active_job_posts.used).toBe(3);
+      expect(res.body.summary.plan.slug).toBe('growth');
     } finally {
       querySpy.mockRestore();
       errSpy.mockRestore();
@@ -144,7 +165,9 @@ d('recruitment_storage block (real PostgreSQL)', () => {
     await dbQuery.query("DELETE FROM gethired.stored_media WHERE company_id LIKE 'A2CO%';");
     await dbQuery.query("DELETE FROM gethired.companies WHERE company_id LIKE 'A2CO%';");
     await dbQuery.query(
-      "INSERT INTO gethired.companies(company_id, company_name) VALUES ('A2CO1','Growth co'),('A2CO2','Other co'),('A2CO3','Premium co'),('A2CO4','Enterprise co');"
+      "INSERT INTO gethired.companies(company_id, company_name, company_logo, created_date, created_by) VALUES " +
+        "('A2CO1','Growth co','logo.png',now(),'test-uid'),('A2CO2','Other co','logo.png',now(),'test-uid')," +
+        "('A2CO3','Premium co','logo.png',now(),'test-uid'),('A2CO4','Enterprise co','logo.png',now(),'test-uid');"
     );
     await media('A2CO1', 'gs://a2/one.mp4', 30 * GB);
     await media('A2CO1', 'gs://a2/two.mp4', 10 * GB);

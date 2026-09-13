@@ -267,6 +267,7 @@ const jobApply = async (jobApplication, userId) => {
             answerFile: item.answerFile,
             jobId,
             applicantId,
+            applicationId: jobApplicantionId,
           };
 
           return await saveInterviewAnswer(answer);
@@ -329,9 +330,20 @@ const jobApply = async (jobApplication, userId) => {
   }
 };
 
+// "data:video/webm;codecs=vp9;base64,..." -> "video/webm"; null for anything else.
+const dataUrlMimeType = (value) => {
+  const match = typeof value === "string" ? /^data:([^;,]+)[;,]/.exec(value) : null;
+  return match ? match[1] : null;
+};
+
 const saveInterviewAnswer = async (answer) => {
-  const { questionId, answerFile, jobId, applicantId } = answer;
+  const { questionId, answerFile, jobId, applicantId, applicationId } = answer;
   let rawUrl = "";
+
+  // Measured from the bytes received: this meters the employer's Recruitment
+  // Storage, and a recorded video answer is usually the largest object an
+  // application carries. See helpers/mediaSize.js.
+  const sizeBytes = resolveMediaSizeBytes(answerFile, undefined, "application.saveInterviewAnswer");
 
   const insertQuery = `INSERT INTO ${dbSchema}.interview_answers
   (question_id, answer_url, created_at, job_id, applicant_id)
@@ -359,6 +371,22 @@ const saveInterviewAnswer = async (answer) => {
 
     if (!rows || rows.length == 0) {
       throw "Failed to save video";
+    }
+
+    // Recruitment Storage: the answer video now sits in the employer's workspace.
+    // Recorded only after the answer row is saved, and never allowed to throw
+    // (see recordApplicationMedia's contract).
+    if (rawUrl) {
+      await recordApplicationMedia({
+        jobId: jobId,
+        applicantId: applicantId,
+        applicationId: applicationId || null,
+        tableName: "interview_answers",
+        objectKey: rawUrl,
+        originalFilename: filename,
+        mimeType: dataUrlMimeType(answerFile),
+        sizeBytes: sizeBytes,
+      });
     }
 
     const dbResponse = rows[0];
@@ -711,4 +739,4 @@ const totalJobs = async (uid) => {
   };
 };
 
-export { jobApply, uploadApplicationAttachment, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };
+export { jobApply, uploadApplicationAttachment, saveInterviewAnswer, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };

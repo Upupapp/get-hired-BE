@@ -173,21 +173,32 @@ export async function getEmployerStorageUsage(companyId, limitBytes) {
   };
 }
 
+// PostgreSQL SQLSTATE 42P01: undefined_table.
+var UNDEFINED_TABLE = '42P01';
+
 /**
  * Bytes billed to one employer, in the { count, source, confidence } shape shared by
  * the subscription usage meters (subscriptionUsageServiceV4.buildEntitlementUsage).
  *
- * Never throws. Deploys do not run migrations, so this code can be live before
- * stored_media exists; the employer summary must then report the count as
- * unavailable, not fail and not report a confident zero.
+ * Never throws, and keeps two failures apart:
+ * - stored_media does not exist (42P01). Deploys run no migrations, so this code can
+ *   be live before the table is: confidence 'unavailable', logged as a warning.
+ * - any other database error: confidence 'error', logged as an error. It must never
+ *   pass for the expected "not migrated yet" state, or a real outage stays hidden.
+ * Either way the employer summary still answers, and neither is a confident zero.
  */
 export async function getRecruitmentStorageUsed(companyId) {
   try {
     var usage = await recalculateEmployerStorageUsage(companyId);
     return { count: usage.totalUsedBytes, source: 'stored_media.active', confidence: 'confirmed' };
   } catch (err) {
-    console.error('[storedMedia] recruitment storage usage unavailable:', err && err.message);
-    return { count: 0, source: 'stored_media.active', confidence: 'unavailable' };
+    if (err && err.code === UNDEFINED_TABLE) {
+      console.warn('[storedMedia] stored_media table missing (migration not applied); recruitment storage usage unavailable');
+      return { count: 0, source: 'stored_media.active', confidence: 'unavailable' };
+    }
+    console.error('[storedMedia] recruitment storage usage query FAILED:',
+      err && err.code, err && err.message, { companyId: companyId });
+    return { count: 0, source: 'stored_media.active', confidence: 'error' };
   }
 }
 
@@ -269,6 +280,8 @@ var TABLE_MEDIA_TYPES = {
   applicant_covered_letter: 'candidate_document',
   applicant_government_files: 'candidate_document',
   documents: 'candidate_document',
+  // A recorded answer to an employer's video screening question.
+  interview_answers: 'candidate_video',
 };
 
 export function mediaTypeForTable(tableName) {

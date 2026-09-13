@@ -1,5 +1,6 @@
 /**
- * Recruitment Storage metering must never stop an application attachment from saving.
+ * Recruitment Storage metering must never stop an application attachment, or a
+ * recorded video answer, from saving.
  *
  * uploadApplicationAttachment() saves the attachment row, then meters it into
  * stored_media. Metering can fail in production for ordinary reasons: the migration has
@@ -28,7 +29,7 @@ jest.mock('../db/dbQuery', () => ({ __esModule: true, default: { query: jest.fn(
 
 const dbQuery = require('../db/dbQuery').default;
 const uploadInStorage = require('../helpers/uploader').default;
-const { uploadApplicationAttachment } = require('../services/application.service');
+const { uploadApplicationAttachment, saveInterviewAnswer } = require('../services/application.service');
 
 const STORED_URL = 'https://storage.example/applicant-documents/cv.pdf';
 const SAVED_ROW = { id: 'att-1', fileurl: STORED_URL, filename: 'cv' };
@@ -135,5 +136,69 @@ describe('control: the test can see a real failure', () => {
     });
     await expect(attachCv()).rejects.toThrow('insert failed');
     expect(order).toEqual(['attachment']);
+  });
+});
+
+// ── Recorded video answers ──────────────────────────────────────────────────────
+const ANSWER_URL = 'https://storage.example/applicant-interview-answers/JOB-1-Q1-APPLICANT-1';
+const ANSWER_ROW = { question_id: 'Q1', answer_url: ANSWER_URL, created_at: new Date(0), job_id: 'JOB-1', applicant_id: 'APPLICANT-1' };
+
+function webmDataUrl(bytes) {
+  return 'data:video/webm;codecs=vp9;base64,' + Buffer.alloc(bytes, 5).toString('base64');
+}
+
+function routeAnswerQueries(handlers) {
+  const log = [];
+  dbQuery.query.mockImplementation((sql, params) => {
+    if (/INSERT INTO\s+\S*interview_answers/i.test(sql)) { log.push('answer'); return handlers.answer(params); }
+    if (/stored_media/i.test(sql)) { log.push('stored_media'); return handlers.storedMedia(params); }
+    if (/FROM\s+\S*jobs\b/i.test(sql)) { log.push('employer_lookup'); return handlers.employerLookup(params); }
+    log.push('unexpected'); return Promise.reject(new Error('unexpected query: ' + sql));
+  });
+  return log;
+}
+
+function saveAnswer(overrides) {
+  return saveInterviewAnswer(Object.assign({
+    questionId: 'Q1', answerFile: webmDataUrl(3000), jobId: 'JOB-1', applicantId: 'APPLICANT-1', applicationId: 'APPL-1',
+  }, overrides || {}));
+}
+
+describe('recorded video answers are metered, and metering never fails the answer', () => {
+  beforeEach(() => {
+    uploadInStorage.mockResolvedValue(ANSWER_URL);
+  });
+
+  it('meters a saved answer as candidate_video, with its measured size, after the row is saved', async () => {
+    const order = routeAnswerQueries({
+      answer: ok([ANSWER_ROW]),
+      employerLookup: ok([{ company_id: 'CO-1' }]),
+      storedMedia: ok([{ id: 'sm-1' }]),
+    });
+    await expect(saveAnswer()).resolves.toMatchObject({ questionId: 'Q1', answerUrl: ANSWER_URL });
+    expect(order).toEqual(['answer', 'employer_lookup', 'stored_media']);
+    const params = dbQuery.query.mock.calls.filter((c) => /stored_media/i.test(c[0]))[0][1];
+    expect(params).toEqual(expect.arrayContaining(['CO-1', 'APPLICANT-1', 'APPL-1', 'JOB-1', 'candidate_video', ANSWER_URL, 'video/webm', 3000]));
+  });
+
+  it('still saves the answer when stored_media does not exist yet', async () => {
+    const order = routeAnswerQueries({
+      answer: ok([ANSWER_ROW]),
+      employerLookup: ok([{ company_id: 'CO-1' }]),
+      storedMedia: fail('relation "gethired.stored_media" does not exist', '42P01'),
+    });
+    await expect(saveAnswer()).resolves.toMatchObject({ questionId: 'Q1' });
+    expect(order).toEqual(['answer', 'employer_lookup', 'stored_media']);
+  });
+
+  it('does not meter an answer that carries no uploaded file', async () => {
+    const order = routeAnswerQueries({
+      answer: ok([ANSWER_ROW]),
+      employerLookup: ok([{ company_id: 'CO-1' }]),
+      storedMedia: ok([]),
+    });
+    await expect(saveAnswer({ answerFile: '' })).resolves.toMatchObject({ questionId: 'Q1' });
+    expect(uploadInStorage).not.toHaveBeenCalled();
+    expect(order).toEqual(['answer']);
   });
 });

@@ -42,7 +42,7 @@ Secondary: "Use email instead" (or "Go back to sign in")
 ### Company Setup Success Modal
 **Eyebrow:** "Setup complete" ✅ (confirmed from .gh-setup-modal__eyebrow style — likely this text)
 **Title:** "Welcome to GetHired, [Company Name]!" ✅ (company name highlighted with azure)
-**Trial badge:** "14-day free trial active" or similar — amber styling ✅
+**Trial badge:** "Free trial active — ends [trial end date]" — amber styling ✅ *(date-based: the trial is 7 days, and copy must never hardcode a trial length, so it stays true if the length changes)*
 
 **CTA Stack:**
 - Primary: "Go to Dashboard" or "Post Your First Job" (action-oriented) ✅
