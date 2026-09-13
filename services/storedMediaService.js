@@ -47,11 +47,23 @@ var MEDIA_TYPES = [
  * four-state scale (none/near_70/near_90/at_limit), which has no 80% tier, so
  * redefining that field would break a live consumer.
  *
- * A null/absent limit means unlimited (Enterprise custom) -> always 'normal'.
+ * Values: normal · notice · warning · critical · full · no_plan.
+ *
+ * - A null/absent limit means unlimited (Enterprise custom) -> always 'normal'. So does
+ *   a negative limit, matching buildEntitlementUsage(), which reads < 0 as unlimited.
+ * - A limit of exactly 0 means the employer has no plan -> 'no_plan', never 'full':
+ *   "0 GB of 0 GB, full" misdescribes an account that has not chosen a plan, and the
+ *   frontend renders this as a choose-a-plan state.
+ *
+ * Refusing an upload does NOT depend on this label: planLimitGuard judges the numeric
+ * limit, so an upload at a limit of 0 is still refused.
  */
+export var NO_PLAN_STORAGE_STATUS = 'no_plan';
+
 export function getStorageStatus(usedBytes, limitBytes) {
   if (typeof limitBytes !== 'number' || limitBytes === null) return 'normal';
-  if (limitBytes <= 0) return 'full';
+  if (limitBytes < 0) return 'normal';
+  if (limitBytes === 0) return NO_PLAN_STORAGE_STATUS;
 
   var percent = (usedBytes / limitBytes) * 100;
   var i;

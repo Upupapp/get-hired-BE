@@ -83,6 +83,8 @@ describe('the refuse/allow boundary: used + requested > limit', () => {
     ['room for two, adding three', 3, 5, 3, true],
     ['room for two, adding two', 3, 5, 2, false],
     ['over the limit, adding nothing', 7, 5, 0, false],
+    ['a zero limit (no plan), adding one byte', 0, 0, 1, true],
+    ['a zero limit (no plan), adding nothing', 0, 0, 0, false],
   ])('%s', (_label, used, limit, requested, wouldBlock) => {
     expect(guard.judgePlanLimit(decision(used, limit), requested).wouldBlock).toBe(wouldBlock);
   });

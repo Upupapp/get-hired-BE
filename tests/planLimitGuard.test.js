@@ -244,6 +244,19 @@ d('plan limit guard, enforce mode, real usage', () => {
     });
   });
 
+  // ── A no-plan employer's storage label is no_plan, but uploads are still refused ──
+  it('an upload at a storage limit of 0 is refused on the limit, whatever the label says', async () => {
+    const storageOnly = await guard.evaluatePlanLimit({
+      companyId: CO.none, actorId: null, action: 'receive_application_files', entitlementKey: 'recruitment_storage_bytes',
+      usage: { count: 0, confidence: 'confirmed', source: 'test' }, requested: 1000, audience: 'candidate',
+    });
+    expect(storageOnly.refusal).toMatchObject({ audience: 'candidate', limitCode: 'FILE_UPLOADS_PAUSED' });
+    const noPlanJob = await job(CO.none, 2);
+    const application = await guard.guardApplication({ companyId: CO.none, jobId: noPlanJob, incomingBytes: 1000 });
+    expect(application.allowed).toBe(false);
+    expect(application.refusal.audience).toBe('candidate');
+  });
+
   // ── No subscription, and the explicit opt-out ────────────────────────────────
   it('an employer with no subscription row is asked to choose a plan', async () => {
     const r = await guard.guardJobLive({ companyId: CO.none, actorId: 'a', jobId: null, requestedStatusId: 2, questionsAdded: 0 });

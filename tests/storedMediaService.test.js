@@ -65,8 +65,8 @@ d('storedMediaService', () => {
       expect(svc.getStorageStatus(999 * GB, null)).toBe('normal');
     });
 
-    it('a zero limit is full, not a division by zero', () => {
-      expect(svc.getStorageStatus(0, 0)).toBe('full');
+    it('a zero limit (no plan) is no_plan, not full, and not a division by zero', () => {
+      expect(svc.getStorageStatus(0, 0)).toBe('no_plan');
     });
   });
 

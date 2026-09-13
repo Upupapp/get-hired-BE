@@ -236,6 +236,7 @@ d('recruitment_storage block (real PostgreSQL)', () => {
     expect(block).toHaveProperty('limit', 0);
     expect(block.used).toBe(0);
     expect(block.warningLevel).toBe(res.body.summary.usage.active_job_posts.warningLevel);
-    expect(block.storageStatus).toBe('full');
+    // A choose-a-plan state, not "0 GB of 0 GB, full".
+    expect(block.storageStatus).toBe('no_plan');
   });
 });

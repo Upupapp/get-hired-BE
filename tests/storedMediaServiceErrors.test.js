@@ -1,5 +1,6 @@
 /**
- * storedMediaService error contracts, proven without a database.
+ * storedMediaService contracts, proven without a database: error handling and the
+ * storage status labels.
  *
  * The DB-backed suite skips itself when no test database is configured, and a
  * skipped test "passes" whatever the code does. These cases force each failure
@@ -82,6 +83,30 @@ describe('getRecruitmentStorageUsed tells a missing table apart from a failure',
     ] });
     await expect(svc.getRecruitmentStorageUsed('CO-1'))
       .resolves.toEqual({ count: 3500, source: 'stored_media.active', confidence: 'confirmed' });
+  });
+});
+
+describe('getStorageStatus labels', () => {
+  const GB = 1073741824;
+
+  it.each([
+    ['nothing stored', 0],
+    ['bytes stored anyway', 5 * GB],
+  ])('an employer with no plan (limit 0) is no_plan, never full: %s', (_label, used) => {
+    expect(svc.getStorageStatus(used, 0)).toBe('no_plan');
+    expect(svc.getStorageStatus(used, 0)).toBe(svc.NO_PLAN_STORAGE_STATUS);
+  });
+
+  it('an unlimited limit is normal: null, absent, or negative (as buildEntitlementUsage reads < 0)', () => {
+    expect(svc.getStorageStatus(900 * GB, null)).toBe('normal');
+    expect(svc.getStorageStatus(900 * GB, undefined)).toBe('normal');
+    expect(svc.getStorageStatus(900 * GB, -1)).toBe('normal');
+  });
+
+  it('a real limit keeps its bands, and full still means 100%', () => {
+    expect(svc.getStorageStatus(69, 100)).toBe('normal');
+    expect(svc.getStorageStatus(80, 100)).toBe('warning');
+    expect(svc.getStorageStatus(100, 100)).toBe('full');
   });
 });
 
