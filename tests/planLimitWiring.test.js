@@ -31,7 +31,6 @@ jest.mock('../services/planLimitGuard', () => {
     sendPlanLimitRefusal: (...args) => real().sendPlanLimitRefusal(...args),
     isPlanLimitError: (...args) => real().isPlanLimitError(...args),
     planLimitError: (...args) => real().planLimitError(...args),
-    measureApplicationUploadBytes: (...args) => real().measureApplicationUploadBytes(...args),
   };
 });
 jest.mock('../services/accessControl.service', () => {
@@ -74,8 +73,8 @@ const companiesController = require('../controllers/companiesController');
 const applicationController = require('../controllers/applicationController');
 
 const EMPLOYER_REFUSAL = actualGuard.buildEmployerRefusal({ entitlementKey: 'active_job_posts', used: 1, limit: 1, requested: 1, currentSlug: 'free_trial' });
-const CANDIDATE_REFUSAL = actualGuard.buildCandidateRefusal('recruitment_storage_bytes');
-const REFUSED = (refusal) => async () => ({ allowed: false, wouldBlock: true, refusal: refusal });
+const CANDIDATE_REFUSAL = actualGuard.buildCandidateRefusal();
+const REFUSED = (refusal, httpStatus) => async () => ({ allowed: false, wouldBlock: true, refusal: refusal, httpStatus: httpStatus || 402 });
 const ALLOWED = async () => ({ allowed: true, wouldBlock: false, refusal: null });
 
 function request(body, uid) {
@@ -202,16 +201,16 @@ describe('POST /company/addcompanyuser', () => {
 });
 
 describe('POST /application/apply', () => {
-  it('an employer out of capacity: 402 with the candidate-safe body, and no application row', async () => {
+  it('a Free Trial job past its applicant cap: 400 with the neutral candidate body, and no application row', async () => {
     dbQuery.query.mockImplementation(async (sql) => (/applicants_profile/i.test(sql) ? { rows: [{ applicant_profile_id: 'AP1' }] } : { rows: [] }));
-    guard.guardApplication.mockImplementation(REFUSED(CANDIDATE_REFUSAL));
+    guard.guardApplication.mockImplementation(REFUSED(CANDIDATE_REFUSAL, 400));
     const res = response();
     // A real PDF signature: the apply flow checks file bytes before anything else.
     const resume = 'data:application/pdf;base64,' + Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(2039, 32)]).toString('base64');
     await applicationController.submitApplication(request({ jobId: 'JOB-1', resume: [{ file: resume, filename: 'cv', type: 'application/pdf' }] }, 'CAND-1'), res);
-    expect(res.statusCode).toBe(402);
+    expect(res.statusCode).toBe(400);
     expect(res.body).toEqual(CANDIDATE_REFUSAL);
-    expect(guard.guardApplication).toHaveBeenCalledWith(expect.objectContaining({ companyId: 'CO-1', jobId: 'JOB-1', incomingBytes: 2048 }));
+    expect(guard.guardApplication).toHaveBeenCalledWith({ companyId: 'CO-1', jobId: 'JOB-1' });
     expect(writes(/INSERT INTO\s+\S*job_applicants\b/i)).toEqual([]);
     expect(uploader.default).not.toHaveBeenCalled();
   });

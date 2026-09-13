@@ -15,14 +15,13 @@ const dbSchema = env.schema;
 // ── Enforcement mode ──────────────────────────────────────────────────────────
 function getEnforcementMode() {
   var raw = (process.env.SUBSCRIPTIONS_ENFORCEMENT_MODE || '').toLowerCase().trim();
-  // Legacy alias
+  // An explicit, recognised SUBSCRIPTIONS_ENFORCEMENT_MODE always wins (A3.1). The legacy
+  // flag used to be read first, so MODE=observe with ENABLED=true resolved to enforce.
+  if (raw === 'off' || raw === 'observe' || raw === 'warn' || raw === 'enforce') return raw;
+  // Legacy alias, read only when MODE is unset or unrecognised.
   var legacyEnabled = process.env.SUBSCRIPTIONS_ENFORCEMENT_ENABLED;
   if (legacyEnabled === 'false' || legacyEnabled === '0') return 'off';
   if (legacyEnabled === 'true' || legacyEnabled === '1') return 'enforce';
-  if (raw === 'off') return 'off';
-  if (raw === 'observe') return 'observe';
-  if (raw === 'warn') return 'warn';
-  if (raw === 'enforce') return 'enforce';
   // Default: enforce. Owner ruling (SPRINT-01 A3, 2026-09-13): plan limits must
   // actually block NEW actions. 'observe' remains an explicit opt-out
   // (SUBSCRIPTIONS_ENFORCEMENT_MODE=observe), and decisions are logged in every mode.

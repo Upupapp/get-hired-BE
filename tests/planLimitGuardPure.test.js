@@ -47,6 +47,26 @@ describe('enforcement mode', () => {
     expect(getEnforcementMode()).toBe('enforce');
   });
 
+  it.each([
+    ['observe', 'true', 'observe'],
+    ['off', '1', 'off'],
+    ['enforce', 'false', 'enforce'],
+  ])('an explicit MODE=%s wins over the legacy ENABLED=%s (A3.1)', (mode, legacy, expected) => {
+    process.env.SUBSCRIPTIONS_ENFORCEMENT_MODE = mode;
+    process.env.SUBSCRIPTIONS_ENFORCEMENT_ENABLED = legacy;
+    expect(getEnforcementMode()).toBe(expected);
+  });
+
+  it.each([
+    [undefined, 'false', 'off'],
+    [undefined, 'true', 'enforce'],
+    ['banana', '0', 'off'],
+  ])('the legacy flag is read only when MODE is unset or unrecognised (MODE=%s, ENABLED=%s)', (mode, legacy, expected) => {
+    if (typeof mode === 'undefined') delete process.env.SUBSCRIPTIONS_ENFORCEMENT_MODE; else process.env.SUBSCRIPTIONS_ENFORCEMENT_MODE = mode;
+    process.env.SUBSCRIPTIONS_ENFORCEMENT_ENABLED = legacy;
+    expect(getEnforcementMode()).toBe(expected);
+  });
+
   it.each([['observe', 'observe'], [' OBSERVE ', 'observe'], ['off', 'off'], ['warn', 'warn'], ['enforce', 'enforce']])(
     'honours an explicit %j', (value, expected) => {
       delete process.env.SUBSCRIPTIONS_ENFORCEMENT_ENABLED;
@@ -78,22 +98,34 @@ describe('the refuse/allow boundary: used + requested > limit', () => {
     expect(guard.judgePlanLimit({ reasonCode: 'usage_unavailable', entitlement: null }, 1).wouldBlock).toBe(false);
   });
 
-  it('refuses when the employer has no subscription at all', () => {
-    expect(guard.judgePlanLimit({ reasonCode: 'no_subscription_found', entitlement: null }, 1))
-      .toEqual({ wouldBlock: true, reason: 'no_subscription_found' });
+  it('an employer with no subscription is refused; a candidate NEVER is for that (A3.1, RISK-01)', () => {
+    const none = { reasonCode: 'no_subscription_found', entitlement: null };
+    expect(guard.judgePlanLimit(none, 1)).toEqual({ wouldBlock: true, reason: 'no_subscription_found' });
+    expect(guard.judgePlanLimit(none, 1, 'employer')).toEqual({ wouldBlock: true, reason: 'no_subscription_found' });
+    expect(guard.judgePlanLimit(none, 1, 'candidate')).toEqual({ wouldBlock: false, reason: 'no_subscription_not_candidate_facing' });
   });
 });
 
-describe('one refusal payload', () => {
+describe('refusal payloads', () => {
   const employer = guard.buildEmployerRefusal({ entitlementKey: 'active_job_posts', used: 1, limit: 1, requested: 1, currentSlug: 'free_trial' });
-  const candidate = guard.buildCandidateRefusal('applicants');
+  const candidate = guard.buildCandidateRefusal();
 
-  it('uses HTTP 402 (403 is already an authorization failure to the frontend)', () => {
+  it('employers get HTTP 402 (403 is already an authorization failure to the frontend); candidates get 400', () => {
     expect(guard.PLAN_LIMIT_HTTP_STATUS).toBe(402);
+    expect(guard.CANDIDATE_REFUSAL_HTTP_STATUS).toBe(400);
   });
 
-  it('employer and candidate refusals have exactly the same keys', () => {
-    expect(Object.keys(candidate).sort()).toEqual(Object.keys(employer).sort());
+  it('a candidate refusal is a human message and a neutral code, and nothing else (A3.1)', () => {
+    expect(Object.keys(candidate).sort()).toEqual(['code', 'error', 'message', 'status', 'success']);
+    expect(candidate).toEqual({
+      success: false,
+      status: 'error',
+      code: 'JOB_NOT_ACCEPTING_APPLICATIONS',
+      error: "This job isn't accepting new applications right now. Please check back later.",
+      message: "This job isn't accepting new applications right now. Please check back later.",
+    });
+    const text = JSON.stringify(candidate);
+    expect(text).not.toMatch(/PLAN_LIMIT|enforce|plan|upgrade|trial|starter|growth|premium|business|enterprise|limit|storage|subscription/i);
   });
 
   it('carries every field the frontend limit modal reads', () => {
@@ -138,47 +170,18 @@ describe('one refusal payload', () => {
     const none = guard.buildEmployerRefusal({ entitlementKey: 'active_job_posts', used: 0, limit: null, requested: 1, reasonCode: 'no_subscription_found', currentSlug: null });
     expect(none).toMatchObject({ limitCode: 'PLAN_REQUIRED', reasonCode: 'no_subscription_found', userMessage: 'Choose a plan to continue.', contactSalesRequired: false });
   });
-
-  it.each(['applicants', 'recruitment_storage_bytes'])('a candidate refusal (%s) carries no plan detail', (key) => {
-    const r = guard.buildCandidateRefusal(key);
-    expect(r).toMatchObject({
-      audience: 'candidate', reasonCode: 'employer_capacity', entitlementKey: null, used: null, limit: null, requested: null,
-      warningLevel: null, upgradeRoute: null, recommendedPlanSlug: null, recommendedPlanName: null, unlocks: [], preserveWork: null,
-    });
-    expect(r.userMessage).not.toMatch(/plan|upgrade|trial|starter|growth|premium|business|enterprise|limit|storage/i);
-  });
-});
-
-describe('measureApplicationUploadBytes', () => {
-  const dataUrl = (mime, n) => 'data:' + mime + ';base64,' + Buffer.alloc(n, 1).toString('base64');
-
-  it('adds measured uploads, re-attached files at their stated size, and recorded answers', () => {
-    expect(guard.measureApplicationUploadBytes({
-      resume: [{ file: dataUrl('application/pdf', 2048), size: 1 }],
-      coverLetter: [{ fileurl: 'https://storage.example/old.pdf', size: 5000 }],
-      governmentFiles: [],
-      interviewAnswers: [{ questionId: 'Q1', answerFile: dataUrl('video/webm', 3000) }],
-    })).toBe(10048);
-  });
-
-  it('counts nothing it cannot measure, so the gate fails open', () => {
-    expect(guard.measureApplicationUploadBytes({
-      resume: [{ fileurl: 'https://storage.example/x.pdf', size: 'abc' }, { filename: 'no file at all' }, null],
-      interviewAnswers: [{ questionId: 'Q1', answerFile: '' }],
-    })).toBe(0);
-    expect(guard.measureApplicationUploadBytes(undefined)).toBe(0);
-  });
 });
 
 describe('the error that carries a refusal through a service', () => {
-  it('round-trips, and sends 402 with the refusal as the body', () => {
-    const refusal = guard.buildCandidateRefusal('applicants');
-    const err = guard.planLimitError(refusal);
+  it('round-trips, and sends the status it carries: 400 for a candidate, 402 by default', () => {
+    const refusal = guard.buildCandidateRefusal();
+    const err = guard.planLimitError(refusal, guard.CANDIDATE_REFUSAL_HTTP_STATUS);
     expect(guard.isPlanLimitError(err)).toBe(true);
     expect(guard.isPlanLimitError(new Error('other'))).toBe(false);
     const res = { status: jest.fn(function () { return this; }), json: jest.fn(function () { return this; }) };
-    guard.sendPlanLimitRefusal(res, err.refusal);
-    expect(res.status).toHaveBeenCalledWith(402);
+    guard.sendPlanLimitRefusal(res, err.refusal, err.httpStatus);
+    expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(refusal);
+    expect(guard.planLimitError({ userMessage: 'x' }).httpStatus).toBe(402);
   });
 });

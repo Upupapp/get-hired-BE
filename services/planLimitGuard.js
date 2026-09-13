@@ -6,21 +6,27 @@
  *
  * The contract every caller relies on:
  * - Only NEW actions are refused: publishing or reopening a job, putting more video
- *   questions live, adding team members, and a new application or the files it
- *   carries. Nothing here deletes, unpublishes or edits an existing record, so an
- *   employer already over a limit keeps everything and simply cannot add more.
+ *   questions live, adding team members, and a new application to a Free Trial job
+ *   past its applicant cap. Nothing here deletes, unpublishes or edits an existing
+ *   record, so an employer already over a limit keeps everything and simply cannot add
+ *   more.
  * - Draft saves are never refused.
  * - An action is refused when used + requested > limit. A null limit (Enterprise, or
  *   the applicant count on a paid plan) is unlimited.
  * - Fails OPEN when usage cannot be measured: an infrastructure fault must not stop
  *   hiring.
  * - Every decision is logged in every enforcement mode. Only 'enforce' refuses.
- * - One refusal payload and one HTTP status (402) for every limit. An employer's
- *   refusal carries the fields the frontend's subscription-limit-modal reads. A
- *   refusal that reaches a candidate carries the same keys with no plan detail.
+ * - EMPLOYER refusals: HTTP 402, one payload carrying the fields the frontend's
+ *   subscription-limit-modal reads. An employer with no subscription at all is asked to
+ *   choose a plan (PLAN_REQUIRED).
+ * - CANDIDATE refusals (A3.1, deploy blocker RISK-01): the only one is a Free Trial job
+ *   past its applicant cap. A candidate is never refused because the employer has no
+ *   subscription, and never for the employer's storage. The body is a human message
+ *   plus a neutral code, sent with HTTP 400, exactly as a closed job answers: nothing
+ *   about plans, limits or enforcement reaches a candidate.
  *
- * 402, not 403: the frontend's global interceptor already treats 403 as an
- * authorization failure.
+ * 402, not 403, for employers: the frontend's global interceptor already treats 403 as
+ * an authorization failure.
  *
  * Node 14 / esm@3.2.25 safe: no ?. or ??
  */
@@ -34,15 +40,16 @@ import {
   countVideoQuestionsForJob,
   countApplicantsForCompany,
 } from './subscriptionUsageServiceV4';
-import { getRecruitmentStorageUsed } from './storedMediaService';
 import { getPlanBySlug } from './planCatalogServiceV4';
 import { logSubscriptionDecision } from './subscriptionAuditLogServiceV4';
-import { measureDataUrlBytes } from '../helpers/mediaSize';
 
 const dbSchema = env.schema;
 
 export var PLAN_LIMIT_HTTP_STATUS = 402;
 export var PLAN_LIMIT_CODE = 'PLAN_LIMIT_REACHED';
+// A candidate is refused the way a closed job already refuses: 400, neutral code.
+export var CANDIDATE_REFUSAL_HTTP_STATUS = 400;
+export var CANDIDATE_REFUSAL_CODE = 'JOB_NOT_ACCEPTING_APPLICATIONS';
 export var ACTIVE_JOB_STATUS_ID = 2;
 
 var GB = 1073741824;
@@ -55,17 +62,8 @@ var LIMIT_CODES = {
   applicants: 'APPLICANT_LIMIT_REACHED',
 };
 
-// Candidate-facing refusals: no blame, and nothing about the employer's plan.
-export var CANDIDATE_REFUSALS = {
-  applicants: {
-    limitCode: 'APPLICATIONS_PAUSED',
-    message: "This job isn't accepting new applications right now. Please check back later.",
-  },
-  recruitment_storage_bytes: {
-    limitCode: 'FILE_UPLOADS_PAUSED',
-    message: "This employer can't receive new files right now, so your application wasn't sent. Please try again later.",
-  },
-};
+// The one candidate-facing refusal: no blame, and nothing about plans or limits.
+export var CANDIDATE_REFUSAL_MESSAGE = "This job isn't accepting new applications right now. Please check back later.";
 
 var SELF_SERVE_ORDER = ['free_trial', 'starter', 'growth', 'business'];
 var UNLOCK_ORDER = ['active_job_posts', 'admin_users', 'recruitment_storage_bytes', 'video_questions_per_job', 'applicants'];
@@ -171,32 +169,28 @@ export function buildEmployerRefusal(ctx) {
   });
 }
 
-export function buildCandidateRefusal(entitlementKey) {
-  var c = CANDIDATE_REFUSALS[entitlementKey];
-  return payload({
-    limitCode: c.limitCode,
-    reasonCode: 'employer_capacity',
-    audience: 'candidate',
-    userMessage: c.message,
-    entitlementKey: null,
-    used: null,
-    limit: null,
-    requested: null,
-    warningLevel: null,
-    upgradeRoute: null,
-    recommendedPlanSlug: null,
-    recommendedPlanName: null,
-    unlocks: [],
-    contactSalesRequired: false,
-    preserveWork: null,
-  });
+// Exactly these keys: a human message and a neutral code (A3.1). Existing readers
+// show errBody.error || errBody.message.
+export function buildCandidateRefusal() {
+  return {
+    success: false,
+    status: 'error',
+    code: CANDIDATE_REFUSAL_CODE,
+    error: CANDIDATE_REFUSAL_MESSAGE,
+    message: CANDIDATE_REFUSAL_MESSAGE,
+  };
 }
 
 // Would this action be refused if enforcement were on? Pure, so it can be tested alone.
-export function judgePlanLimit(decision, requested) {
+export function judgePlanLimit(decision, requested, audience) {
   if (!decision) return { wouldBlock: false, reason: 'no_decision' };
   if (decision.reasonCode === 'usage_unavailable') return { wouldBlock: false, reason: 'usage_unavailable' };
-  if (decision.reasonCode === 'no_subscription_found') return { wouldBlock: true, reason: 'no_subscription_found' };
+  if (decision.reasonCode === 'no_subscription_found') {
+    // A3.1 (RISK-01): an employer's missing subscription is never a candidate's problem.
+    // With no subscribers yet, refusing here would close every job to applicants.
+    if (audience === 'candidate') return { wouldBlock: false, reason: 'no_subscription_not_candidate_facing' };
+    return { wouldBlock: true, reason: 'no_subscription_found' };
+  }
   var ent = decision.entitlement;
   if (!ent) return { wouldBlock: false, reason: 'no_entitlement' };
   if (ent.countConfidence !== 'confirmed') return { wouldBlock: false, reason: 'usage_unmeasured' };
@@ -223,7 +217,7 @@ export async function evaluatePlanLimit(opts) {
   var requested = typeof opts.requested === 'number' ? opts.requested : 1;
   var decision = await checkEntitlement(opts.companyId, opts.actorId || null, opts.action, opts.entitlementKey, opts.usage);
   var mode = getEnforcementMode();
-  var verdict = judgePlanLimit(decision, requested);
+  var verdict = judgePlanLimit(decision, requested, opts.audience);
   var blocked = verdict.wouldBlock && mode === 'enforce';
   var ent = (decision && decision.entitlement) || null;
   var used = ent && typeof ent.used === 'number' ? ent.used : 0;
@@ -248,7 +242,7 @@ export async function evaluatePlanLimit(opts) {
   var refusal = null;
   if (blocked) {
     refusal = opts.audience === 'candidate'
-      ? buildCandidateRefusal(opts.entitlementKey)
+      ? buildCandidateRefusal()
       : buildEmployerRefusal({
           entitlementKey: opts.entitlementKey,
           used: used,
@@ -268,6 +262,7 @@ export async function evaluatePlanLimit(opts) {
     limit: limit,
     requested: requested,
     refusal: refusal,
+    httpStatus: blocked ? (opts.audience === 'candidate' ? CANDIDATE_REFUSAL_HTTP_STATUS : PLAN_LIMIT_HTTP_STATUS) : null,
   };
 }
 
@@ -371,11 +366,13 @@ export async function guardTeamSeats(opts) {
 }
 
 /**
- * A NEW application, and the files it carries. Both refusals reach a candidate, so
- * both are candidate-safe. An application with no files is never refused on storage.
+ * A NEW application. The only candidate-facing refusal (A3.1): a Free Trial job whose
+ * employer has received its applicant cap. Never refused because the employer has no
+ * subscription, and never for the employer's storage -- the employer hears about full
+ * storage through the engagement engine's operational storage.full rule.
  */
 export async function guardApplication(opts) {
-  var applicants = await evaluatePlanLimit({
+  return evaluatePlanLimit({
     companyId: opts.companyId,
     actorId: null,
     action: 'receive_application',
@@ -384,50 +381,13 @@ export async function guardApplication(opts) {
     requested: 1,
     audience: 'candidate',
   });
-  if (!applicants.allowed) return applicants;
-  if (!(opts.incomingBytes > 0)) return applicants;
-
-  var files = await evaluatePlanLimit({
-    companyId: opts.companyId,
-    actorId: null,
-    action: 'receive_application_files',
-    entitlementKey: 'recruitment_storage_bytes',
-    usage: await getRecruitmentStorageUsed(opts.companyId),
-    requested: opts.incomingBytes,
-    audience: 'candidate',
-  });
-  if (!files.allowed) return files;
-  return firstWouldBlock([applicants, files], files);
 }
 
-// Bytes an application would add to the employer's Recruitment Storage: measured
-// uploads, plus the stated size of an existing file being attached (it bills this
-// employer too). Unmeasurable items count as 0: the gate fails open, never closed.
-export function measureApplicationUploadBytes(application) {
-  var a = application || {};
-  var total = 0;
-  [a.coverLetter, a.resume, a.governmentFiles].forEach(function (list) {
-    (Array.isArray(list) ? list : []).forEach(function (doc) {
-      if (!doc) return;
-      var measured = measureDataUrlBytes(doc.file);
-      if (measured !== null) { total += measured; return; }
-      if (doc.fileurl) {
-        var claimed = Number(doc.size);
-        if (isFinite(claimed) && claimed > 0) total += claimed;
-      }
-    });
-  });
-  (Array.isArray(a.interviewAnswers) ? a.interviewAnswers : []).forEach(function (item) {
-    var measured = item ? measureDataUrlBytes(item.answerFile) : null;
-    if (measured !== null) total += measured;
-  });
-  return total;
-}
-
-export function planLimitError(refusal) {
-  var err = new Error(refusal.userMessage);
+export function planLimitError(refusal, httpStatus) {
+  var err = new Error(refusal.message || refusal.userMessage);
   err.code = PLAN_LIMIT_CODE;
   err.refusal = refusal;
+  err.httpStatus = httpStatus || PLAN_LIMIT_HTTP_STATUS;
   return err;
 }
 
@@ -435,7 +395,7 @@ export function isPlanLimitError(err) {
   return !!(err && err.code === PLAN_LIMIT_CODE && err.refusal);
 }
 
-export function sendPlanLimitRefusal(res, refusal) {
-  return res.status(PLAN_LIMIT_HTTP_STATUS).json(refusal);
+export function sendPlanLimitRefusal(res, refusal, httpStatus) {
+  return res.status(httpStatus || PLAN_LIMIT_HTTP_STATUS).json(refusal);
 }
 

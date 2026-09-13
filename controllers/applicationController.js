@@ -70,7 +70,7 @@ const submitApplication = async (req, res) => {
     // state, not a server error -- give it its own safe response instead
     // of falling into the generic 500/raw-error path.
     if (isPlanLimitError(error)) {
-      return sendPlanLimitRefusal(res, error.refusal);
+      return sendPlanLimitRefusal(res, error.refusal, error.httpStatus);
     }
     if (error && error.code === "JOB_APPLICATION_ALREADY_EXISTS") {
       return res.status(409).send({

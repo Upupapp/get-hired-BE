@@ -209,36 +209,38 @@ d('plan limit guard, enforce mode, real usage', () => {
   });
 
   // ── Applications (Free Trial: 25) and their files (Free Trial: 1 GB) ─────────
-  describe('a new application', () => {
+  describe('a new application (the only candidate-facing refusal)', () => {
+    const CANDIDATE_KEYS = ['code', 'error', 'message', 'status', 'success'];
+
     it('at limit − 1: allowed', async () => {
       const live = await job(CO.trial, 2); await applications(live, 24);
-      expect((await guard.guardApplication({ companyId: CO.trial, jobId: live, incomingBytes: 0 })).allowed).toBe(true);
+      expect((await guard.guardApplication({ companyId: CO.trial, jobId: live })).allowed).toBe(true);
     });
 
-    it('at the limit: refused with a candidate-safe payload', async () => {
+    it('a Free Trial job past 25 applicants: refused with 400 and the neutral candidate body', async () => {
       const live = await job(CO.trial, 2); await applications(live, 25);
-      const r = await guard.guardApplication({ companyId: CO.trial, jobId: live, incomingBytes: 0 });
-      expect(r.refusal).toMatchObject({ audience: 'candidate', limitCode: 'APPLICATIONS_PAUSED', entitlementKey: null, used: null, limit: null, recommendedPlanSlug: null, unlocks: [] });
+      const r = await guard.guardApplication({ companyId: CO.trial, jobId: live });
+      expect(r.allowed).toBe(false);
+      expect(r.httpStatus).toBe(400);
+      expect(Object.keys(r.refusal).sort()).toEqual(CANDIDATE_KEYS);
+      expect(r.refusal.code).toBe('JOB_NOT_ACCEPTING_APPLICATIONS');
     });
 
-    it('a paid plan has no applicant cap', async () => {
+    it('a Starter employer is allowed: a paid plan has no applicant cap', async () => {
       const live = await job(CO.starter, 2); await applications(live, 40);
-      expect((await guard.guardApplication({ companyId: CO.starter, jobId: live, incomingBytes: 0 })).allowed).toBe(true);
+      expect((await guard.guardApplication({ companyId: CO.starter, jobId: live })).allowed).toBe(true);
     });
 
-    it('files that fit exactly are allowed; one byte more is refused, candidate-safe', async () => {
-      const live = await job(CO.trial, 2);
-      await stored(CO.trial, GB - 1000);
-      expect((await guard.guardApplication({ companyId: CO.trial, jobId: live, incomingBytes: 1000 })).allowed).toBe(true);
-      const r = await guard.guardApplication({ companyId: CO.trial, jobId: live, incomingBytes: 1001 });
-      expect(r.refusal).toMatchObject({ audience: 'candidate', limitCode: 'FILE_UPLOADS_PAUSED', used: null });
+    it('an employer with NO subscription row still receives applications (A3.1, RISK-01)', async () => {
+      const noPlanJob = await job(CO.none, 2); await applications(noPlanJob, 30);
+      const r = await guard.guardApplication({ companyId: CO.none, jobId: noPlanJob });
+      expect(r).toMatchObject({ allowed: true, wouldBlock: false, refusal: null, httpStatus: null, reason: 'no_subscription_not_candidate_facing' });
     });
 
-    it('an employer already over its storage still receives applications that carry no files', async () => {
+    it("a candidate is never refused for the employer's storage, even far over it", async () => {
       const live = await job(CO.trial, 2);
-      await stored(CO.trial, GB + GB / 2);
-      expect((await guard.guardApplication({ companyId: CO.trial, jobId: live, incomingBytes: 0 })).allowed).toBe(true);
-      expect((await guard.guardApplication({ companyId: CO.trial, jobId: live, incomingBytes: 1 })).allowed).toBe(false);
+      await stored(CO.trial, 5 * GB);
+      expect((await guard.guardApplication({ companyId: CO.trial, jobId: live })).allowed).toBe(true);
     });
   });
 

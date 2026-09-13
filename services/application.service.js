@@ -1,7 +1,7 @@
 import idGenerator from "../helpers/randomNumberForId";
 import { resolveMediaSizeBytes } from "../helpers/mediaSize";
 import { recordApplicationMedia } from "./storedMediaService";
-import { guardApplication, measureApplicationUploadBytes, planLimitError } from "./planLimitGuard";
+import { guardApplication, planLimitError } from "./planLimitGuard";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
@@ -194,17 +194,13 @@ const jobApply = async (jobApplication, userId) => {
 
   const jobApplicantionId = idGenerator(6, "APPL");
 
-  // Plan limits (SPRINT-01 A3): a NEW application, and any files it carries, must fit
-  // the employer's plan. Checked before anything is written, so a refusal leaves no
-  // partial application, and the candidate is told only that the employer can't
-  // receive it right now.
-  const planGate = await guardApplication({
-    companyId: job.companyId,
-    jobId,
-    incomingBytes: measureApplicationUploadBytes({ coverLetter, resume, governmentFiles, interviewAnswers }),
-  });
+  // Plan limits (SPRINT-01 A3, A3.1): the only refusal a candidate can meet is a Free
+  // Trial job past its applicant cap -- never the employer's missing subscription or
+  // storage. Checked before anything is written, so a refusal leaves no partial
+  // application; the candidate gets a neutral 400, as for a closed job.
+  const planGate = await guardApplication({ companyId: job.companyId, jobId });
   if (!planGate.allowed) {
-    throw planLimitError(planGate.refusal);
+    throw planLimitError(planGate.refusal, planGate.httpStatus);
   }
 
   try {
