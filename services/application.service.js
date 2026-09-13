@@ -711,4 +711,4 @@ const totalJobs = async (uid) => {
   };
 };
 
-export { jobApply, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };
+export { jobApply, uploadApplicationAttachment, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };
