@@ -9,6 +9,7 @@ import { getUserCompanyForRequest } from './companiesController';
 import { getPricingCatalog, isValidPlanSlug, isValidBillingCycle, getAmountForCheckout, getAmountInCentavos, getPlanBySlug, getRecommendedUpgrade } from '../services/planCatalogServiceV4';
 import { resolveCompanyPlan, checkEntitlement, getEnforcementMode } from '../services/subscriptionEntitlementServiceV4';
 import { getCompanyUsageV4, buildEntitlementUsage } from '../services/subscriptionUsageServiceV4';
+import { getRecruitmentStorageUsed, getStorageStatus } from '../services/storedMediaService';
 import { logCheckoutIntent, logValidationRejection } from '../services/subscriptionAuditLogServiceV4';
 import { createPaymongoLink } from './paymentController';
 import idGenerator from '../helpers/randomNumberForId';
@@ -100,11 +101,21 @@ export async function getEmployerSubscriptionSummary(req, res) {
     // Usage
     var usageAll = await getCompanyUsageV4(companyId).catch(function() { return {}; });
     var catalogPlan = getPlanBySlug(planCode);
-    var ents = catalogPlan ? catalogPlan.entitlements : { active_job_posts: 0, admin_users: 0, video_responses: 0 };
+    var ents = catalogPlan ? catalogPlan.entitlements : { active_job_posts: 0, admin_users: 0, video_responses: 0, recruitment_storage_bytes: 0 };
 
     var jobUsage = buildEntitlementUsage('active_job_posts', usageAll.active_job_posts, ents.active_job_posts);
     var adminUsage = buildEntitlementUsage('admin_users', usageAll.admin_users, ents.admin_users);
     var videoUsage = buildEntitlementUsage('video_responses', usageAll.video_responses, ents.video_responses);
+
+    // Recruitment Storage: bytes billed to this employer (stored_media), same shape as
+    // the meters above. storageStatus adds the 70/80/90/100 bands warningLevel lacks, so
+    // the UI never re-derives thresholds. It is null while the count is unavailable, so an
+    // unmeasured meter never reads as "normal".
+    var storageResult = await getRecruitmentStorageUsed(companyId);
+    var storageUsage = buildEntitlementUsage('recruitment_storage', storageResult, ents.recruitment_storage_bytes);
+    storageUsage.storageStatus = storageResult.confidence === 'confirmed'
+      ? getStorageStatus(storageUsage.used, ents.recruitment_storage_bytes)
+      : null;
 
     // Recommended upgrade
     var recommendedSlug = getRecommendedUpgrade(planCode);
@@ -129,6 +140,7 @@ export async function getEmployerSubscriptionSummary(req, res) {
         active_job_posts: jobUsage,
         admin_users: adminUsage,
         video_responses: videoUsage,
+        recruitment_storage: storageUsage,
         customized_company_page: { included: true },
         video_interview_questions: { included: true },
         dedicated_support: { included: catalogPlan ? !!catalogPlan.entitlements.dedicated_support : false },

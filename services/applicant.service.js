@@ -3,6 +3,7 @@ import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
 import genericInsert from "../helpers/genericInsert";
+import { resolveMediaSizeBytes } from "../helpers/mediaSize";
 
 import { updateUserProfile } from "./user.service";
 import { sqlJobScopeFilter } from "./accessControl.service";
@@ -985,6 +986,23 @@ const uploadAndSaveAttachment = async (
   let dbResponse = {};
 
   const { id, file, fileUrl, size, type, filename } = attachment;
+  // Storage is metered and billed on this number, so it is measured from the
+  // bytes we were actually handed -- never taken from the caller. See
+  // helpers/mediaSize.js for why a client-supplied size is unrecoverable once
+  // written.
+  const sizeBytes = resolveMediaSizeBytes(file, size, "applicant.saveAttachment");
+
+  // DELIBERATELY NOT recorded in stored_media.
+  //
+  // This is the applicant's OWN document library (profile documents, CV
+  // Builder output). It is keyed by applicant_id and has no job and no
+  // employer, so there is no workspace to bill it to -- Recruitment Storage is
+  // metered per employer, and this file is not yet in anyone's workspace.
+  //
+  // The billable event is ATTACHING a document to an application, which is
+  // handled in application.service.js's uploadApplicationAttachment(). A CV
+  // uploaded once and sent to ten employers is billed ten times there, and zero
+  // times here. Wiring this path in too would bill files nobody received.
   try {
     if (file && file != "") {
       // Scoped storage path prevents path collisions and confines each document
@@ -1018,7 +1036,7 @@ const uploadAndSaveAttachment = async (
     const { rows } = await dbQuery.query(generalQuery, [
       rawUrl,
       filename,
-      size,
+      sizeBytes,
       type,
       applicantId,
       ...extraValues,

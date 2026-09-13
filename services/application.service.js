@@ -1,4 +1,6 @@
 import idGenerator from "../helpers/randomNumberForId";
+import { resolveMediaSizeBytes } from "../helpers/mediaSize";
+import { recordApplicationMedia } from "./storedMediaService";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
@@ -220,7 +222,8 @@ const jobApply = async (jobApplication, userId) => {
             applicantId,
             "applicant_covered_letter",
             "applicant_id",
-            jobId
+            jobId,
+            jobApplicantionId
           );
         })
       );
@@ -234,7 +237,8 @@ const jobApply = async (jobApplication, userId) => {
             applicantId,
             "applicant_resume",
             "applicant_id",
-            jobId
+            jobId,
+            jobApplicantionId
           );
         })
       );
@@ -248,7 +252,8 @@ const jobApply = async (jobApplication, userId) => {
             applicantId,
             "applicant_government_files",
             "applicant_id",
-            jobId
+            jobId,
+            jobApplicantionId
           );
         })
       );
@@ -374,7 +379,8 @@ const uploadApplicationAttachment = async (
   applicantId,
   tableName,
   column,
-  jobId
+  jobId,
+  applicationId
 ) => {
   let rawUrl = "";
   let generalQuery = "";
@@ -389,6 +395,10 @@ const uploadApplicationAttachment = async (
   // real one. Reading the correct key and falling back to it when there's
   // no new file to upload.
   const { id, file, fileurl, size, type, filename } = attachment;
+
+  // Measured server-side, not trusted from the caller -- this value meters the
+  // employer's Recruitment Storage. See helpers/mediaSize.js.
+  const sizeBytes = resolveMediaSizeBytes(file, size, "application.saveAttachment");
 
   const name = `${filename}-${Date.now()}`;
 
@@ -406,11 +416,29 @@ const uploadApplicationAttachment = async (
     const { rows } = await dbQuery.query(generalQuery, [
       rawUrl,
       name,
-      size,
+      sizeBytes,
       type,
       applicantId,
       jobId,
     ]);
+
+    // Recruitment Storage: this attachment now sits in the employer's workspace,
+    // so it becomes billable to them (owner ruling: metered per employer, so the
+    // same CV sent to ten employers bills ten times). object_key is the storage
+    // URL, which is the same value whether the file was freshly uploaded or an
+    // existing one was re-attached -- that shared key is what lets one physical
+    // object be reference-counted across employers.
+    // Awaited but never allowed to throw: see recordApplicationMedia's contract.
+    await recordApplicationMedia({
+      jobId: jobId,
+      applicantId: applicantId,
+      applicationId: applicationId || null,
+      tableName: tableName,
+      objectKey: rawUrl,
+      originalFilename: filename,
+      mimeType: type,
+      sizeBytes: sizeBytes,
+    });
 
     if (rows && rows.length == 0) {
       throw "Failed to save Url in DB";

@@ -35,4 +35,17 @@ export default {
         });
     });
   },
+
+  /**
+   * Close the connection pool.
+   *
+   * The server never calls this -- the pool is meant to live for the process.
+   * It exists so integration tests can release their connections and let the
+   * runner exit; without it every DB-backed test leaves an open handle and
+   * Jest hangs after a green run, which is the kind of friction that gets
+   * integration tests quietly deleted. Safe to call more than once.
+   */
+  close() {
+    return pool.end();
+  },
 };
