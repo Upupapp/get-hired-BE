@@ -8,7 +8,6 @@
 import dbQuery from '../db/dbQuery';
 import env from '../env';
 import { getBasicJobList } from '../controllers/jobsController';
-import { companyUsers } from '../services/company.service';
 import { getAllVideoResponsesByJobIds } from '../services/job.service';
 
 const dbSchema = env.schema;
@@ -18,9 +17,18 @@ const dbSchema = env.schema;
  * job_status_id=2 = published/active (consistent with getBasicJobList status=2 filter).
  */
 export async function countActiveJobPosts(companyId) {
+  // A direct COUNT of the employer's live jobs (job_status_id 2), the rule
+  // services/job.service.js already uses. This used to go through
+  // controllers/jobsController getBasicJobList(), whose joins to the work_setup and
+  // job_type lookup tables made the count fail whenever one of them was missing --
+  // and a failed count makes every plan check fail OPEN, silently switching the
+  // active-job limit off.
   try {
-    const jobs = await getBasicJobList(companyId, 2);
-    return { count: (jobs && jobs.length) || 0, confidence: 'confirmed', source: 'jobs.status' };
+    const { rows } = await dbQuery.query(
+      `SELECT COUNT(*)::int AS c FROM ${dbSchema}.jobs WHERE company_id = $1 AND job_status_id = 2;`,
+      [companyId]
+    );
+    return { count: (rows && rows[0]) ? rows[0].c : 0, confidence: 'confirmed', source: 'jobs.status' };
   } catch (err) {
     console.warn('[subscriptionUsageServiceV4] countActiveJobPosts error:', err && err.message);
     return { count: 0, confidence: 'unavailable', source: 'jobs.status' };
@@ -28,16 +36,45 @@ export async function countActiveJobPosts(companyId) {
 }
 
 /**
- * Count admin/recruiter users attached to a company.
- * Uses companyUsers() from company.service — excludes applicants and platform admins.
+ * Count the paid seats held in a company: members who are not suspended.
+ * See the seat-semantics note inside the function.
  */
 export async function countAdminUsers(companyId) {
+  // SEAT SEMANTICS: a seat is held by every company_employees row that is NOT
+  // suspended.
+  //
+  // BUG FIX: this used to return companyUsers(companyId).length, and companyUsers()
+  // filters by company only -- so a SUSPENDED member still occupied a paid seat, and
+  // an employer who suspended someone to make room still hit "limit reached". That
+  // meter feeds both enforcement (checkEntitlement's admin_users) and messaging.
+  //
+  // companyUsers() itself is deliberately left alone: it also feeds the team list,
+  // where suspended members must still appear. Only the meter changes.
+  //
+  //   active      -> holds a seat
+  //   suspended   -> frees the seat (matches teamAccess.service getOwnerCountForCompany,
+  //                  which already counts only ACTIVE owners)
+  //   removed     -> the row is DELETEd by removeTeamMember, so it is simply absent
+  //   NULL status -> holds a seat. `IS DISTINCT FROM`, not `= 'active'`, so a row
+  //                  predating the status column is never silently treated as free;
+  //                  only an explicit suspension frees a seat.
+  //
+  // Pending invitations live in team_invitations and are NOT counted here. Whether a
+  // pending invite should reserve a seat is an open product decision.
   try {
-    const users = await companyUsers(companyId);
-    return { count: (users && users.length) || 0, confidence: 'confirmed', source: 'company_employees' };
+    const { rows } = await dbQuery.query(
+      `SELECT COUNT(*)::int AS c FROM ${dbSchema}.company_employees
+        WHERE company_id = $1 AND status IS DISTINCT FROM 'suspended';`,
+      [companyId]
+    );
+    return {
+      count: (rows && rows[0]) ? rows[0].c : 0,
+      confidence: 'confirmed',
+      source: 'company_employees.not_suspended',
+    };
   } catch (err) {
     console.warn('[subscriptionUsageServiceV4] countAdminUsers error:', err && err.message);
-    return { count: 0, confidence: 'unavailable', source: 'company_employees' };
+    return { count: 0, confidence: 'unavailable', source: 'company_employees.not_suspended' };
   }
 }
 
@@ -58,6 +95,65 @@ export async function countVideoResponses(companyId) {
   } catch (err) {
     console.warn('[subscriptionUsageServiceV4] countVideoResponses error:', err && err.message);
     return { count: 0, confidence: 'unavailable', source: 'video_responses.job_ids' };
+  }
+}
+
+/**
+ * Count the video screening questions candidates see on ONE job: the questions on the
+ * job's 'default' template, which is exactly the set services/job.service.js
+ * getJobInterviewQuestions() serves.
+ *
+ * This is the employer-side meter: questions the EMPLOYER configures on a job post. It
+ * is a DIFFERENT quantity from video_responses, which counts answers submitted by
+ * APPLICANTS across the whole account (owner ruling, 2026-09-13). Every
+ * interview_template_question row is a recorded-video question.
+ */
+export async function countVideoQuestionsForJob(jobId) {
+  if (!jobId) {
+    return { count: 0, confidence: 'unavailable', source: 'interview_template_question.default' };
+  }
+  try {
+    const { rows } = await dbQuery.query(
+      `SELECT COUNT(q.template_question_id)::int AS c
+         FROM ${dbSchema}.job_interview_template t
+         JOIN ${dbSchema}.interview_template_question q
+           ON q.job_interview_template_id = t.job_interview_template_id
+        WHERE t.job_id = $1 AND t.job_interview_template_name = 'default';`,
+      [jobId]
+    );
+    return {
+      count: (rows && rows[0]) ? rows[0].c : 0,
+      confidence: 'confirmed',
+      source: 'interview_template_question.default',
+    };
+  } catch (err) {
+    console.warn('[subscriptionUsageServiceV4] countVideoQuestionsForJob error:', err && err.message);
+    // Unavailable, not zero: a failed count must never read as "no questions".
+    return { count: 0, confidence: 'unavailable', source: 'interview_template_question.default' };
+  }
+}
+
+/**
+ * Count the applications an employer has received, across all of its jobs. Feeds the
+ * Free Trial's applicant cap. Archived applications still count: they were received.
+ */
+export async function countApplicantsForCompany(companyId) {
+  try {
+    const { rows } = await dbQuery.query(
+      `SELECT COUNT(*)::int AS c
+         FROM ${dbSchema}.job_applicants ja
+         JOIN ${dbSchema}.jobs j ON j.job_id = ja.job_id
+        WHERE j.company_id = $1;`,
+      [companyId]
+    );
+    return {
+      count: (rows && rows[0]) ? rows[0].c : 0,
+      confidence: 'confirmed',
+      source: 'job_applicants.company_jobs',
+    };
+  } catch (err) {
+    console.warn('[subscriptionUsageServiceV4] countApplicantsForCompany error:', err && err.message);
+    return { count: 0, confidence: 'unavailable', source: 'job_applicants.company_jobs' };
   }
 }
 

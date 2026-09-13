@@ -11,6 +11,7 @@ import {
   // getInterviewsOfUser
 } from '../services/interview.service'
 import { getUserCompanyForRequest } from './companiesController'
+import { guardQuestionsOnJob, sendPlanLimitRefusal } from '../services/planLimitGuard'
 import dbQuery from '../db/dbQuery'
 
 import env from '../env'
@@ -119,6 +120,21 @@ const saveQuestionTemplate = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." })
     }
     const companyId = callerCompany.companyId
+
+    // Plan limits (SPRINT-01 A3): questions saved to a job's candidate-facing 'default'
+    // template go live at once if the job is live, so they must fit the per-job cap. A
+    // draft job's questions are checked when the job is published.
+    if (templateName === 'default' && Array.isArray(interviewQuestions) && interviewQuestions.length > 0) {
+      const planGate = await guardQuestionsOnJob({
+        companyId,
+        actorId: uid,
+        jobId,
+        questionsAdded: interviewQuestions.length,
+      })
+      if (!planGate.allowed) {
+        return sendPlanLimitRefusal(res, planGate.refusal)
+      }
+    }
 
     let questionTemplate = null
 

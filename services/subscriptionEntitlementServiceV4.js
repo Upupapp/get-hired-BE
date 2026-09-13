@@ -23,8 +23,10 @@ function getEnforcementMode() {
   if (raw === 'observe') return 'observe';
   if (raw === 'warn') return 'warn';
   if (raw === 'enforce') return 'enforce';
-  // Default: observe (safe for production)
-  return 'observe';
+  // Default: enforce. Owner ruling (SPRINT-01 A3, 2026-09-13): plan limits must
+  // actually block NEW actions. 'observe' remains an explicit opt-out
+  // (SUBSCRIPTIONS_ENFORCEMENT_MODE=observe), and decisions are logged in every mode.
+  return 'enforce';
 }
 
 // ── Plan resolution ───────────────────────────────────────────────────────────
@@ -119,10 +121,23 @@ function buildDecision(opts) {
   var actorId = opts.actorId || null;
   var action = opts.action || null;
 
-  // In off/observe mode, never hard-block
+  // In off/observe mode, never hard-block.
+  //
+  // BUG FIX: `allowed = true` was assigned BEFORE the ternary that reads
+  // `allowed`, so the false branch was unreachable and observe mode overwrote
+  // every denial reason with 'enforcement_observe_allowed'. Observe exists
+  // precisely to measure WHAT WOULD HAVE BLOCKED
+  // -- discarding the reason defeats the mode. The original verdict is captured
+  // first and a would-have-blocked decision keeps its real reasonCode.
+  var wouldHaveBlocked = !allowed;
   if (mode === 'off' || mode === 'observe') {
     allowed = true;
-    reasonCode = mode === 'off' ? 'enforcement_off' : (allowed ? 'enforcement_observe_allowed' : reasonCode);
+    if (mode === 'off') {
+      reasonCode = 'enforcement_off';
+    } else if (!wouldHaveBlocked) {
+      reasonCode = 'enforcement_observe_allowed';
+    }
+    // else: keep the original reasonCode so the audit trail says why.
   }
 
   var planSlug = (planInfo && planInfo.planCode) || null;
@@ -199,7 +214,15 @@ function buildDecision(opts) {
 }
 
 // ── Main entitlement check ────────────────────────────────────────────────────
-export async function checkEntitlement(companyId, actorId, action, entitlementKey) {
+/**
+ * @param {object} [usageOverride] supply a pre-computed usage result to scope the
+ *   check to something narrower than the company -- e.g. a PER-JOB limit such as
+ *   video_questions_per_job, whose denominator is one job, not the account.
+ *   Shape matches subscriptionUsageServiceV4's counters:
+ *   { count, confidence, source }. Omit it and company-wide usage is used, so
+ *   every existing 4-argument caller is unaffected.
+ */
+export async function checkEntitlement(companyId, actorId, action, entitlementKey, usageOverride) {
   try {
     var planRow = await resolveCompanyPlan(companyId);
     var planInfo = deriveStatusFromRow(planRow);
@@ -222,9 +245,15 @@ export async function checkEntitlement(companyId, actorId, action, entitlementKe
     // Determine limit from catalog
     var limit = getEntitlementLimit(planCode, entitlementKey);
 
-    // Get usage
-    var usageAll = await getCompanyUsageV4(companyId);
-    var usageResult = (usageAll && usageAll[entitlementKey]) || { count: 0, confidence: 'unavailable', source: 'unknown', warningLevel: 'none' };
+    // Get usage. A caller-supplied override skips the company-wide query
+    // entirely -- a per-job limit must not be measured against account totals.
+    var usageResult;
+    if (usageOverride) {
+      usageResult = usageOverride;
+    } else {
+      var usageAll = await getCompanyUsageV4(companyId);
+      usageResult = (usageAll && usageAll[entitlementKey]) || { count: 0, confidence: 'unavailable', source: 'unknown', warningLevel: 'none' };
+    }
     var usageData = buildEntitlementUsage(entitlementKey, usageResult, limit);
 
     var mode = getEnforcementMode();

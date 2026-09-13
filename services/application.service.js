@@ -1,6 +1,7 @@
 import idGenerator from "../helpers/randomNumberForId";
 import { resolveMediaSizeBytes } from "../helpers/mediaSize";
 import { recordApplicationMedia } from "./storedMediaService";
+import { guardApplication, measureApplicationUploadBytes, planLimitError } from "./planLimitGuard";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
@@ -192,6 +193,19 @@ const jobApply = async (jobApplication, userId) => {
   }
 
   const jobApplicantionId = idGenerator(6, "APPL");
+
+  // Plan limits (SPRINT-01 A3): a NEW application, and any files it carries, must fit
+  // the employer's plan. Checked before anything is written, so a refusal leaves no
+  // partial application, and the candidate is told only that the employer can't
+  // receive it right now.
+  const planGate = await guardApplication({
+    companyId: job.companyId,
+    jobId,
+    incomingBytes: measureApplicationUploadBytes({ coverLetter, resume, governmentFiles, interviewAnswers }),
+  });
+  if (!planGate.allowed) {
+    throw planLimitError(planGate.refusal);
+  }
 
   try {
     const insertQuery = `INSERT INTO ${dbSchema}.job_applicants

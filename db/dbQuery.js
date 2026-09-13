@@ -48,4 +48,33 @@ export default {
   close() {
     return pool.end();
   },
+
+  /**
+   * Run fn(client) inside ONE transaction on a single pooled connection.
+   *
+   * COMMIT when fn resolves, ROLLBACK when it throws (the error is rethrown), and the
+   * connection is always released. services/teamAccess.service.js calls this from
+   * removeTeamMember, updateTeamMember, createCustomRole, updateCustomRole and
+   * acceptInvitation, but it was never defined here, so each of those threw
+   * "dbQuery.withTransaction is not a function" -- including the routed
+   * DELETE /api/company/removecompanyuser.
+   */
+  async withTransaction(fn) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (rollbackErr) {
+        console.error("[dbQuery] rollback failed:", rollbackErr && rollbackErr.message);
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
 };
