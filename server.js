@@ -1,3 +1,4 @@
+import referralBunnyRoutes from './routes/referralBunnyRoutes';
 import express from "express";
 import "babel-polyfill";
 import cors from "cors";
@@ -236,6 +237,7 @@ app.use("/api/auth/account/change-password", sensitiveLimiter);
 app.use("/api", googleAuthRoutes);
 app.use("/api", linkedinAuthRoutes);
 app.use("/api", privacyRoutes);
+app.use("/api", referralBunnyRoutes);
 app.use("/api", userRoutes);
 app.use("/api", applicationRoutes);
 app.use("/api", cvRoutes);
