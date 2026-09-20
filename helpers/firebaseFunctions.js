@@ -101,6 +101,20 @@ const getForgetPwLinkInFirebase = async (email) => {
   }
 };
 
+// Delivery fallback for password recovery. The primary path uses the branded
+// SendGrid template; when SendGrid explicitly rejects that message, Firebase
+// can still deliver its native reset email without exposing account existence
+// to the caller. Identity Toolkit returns EMAIL_NOT_FOUND for an unknown
+// address, which remains server-side and is swallowed by passwordResetLink.
+const sendPasswordResetEmailFirebase = async (email) => {
+  const url = 'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=' + env.apiKey;
+  await axios.post(url, {
+    requestType: 'PASSWORD_RESET',
+    email,
+  }, { timeout: 10000 });
+  return true;
+};
+
 const verifyPwResetInFirebase = async (obcode, newPw) => {
   try {
     const auth = getAuth();
@@ -330,6 +344,7 @@ const createDynamicLink = async (postTitle, postDesc, postImage, postLink) => {
 export {
   signInUserAndGetTokeninFirebase,
   getForgetPwLinkInFirebase,
+  sendPasswordResetEmailFirebase,
   checkUserIfExistInFirebase,
   verifyPwResetInFirebase,
   revokeTokenInFirebase,

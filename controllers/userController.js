@@ -32,6 +32,7 @@ import {
   getRefreshTokenFirebase,
   verifyPwResetInFirebase,
   getForgetPwLinkInFirebase,
+  sendPasswordResetEmailFirebase,
   updateUserProfileInFirebase,
   registerNewUserInFirebaseWithEmail,
   deleteUserAccountInFirebaseById,
@@ -394,6 +395,13 @@ const passwordResetLink = async (req, res) => {
 
     if (!mailResult || !mailResult.sent) {
       console.warn('[passwordResetLink] Reset link generated but email delivery failed:', normalizedEmail, mailResult && mailResult.reason);
+      try {
+        await sendPasswordResetEmailFirebase(normalizedEmail);
+        console.warn('[passwordResetLink] Firebase native reset email fallback accepted:', normalizedEmail);
+      } catch (fallbackError) {
+        console.error('[passwordResetLink] Firebase reset email fallback failed:', normalizedEmail,
+          fallbackError && fallbackError.message);
+      }
     }
   } catch (error) {
     // Covers "email not registered" (Firebase auth/user-not-found) and any
