@@ -28,6 +28,27 @@ function connector(db, schema, config, transport) {
     enabled(); const r=await q.query(`SELECT uid FROM ${t('user_credentials')} WHERE uid=$1 AND role=1 AND is_archive=FALSE`,[uid]);
     if (!r.rows.length) throw failure('PLATFORM_ADMIN_REQUIRED',403);
   }
+  async function authority(a) {
+    if (a.connected_by === 'owner-configured') {
+      if (!config.ownerConnectionId || !config.ownerProgramId || a.connection_id !== config.ownerConnectionId || a.program_id !== config.ownerProgramId) throw failure('OWNER_CONNECTION_REQUIRED',403);
+      return;
+    }
+    await admin(a.connected_by);
+  }
+  // Only the confidential server client can call this through the route below.
+  // The deployment owner must pin both identifiers in GetHired's environment.
+  async function ownerConnect(input) {
+    enabled();
+    if (!config.ownerConnectionId || !config.ownerProgramId || input.connectionId !== config.ownerConnectionId || input.programId !== config.ownerProgramId) throw failure('OWNER_CONNECTION_REQUIRED',403);
+    if (typeof input.eventSecret !== 'string' || input.eventSecret.length < 32 || input.eventSecret.length > 256) throw failure('INVALID_EXCHANGE');
+    return db.transaction(async q => {
+      const active=(await q.query(`SELECT * FROM ${t('referral_bunny_platform')} WHERE id=1 FOR UPDATE`)).rows[0];
+      if (active.connection_id && !active.disconnected_at && (active.connection_id !== input.connectionId || active.program_id !== input.programId)) throw failure('ALREADY_CONNECTED',409);
+      const same=active.connection_id === input.connectionId && active.program_id === input.programId && !active.disconnected_at && active.secret_cipher && unseal(active.secret_cipher) === input.eventSecret;
+      await q.query(`UPDATE ${t('referral_bunny_platform')} SET connection_id=$1,program_id=$2,request_id=NULL,secret_cipher=$3,generation=$4,connected_by='owner-configured',connected_at=$5,payments_authorized=FALSE,disconnected_at=NULL WHERE id=1`,[input.connectionId,input.programId,seal(input.eventSecret),same?active.generation:id(),same?active.connected_at:now()]);
+      return {connectionId:input.connectionId};
+    });
+  }
   async function pending(requestId,q=db,lock=false) {
     if (!/^[a-f0-9]{64}$/.test(requestId || '')) throw failure('CONNECTION_EXPIRED',410);
     const r=await q.query(`SELECT * FROM ${t('referral_bunny_requests')} WHERE id=$1${lock?' FOR UPDATE':''}`,[requestId]);
@@ -68,7 +89,7 @@ function connector(db, schema, config, transport) {
     const {rows}=await db.query(`SELECT * FROM ${t('referral_bunny_platform')} WHERE id=1 AND connection_id=$1`,[connectionId]);
     const a=rows[0];
     if(!a || a.disconnected_at) return {account:a?'disconnected':'not_connected',signups:'not_connected',payments:'not_available',connectedAt:a?.connected_at || null};
-    try { await admin(a.connected_by); } catch(e) { if(e.httpStatus!==403)throw e;return {account:'reconnect_required',signups:'paused',payments:'not_available',connectedAt:a.connected_at}; }
+    try { await authority(a); } catch(e) { if(e.httpStatus!==403)throw e;return {account:'reconnect_required',signups:'paused',payments:'not_available',connectedAt:a.connected_at}; }
     const observed=await db.query(`SELECT MAX(claimed_at) AS last_signup_at FROM ${t('referral_bunny_attributions')} WHERE connection_id=$1`,[connectionId]);
     let paymentStatus='not_available', lastPaymentAt=null;
     if(config.paymentsEnabled){
@@ -82,7 +103,7 @@ function connector(db, schema, config, transport) {
     return {account:'connected',signups:'ready',payments:paymentStatus,connectedAt:a.connected_at,lastSignupAt:observed.rows[0]?.last_signup_at || null,lastPaymentAt};
   }
   async function disconnect(connectionId) {enabled();await db.query(`UPDATE ${t('referral_bunny_platform')} SET disconnected_at=$2,secret_cipher=NULL,generation=NULL WHERE id=1 AND connection_id=$1`,[connectionId,now()]);return {disconnected:true};}
-  async function active() {enabled();const r=await db.query(`SELECT * FROM ${t('referral_bunny_platform')} WHERE id=1 AND disconnected_at IS NULL AND connection_id IS NOT NULL`);if(!r.rows.length)throw failure('NOT_CONNECTED',404);await admin(r.rows[0].connected_by);return r.rows[0];}
+  async function active() {enabled();const r=await db.query(`SELECT * FROM ${t('referral_bunny_platform')} WHERE id=1 AND disconnected_at IS NULL AND connection_id IS NOT NULL`);if(!r.rows.length)throw failure('NOT_CONNECTED',404);await authority(r.rows[0]);return r.rows[0];}
   async function capture(input) {
     const a=await active();if(input.programId!==a.program_id||!/^[a-zA-Z0-9_-]{1,100}$/.test(input.membershipId || ''))throw failure('INVALID_REFERRAL');
     const secret=unseal(a.secret_cipher), body=JSON.stringify({membership_id:input.membershipId}), timestamp=String(Math.floor(+now()/1000));
@@ -101,6 +122,6 @@ function connector(db, schema, config, transport) {
     await db.query(`INSERT INTO ${t('referral_bunny_attributions')}(uid,connection_id,program_id,membership_id,referred_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(uid) DO NOTHING`,[uid,a.connection_id,a.program_id,r.membershipId,r.referredAt]);return {attributed:true};
   }
   async function paymentContext(){const a=await active();if(!config.paymentsEnabled||!a.payments_authorized)throw failure('PAYMENT_AUTHORIZATION_REQUIRED',403);return {...a,secret:unseal(a.secret_cipher)};}
-  return {authenticate,create,describe,approve,exchange,disconnect,status,capture,claim,paymentContext};
+  return {authenticate,ownerConnect,create,describe,approve,exchange,disconnect,status,capture,claim,paymentContext};
 }
 module.exports={connector};

@@ -8,6 +8,8 @@ let instance;
 function service() {
   if(!instance) instance=connector(db,env.schema,{
     enabled:process.env.REFERRAL_BUNNY_ENABLED==='true',
+    ownerConnectionId:process.env.REFERRAL_BUNNY_OWNER_CONNECTION_ID,
+    ownerProgramId:process.env.REFERRAL_BUNNY_OWNER_PROGRAM_ID,
     paymentsEnabled:process.env.REFERRAL_BUNNY_PAYMENTS_ENABLED==='true',
     refundsEnabled:process.env.REFERRAL_BUNNY_REFUNDS_ENABLED==='true',
     clientSecret:process.env.REFERRAL_BUNNY_CLIENT_SECRET,
@@ -31,6 +33,7 @@ router.post('/integrations/referral-bunny/refunds/webhook',async(req,res)=>{
     res.set('Cache-Control','no-store').json(await intake.webhook(req.rawBody,req.headers['paymongo-signature']));
   } catch(e) {res.status(e.httpStatus || 503).json({code:e.httpStatus?e.code:'REFUND_INTAKE_UNAVAILABLE'});}
 });
+router.post('/integrations/referral-bunny/owner-connect',platform((s,b)=>s.ownerConnect(b)));
 router.post('/integrations/referral-bunny/requests',platform((s,b)=>s.create(b)));
 router.post('/integrations/referral-bunny/exchange',platform((s,b)=>s.exchange(b)));
 router.post('/integrations/referral-bunny/status',platform((s,b)=>s.status(b.connectionId)));
