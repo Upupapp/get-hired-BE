@@ -8,7 +8,8 @@ function paymentBody(row,first){
  if(gross!==cents(row.expected_amount_minor)||gross!==paid||gross!==total||subtotal-discount+tax!==total||tax>=gross||discount>subtotal)throw fail('INVOICE_AMOUNT_MISMATCH');
  if(row.currency!=='PHP'||row.invoice_currency!==row.currency||row.attempt_currency!==row.currency)throw fail('CURRENCY_MISMATCH');
  if(!row.referred_at||!row.user_created_at||!row.company_created_at||new Date(row.referred_at)>new Date(row.paid_at)||new Date(row.user_created_at)<new Date(row.referred_at)||new Date(row.company_created_at)<new Date(row.referred_at))throw fail('EXISTING_CUSTOMER');
- return {event_id:'gh-payment-'+crypto.createHash('sha256').update(row.provider_payment_id).digest('hex'),type:'payment',customer_id:row.company_id,invoice_id:row.invoice_id,membership_id:row.membership_id,currency:row.currency,amount_minor:gross-tax,occurred_at:new Date(row.paid_at).toISOString(),referred_at:new Date(row.referred_at).toISOString(),first_payment:first,self_referral:false};
+ if(first && (!Number.isFinite(+new Date(row.user_created_at)) || +new Date(row.paid_at)<+new Date(row.user_created_at) || +new Date(row.paid_at)>+new Date(row.user_created_at)+30*86400000))throw fail('ATTRIBUTION_EXPIRED');
+ return {event_id:'gh-payment-'+crypto.createHash('sha256').update(row.provider_payment_id).digest('hex'),type:'payment',customer_id:row.company_id,invoice_id:row.invoice_id,membership_id:row.membership_id,currency:row.currency,amount_minor:gross-tax,occurred_at:new Date(row.paid_at).toISOString(),referred_at:new Date(row.referred_at).toISOString(),signed_up_at:new Date(row.user_created_at).toISOString(),first_payment:first,self_referral:false};
 }
 function payments(db,schema,connector,config,transport){
  if(!/^[a-z_][a-z0-9_]*$/i.test(schema))throw fail('INVALID_SCHEMA');const t=n=>schema+'.'+n;
@@ -56,7 +57,7 @@ function payments(db,schema,connector,config,transport){
       const member=await signed(context,'/referrals/validate',JSON.stringify({membership_id:row.membership_id}));
       const fingerprint=crypto.createHmac('sha256',context.secret).update(String(row.email).trim().toLowerCase()).digest('hex');
       if(member.membershipId!==row.membership_id||!member.emailFingerprint||fingerprint===member.emailFingerprint)throw fail('REFERRAL_INELIGIBLE');
-      if(!binding && (+new Date(row.paid_at)-+new Date(row.referred_at)>Number(member.windowDays)*86400000 || !Number.isInteger(member.windowDays)))throw fail('ATTRIBUTION_EXPIRED');
+      if(!binding && (+new Date(row.user_created_at)-+new Date(row.referred_at)>Number(member.windowDays)*86400000 || !Number.isInteger(member.windowDays)))throw fail('ATTRIBUTION_EXPIRED');
       payload=JSON.stringify(body);
     }catch(e){if(!['INVALID_INVOICE_AMOUNT','INVOICE_AMOUNT_MISMATCH','CURRENCY_MISMATCH','EXISTING_CUSTOMER','PRIOR_PAYMENT_OR_MISSING_START','REFERRAL_INELIGIBLE','ATTRIBUTION_EXPIRED'].includes(e.code))throw e;reason=e.code;}
     const id=crypto.createHash('sha256').update(context.connection_id+':'+row.invoice_id).digest('hex');
