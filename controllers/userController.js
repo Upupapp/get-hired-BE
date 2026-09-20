@@ -31,7 +31,6 @@ import {
   verifyEmailInFirebase,
   getRefreshTokenFirebase,
   verifyPwResetInFirebase,
-  getForgetPwLinkInFirebase,
   sendPasswordResetEmailFirebase,
   updateUserProfileInFirebase,
   registerNewUserInFirebaseWithEmail,
@@ -340,15 +339,11 @@ const getRefreshToken = async (req, res) => {
 //   distinguishable by HTTP status code alone. Now returns the exact same
 //   200 + generic message in every case -- known email, unknown email, or
 //   any internal failure -- and never leaks which one occurred.
-// - JS-22 (delivery): send() was called without await and its result was
-//   never checked (send() itself never throws by design -- see mailer.js --
-//   so a misconfigured/failing provider was invisible here), meaning
-//   "Link Send to your provided Email" was returned regardless of whether
-//   the email actually went out. Delivery is now awaited and failures are
-//   logged server-side (safe telemetry only, no token/secret values) so a
-//   real production delivery problem is at least visible in logs, without
-//   changing what the user sees (still the same generic message either way
-//   -- see the enumeration fix above for why).
+// - Delivery: Firebase Authentication is the authoritative sender for this
+//   authentication email. This avoids depending on SendGrid for password
+//   recovery and lets Firebase apply the project's configured Auth template,
+//   sender identity and action handler. Arbitrary product emails still use
+//   the transactional mailer because Firebase Auth only sends Auth actions.
 const GENERIC_RESET_MESSAGE = "If an account exists for this email, password reset instructions have been sent.";
 
 const passwordResetLink = async (req, res) => {
@@ -383,26 +378,8 @@ const passwordResetLink = async (req, res) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   try {
-    const pwRequestLink = await getForgetPwLinkInFirebase(normalizedEmail);
-    const name = await getUserNameByEmail(normalizedEmail);
-    const userRole = await getUserRoleByEmail(normalizedEmail);
-
-    const mailResult = await send(normalizedEmail, "pw_reset", {
-      url: pwRequestLink + `&role=${userRole}&email=${normalizedEmail}`,
-      name,
-      email: normalizedEmail,
-    });
-
-    if (!mailResult || !mailResult.sent) {
-      console.warn('[passwordResetLink] Reset link generated but email delivery failed:', normalizedEmail, mailResult && mailResult.reason);
-      try {
-        await sendPasswordResetEmailFirebase(normalizedEmail);
-        console.warn('[passwordResetLink] Firebase native reset email fallback accepted:', normalizedEmail);
-      } catch (fallbackError) {
-        console.error('[passwordResetLink] Firebase reset email fallback failed:', normalizedEmail,
-          fallbackError && fallbackError.message);
-      }
-    }
+    await sendPasswordResetEmailFirebase(normalizedEmail);
+    console.info('[passwordResetLink] Firebase native reset email accepted:', normalizedEmail);
   } catch (error) {
     // Covers "email not registered" (Firebase auth/user-not-found) and any
     // other internal failure alike -- safe to log in full server-side,
