@@ -7,8 +7,9 @@ const {connector}=require('../services/referral-bunny/service.cjs');
 async function setup(){
  const pg=new PGlite();await pg.exec(`CREATE SCHEMA gethired; SET search_path=gethired; CREATE TABLE user_credentials(uid text primary key,email text,role int,is_archive boolean default false,created_date timestamptz); INSERT INTO user_credentials(uid,email,role,created_date) VALUES('admin','admin@example.com',1,'2026-09-01'),('employer','old@example.com',2,'2026-09-01'),('new','new@example.com',2,'2026-09-20 10:00:01Z'),('self','referrer@example.com',2,'2026-09-20 10:00:01Z');`);
  const migration=fs.readFileSync('db/referral_bunny_migration.sql','utf8');await pg.exec(migration);await pg.exec(migration);await pg.exec(fs.readFileSync('db/referral_bunny_payments_migration.sql','utf8'));
+ await pg.exec(fs.readFileSync('db/referral_bunny_signups_migration.sql','utf8'));
  const config={enabled:true,clientSecret:'a'.repeat(64),encryptionKey:'b'.repeat(64),rbOrigin:'https://referralbunny.ai',clock:()=>Date.parse('2026-09-20T10:00:00Z')};const secret='event-secret-'.repeat(6);
- const s=connector(pg,'gethired',config,async(url,body,headers)=>{assert.ok(url.startsWith(config.rbOrigin));assert.equal(headers['X-RB-Signature'],crypto.createHmac('sha256',secret).update(headers['X-RB-Timestamp']+'.'+body).digest('hex'));return {membershipId:JSON.parse(body).membership_id,windowDays:30,emailFingerprint:crypto.createHmac('sha256',secret).update('referrer@example.com').digest('hex')};});
+ const s=connector(pg,'gethired',config,async(url,body,headers)=>{assert.ok(url.startsWith(config.rbOrigin));assert.equal(headers['X-RB-Signature'],crypto.createHmac('sha256',secret).update(headers['X-RB-Timestamp']+'.'+body).digest('hex'));return {clickId:JSON.parse(body).click_token==='valid-click'?'12345678-1234-4234-8234-123456789abc':null,membershipId:JSON.parse(body).membership_id,windowDays:30,emailFingerprint:crypto.createHmac('sha256',secret).update('referrer@example.com').digest('hex')};});
  const verifier='v'.repeat(64),input={connectionId:'connection-1',programId:'program-1',programName:'GetHired Referrals',businessName:'GetHired',state:'s'.repeat(64),challenge:crypto.createHash('sha256').update(verifier).digest('base64url'),callbackPath:'/tenant/acme/quick-program/connection/program-1/gethired/callback'};
  async function authorize(extra={}){const {requestId}=await s.create({...input,...extra});const {redirect}=await s.approve('admin',requestId,true);return {requestId,code:new URL(redirect).searchParams.get('code'),verifier,eventSecret:secret};}
  return {pg,s,config,input,secret,authorize};
@@ -85,4 +86,17 @@ test('owner-configured signup connection is pinned, preserves retries, and needs
   f.config.ownerProgramId='program-1';await f.s.disconnect(input.connectionId);await f.s.ownerConnect(input);
   await assert.rejects(()=>f.s.claim('new',receipt.receipt),{code:'REFERRAL_EXPIRED'});
  } finally {await f.pg.close();}
+});
+
+test('signup feed retains verified click attribution, is connection scoped and exposes no email',async()=>{
+ const f=await setup();try {
+  await f.s.exchange(await f.authorize());
+  const receipt=await f.s.capture({programId:'program-1',membershipId:'member',clickToken:'valid-click'});
+  await f.s.claim('new',receipt.receipt);await f.s.claim('new',receipt.receipt);
+  const feed=await f.s.signups({connectionId:'connection-1'});
+  assert.equal(feed.rows.length,1);assert.equal(feed.rows[0].clickId,'12345678-1234-4234-8234-123456789abc');
+  assert.equal(feed.rows[0].membershipId,'member');assert.equal(feed.rows[0].occurredAt,'2026-09-20T10:00:01.000Z');
+  assert.equal(JSON.stringify(feed).includes('new@example.com'),false);assert.equal(feed.cursor,null);
+  await assert.rejects(()=>f.s.signups({connectionId:'other'}),{httpStatus:403});
+ }finally{await f.pg.close();}
 });

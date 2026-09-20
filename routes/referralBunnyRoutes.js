@@ -36,6 +36,7 @@ router.post('/integrations/referral-bunny/refunds/webhook',async(req,res)=>{
 router.post('/integrations/referral-bunny/owner-connect',platform((s,b)=>s.ownerConnect(b)));
 router.post('/integrations/referral-bunny/requests',platform((s,b)=>s.create(b)));
 router.post('/integrations/referral-bunny/exchange',platform((s,b)=>s.exchange(b)));
+router.post('/integrations/referral-bunny/signups',platform((s,b)=>s.signups(b)));
 router.post('/integrations/referral-bunny/status',platform((s,b)=>s.status(b.connectionId)));
 router.post('/integrations/referral-bunny/review',platform((s,b)=>require('../services/referral-bunny/review.cjs').review(db,env.schema,s).list(b)));
 router.post('/integrations/referral-bunny/review/retry',platform((s,b)=>require('../services/referral-bunny/review.cjs').review(db,env.schema,s).retry(b)));

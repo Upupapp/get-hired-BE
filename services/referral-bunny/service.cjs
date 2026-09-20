@@ -106,10 +106,10 @@ function connector(db, schema, config, transport) {
   async function active() {enabled();const r=await db.query(`SELECT * FROM ${t('referral_bunny_platform')} WHERE id=1 AND disconnected_at IS NULL AND connection_id IS NOT NULL`);if(!r.rows.length)throw failure('NOT_CONNECTED',404);await authority(r.rows[0]);return r.rows[0];}
   async function capture(input) {
     const a=await active();if(input.programId!==a.program_id||!/^[a-zA-Z0-9_-]{1,100}$/.test(input.membershipId || ''))throw failure('INVALID_REFERRAL');
-    const secret=unseal(a.secret_cipher), body=JSON.stringify({membership_id:input.membershipId}), timestamp=String(Math.floor(+now()/1000));
+    const secret=unseal(a.secret_cipher), body=JSON.stringify({membership_id:input.membershipId,...(typeof input.clickToken==='string' && input.clickToken.length<1800?{click_token:input.clickToken}:{})}), timestamp=String(Math.floor(+now()/1000));
     const result=await transport(config.rbOrigin+'/api/program-connections/'+encodeURIComponent(a.connection_id)+'/referrals/validate',body,{'Content-Type':'application/json','Accept':'application/json','X-RB-Timestamp':timestamp,'X-RB-Signature':crypto.createHmac('sha256',secret).update(timestamp+'.'+body).digest('hex')});
     if(result.membershipId!==input.membershipId || !/^[a-f0-9]{64}$/.test(result.emailFingerprint || ''))throw failure('INVALID_REFERRAL');
-    const receipt={connectionId:a.connection_id,programId:a.program_id,generation:a.generation,membershipId:result.membershipId,emailFingerprint:result.emailFingerprint,referredAt:now().toISOString(),expiresAt:+now()+Math.min(365,Math.max(1,Number(result.windowDays)||30))*86400000};
+    const receipt={connectionId:a.connection_id,programId:a.program_id,generation:a.generation,membershipId:result.membershipId,clickId:result.clickId || null,emailFingerprint:result.emailFingerprint,referredAt:now().toISOString(),expiresAt:+now()+Math.min(365,Math.max(1,Number(result.windowDays)||30))*86400000};
     return {receipt:seal(receipt),expiresAt:receipt.expiresAt};
   }
   async function claim(uid,receipt) {
@@ -119,9 +119,18 @@ function connector(db, schema, config, transport) {
     if(!u || !u.created_date || +new Date(u.created_date)<+new Date(r.referredAt))throw failure('NEW_EMPLOYER_REQUIRED',409);
     const fingerprint=crypto.createHmac('sha256',unseal(a.secret_cipher)).update(String(u.email).trim().toLowerCase()).digest('hex');
     if(fingerprint===r.emailFingerprint)throw failure('SELF_REFERRAL',409);
-    await db.query(`INSERT INTO ${t('referral_bunny_attributions')}(uid,connection_id,program_id,membership_id,referred_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(uid) DO NOTHING`,[uid,a.connection_id,a.program_id,r.membershipId,r.referredAt]);return {attributed:true};
+    await db.query(`INSERT INTO ${t('referral_bunny_attributions')}(uid,connection_id,program_id,membership_id,referred_at,click_id) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(uid) DO NOTHING`,[uid,a.connection_id,a.program_id,r.membershipId,r.referredAt,r.clickId || null]);return {attributed:true};
+  }
+  async function signups(input) {
+    const a=await active();
+    if(input.connectionId!==a.connection_id)throw failure('CONNECTION_MISMATCH',403);
+    const cursor=input.cursor || '';
+    if(typeof cursor!=='string'||cursor.length>128)throw failure('INVALID_CURSOR');
+    // Full scans restart after the final page, so concurrent registrations cannot be skipped permanently.
+    const rows=(await db.query(`SELECT r.uid,r.membership_id,r.click_id,r.referred_at,u.created_date FROM ${t('referral_bunny_attributions')} r JOIN ${t('user_credentials')} u ON u.uid=r.uid WHERE r.connection_id=$1 AND r.program_id=$2 AND r.uid>$3 AND u.role=2 AND u.is_archive=FALSE ORDER BY r.uid LIMIT 100`,[a.connection_id,a.program_id,cursor])).rows;
+    return {connectionId:a.connection_id,programId:a.program_id,rows:rows.map(r=>({customerId:sha(a.connection_id+':'+r.uid),membershipId:r.membership_id,clickId:r.click_id,referredAt:new Date(r.referred_at).toISOString(),occurredAt:new Date(r.created_date).toISOString()})),cursor:rows.length===100?rows[rows.length-1].uid:null};
   }
   async function paymentContext(){const a=await active();if(!config.paymentsEnabled||!a.payments_authorized)throw failure('PAYMENT_AUTHORIZATION_REQUIRED',403);return {...a,secret:unseal(a.secret_cipher)};}
-  return {authenticate,ownerConnect,create,describe,approve,exchange,disconnect,status,capture,claim,paymentContext};
+  return {authenticate,ownerConnect,create,describe,approve,exchange,disconnect,status,capture,claim,signups,paymentContext};
 }
 module.exports={connector};
