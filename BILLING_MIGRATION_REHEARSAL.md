@@ -29,7 +29,7 @@ The first targeted extraction omitted the independently referenced invoice seque
 
 ## Rollout status
 
-This branch remains disabled by default and is not deployed. Production advanced from integration base d659f10 to c72f025 during this work; reconcile that drift before deploying. Legacy paid flags still need provider-backed reconciliation, explicit billing mode and webhook configuration, and a genuine provider test-mode end-to-end test.
+This branch remains disabled by default and is not deployed. Production advanced from integration base d659f10 to c72f025 during this work; reconcile that drift before deploying. The owner confirmed there are no actual paid accounts; see LEGACY_PAYMENT_RECONCILIATION.md. Legacy flags are not approved billing agreements. Explicit billing mode and webhook configuration, access disposition, and a genuine provider test-mode end-to-end test remain required.
 
 Run locally from repository root:
 
