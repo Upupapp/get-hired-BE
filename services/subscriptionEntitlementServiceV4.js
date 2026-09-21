@@ -42,6 +42,10 @@ export async function resolveCompanyPlan(companyId) {
     const result = await dbQuery.query(q, [companyId]);
     const row = (result.rows && result.rows[0]) || null;
     if (!row) return null;
+    if(process.env.PAYMONGO_BILLING_ENABLED==='true') {
+      const effective=await dbQuery.transaction(q=>require('./paymongo-billing/subscription-domain.cjs').domain(dbSchema).effective(q,companyId,new Date()));
+      if(effective && effective.planVersionId){row.paidBilling=effective;row.payment_occurence=effective.billingCycle==='annual'?'annually':'monthly';}
+    }
     return row;
   } catch (err) {
     console.warn('[subscriptionEntitlementServiceV4] resolveCompanyPlan error:', err && err.message);
@@ -63,6 +67,7 @@ function deriveStatusFromRow(row) {
   var daysForPlan = dbId === 1 ? 7 : (row.payment_occurence === 'annually' ? 365 : 30);
   var createdAt = row.created_at ? new Date(row.created_at) : null;
   var periodEnd = createdAt ? new Date(createdAt.getTime() + daysForPlan * 24 * 60 * 60 * 1000) : null;
+  if(row.paidBilling)periodEnd=new Date(row.paidBilling.periodEnd);
   var now = new Date();
 
   var status = 'none';

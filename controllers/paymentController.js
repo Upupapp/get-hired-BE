@@ -1,3 +1,5 @@
+import billing from '../services/paymongoBillingService';
+const {webhook:billingWebhook}=require('../services/paymongo-billing/http.cjs');
 import crypto from "crypto";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import dbQuery from "../db/dbQuery";
@@ -16,6 +18,7 @@ const token = `${env.paymongo_sk}:''`;
 const encodedToken = Buffer.from(token).toString("base64");
 
 const createPaymongoLink = async (cartId, itemDesc, amount) => {
+  if(process.env.PAYMONGO_BILLING_ENABLED==='true')throw Object.assign(new Error('Use authenticated billing checkout'),{code:'PAYMENT_REQUEST_INVALID',httpStatus:400});
   const reqAmount = amount * 100;
 
   try {
@@ -230,6 +233,7 @@ const insertTransactionTable = async (id, checkout_url, reference_number) => {
 // ---------------------------------------------------------------------------
 
 const paymongoWebhook = async (req, res) => {
+  if(process.env.PAYMONGO_BILLING_ENABLED==='true')return billingWebhook(billing)(req,res);
   // Step 1: Verify signature before any DB mutation or payload trust.
   if (!verifyPaymongoSignature(req)) {
     console.warn("[paymentController] PAYMONGO_WEBHOOK_SIGNATURE_INVALID — rejected");

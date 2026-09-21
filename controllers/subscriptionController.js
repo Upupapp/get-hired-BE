@@ -79,6 +79,7 @@ const createPaymentIntent = async (req, res) => {
 };
 
 const createCompanySubscription = async (companyId, subscriptionId) => {
+  if(process.env.PAYMONGO_BILLING_ENABLED==='true')return require('../services/paymongo-billing/trial.cjs').provision(dbQuery,dbSchema,companyId,subscriptionId);
   // NOTIFY-P1 FIX: idempotency guard — check before insert to prevent duplicate
   // subscription rows from PayMongo webhook retries.
   // A unique DB constraint on (company_id, subscription_id) would give stronger

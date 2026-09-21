@@ -1,3 +1,4 @@
+import paymongoBillingRoutes from './routes/paymongoBillingRoutes';
 import referralBunnyRoutes from './routes/referralBunnyRoutes';
 import express from "express";
 import "babel-polyfill";
@@ -192,6 +193,11 @@ app.use("/api/applicant/docs", express.json({
   limit: "60mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
+// Preserve the legacy parser when disabled; strict billing consumes exact signed bytes.
+app.use('/api/payment/paymongowebhook',(req,res,next)=>{
+  if(process.env.PAYMONGO_BILLING_ENABLED!=='true')return next();
+  return express.raw({type:'application/json',limit:'256kb'})(req,res,next);
+});
 app.use(express.json({
   limit: "6mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
@@ -263,6 +269,7 @@ app.use("/api", subscriptionGuardrailsRoutesV4);
 app.use("/api", subscriptionLifecycleRoutesV4);
 app.use("/api", subscriptionUpgradeRecommendationRoutesV4);
 app.use("/api", recruiterDashboardAnalyticsRoutes);
+app.use("/api", paymongoBillingRoutes);
 app.use("/api", billingRoutes);
 app.use("/api", publicJobPreviewRoutes);
 

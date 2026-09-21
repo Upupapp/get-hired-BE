@@ -11,7 +11,8 @@
     "deploy-gethired": "gcloud app deploy app.yaml --project get-hired-363107",
     "deploy-jobhunt": "gcloud app deploy app.yaml --project jobhunt-375218",
     "eucanna-server": "ssh -i keys/eucanna-ssh root@206.81.16.32",
-    "gethired-server": "ssh -i keys/gethired_rsa root@206.81.16.32"
+    "gethired-server": "ssh -i keys/gethired_rsa root@206.81.16.32",
+    "test:billing": "node --test tests/paymongo*.test.cjs tests/subscription-checkout-pricing.test.cjs tests/referral-*.test.cjs"
   },
   "repository": {
     "type": "git",
@@ -52,5 +53,8 @@
     "read-excel-file": "^5.5.3",
     "request": "^2.88.2",
     "sharp": "^0.33.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }

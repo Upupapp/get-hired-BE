@@ -1,3 +1,4 @@
+import {billingCheckout} from '../middleware/paymongoBillingGate';
 import express from "express";
 import verifyAuth from "../middleware/verifyAuth";
 import {
@@ -13,7 +14,7 @@ const router = express.Router();
 // middleware and trusted a client-supplied email to pick which company's
 // card/subscription got charged. Zero frontend consumers found in this
 // repo, so adding auth here breaks no existing caller.
-router.post("/subscription/paymentintent", verifyAuth, createPaymentIntent);
+router.post("/subscription/paymentintent", verifyAuth, billingCheckout, createPaymentIntent);
 
 router.get("/subscription/getallsubscription", verifyAuth, getAllSubscription);
 router.get(
