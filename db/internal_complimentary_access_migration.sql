@@ -1,5 +1,11 @@
 -- Additive only. Does not grant access or change any account.
 BEGIN;
+ALTER TABLE gethired.companies ADD COLUMN IF NOT EXISTS account_usage text NOT NULL DEFAULT 'customer';
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='gethired.companies'::regclass AND conname='company_account_usage_check') THEN
+  ALTER TABLE gethired.companies ADD CONSTRAINT company_account_usage_check CHECK (account_usage IN ('customer','internal'));
+ END IF;
+END $$;
 ALTER TABLE gethired.companies_subscription
  ADD COLUMN IF NOT EXISTS access_kind text NOT NULL DEFAULT 'standard',
  ADD COLUMN IF NOT EXISTS access_granted_by text,

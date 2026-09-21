@@ -5,7 +5,7 @@ const crypto=require('node:crypto');
 const {PGlite}=require('@electric-sql/pglite');
 const {connector}=require('../services/referral-bunny/service.cjs');
 async function setup(){
- const pg=new PGlite();await pg.exec(`CREATE SCHEMA gethired; SET search_path=gethired; CREATE TABLE user_credentials(uid text primary key,email text,role int,is_archive boolean default false,created_date timestamptz); INSERT INTO user_credentials(uid,email,role,created_date) VALUES('admin','admin@example.com',1,'2026-09-01'),('employer','old@example.com',2,'2026-09-01'),('new','new@example.com',2,'2026-09-20 10:00:01Z'),('self','referrer@example.com',2,'2026-09-20 10:00:01Z');`);
+ const pg=new PGlite();await pg.exec(`CREATE SCHEMA gethired; SET search_path=gethired; CREATE TABLE companies(company_id text,created_by text,account_usage text); CREATE TABLE user_credentials(uid text primary key,email text,role int,is_archive boolean default false,created_date timestamptz); INSERT INTO user_credentials(uid,email,role,created_date) VALUES('admin','admin@example.com',1,'2026-09-01'),('employer','old@example.com',2,'2026-09-01'),('new','new@example.com',2,'2026-09-20 10:00:01Z'),('self','referrer@example.com',2,'2026-09-20 10:00:01Z');`);
  const migration=fs.readFileSync('db/referral_bunny_migration.sql','utf8');await pg.exec(migration);await pg.exec(migration);await pg.exec(fs.readFileSync('db/referral_bunny_payments_migration.sql','utf8'));
  await pg.exec(fs.readFileSync('db/referral_bunny_signups_migration.sql','utf8'));
  const config={enabled:true,clientSecret:'a'.repeat(64),encryptionKey:'b'.repeat(64),rbOrigin:'https://referralbunny.ai',clock:()=>Date.parse('2026-09-20T10:00:00Z')};const secret='event-secret-'.repeat(6);
@@ -97,6 +97,10 @@ test('signup feed retains verified click attribution, is connection scoped and e
   assert.equal(feed.rows.length,1);assert.equal(feed.rows[0].clickId,'12345678-1234-4234-8234-123456789abc');
   assert.equal(feed.rows[0].membershipId,'member');assert.equal(feed.rows[0].occurredAt,'2026-09-20T10:00:01.000Z');
   assert.equal(JSON.stringify(feed).includes('new@example.com'),false);assert.equal(feed.cursor,null);
+  await f.pg.exec("INSERT INTO companies VALUES('internal','new','internal')");
+  assert.equal((await f.s.signups({connectionId:'connection-1'})).rows.length,0);
+  await f.pg.exec("UPDATE companies SET account_usage='customer'");
+  assert.equal((await f.s.signups({connectionId:'connection-1'})).rows.length,1);
   await assert.rejects(()=>f.s.signups({connectionId:'other'}),{httpStatus:403});
  }finally{await f.pg.close();}
 });

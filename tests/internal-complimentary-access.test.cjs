@@ -32,3 +32,11 @@ test('internal checkout fails before idempotent link reuse or provider call',asy
  await assert.rejects(()=>service.checkout({companyId:'internal',uid:'owner'},{planCode:'premium',idempotencyKey:'existing_key'}),{code:'INTERNAL_ACCOUNT_BILLING_DISABLED'});
  assert.equal(calls,0);assert.equal(queries.some(q=>q.includes('payment_attempts')),false);
 });
+
+ test('legacy free trial creation stays unpaid with billing foundation disabled',async()=>{
+ const rows=[];const db={query:async(sql,params)=>{if(sql.startsWith('SELECT'))return {rows:[]};rows.push(params);return {rows:[{company_id:params[0],is_paid:params[3],payment_date:params[4]}]};}};
+ const module={exports:{}};const code=transformSync(fs.readFileSync('controllers/subscriptionController.js','utf8'),{format:'cjs'}).code;
+ vm.runInNewContext(code,{module,exports:module.exports,console,Date,process:{env:{PAYMONGO_BILLING_ENABLED:'false'}},require:name=>name.endsWith('internalAccess.cjs')?access:name==='../db/dbQuery'?{__esModule:true,default:db}:{__esModule:true,default:{schema:'gethired'}}});
+ await module.exports.createCompanySubscription('trial',1);await module.exports.createCompanySubscription('trial-string','1');
+ assert.equal(rows.length,2);for(const row of rows){assert.equal(row[3],false);assert.equal(row[4],null);}
+ });

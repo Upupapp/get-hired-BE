@@ -111,8 +111,8 @@ const createCompanySubscription = async (companyId, subscriptionId) => {
       companyId,
       subscriptionId,
       new Date(),
-      true,
-      new Date(),
+      Number(subscriptionId) !== 1,
+      Number(subscriptionId) === 1 ? null : new Date(),
     ]);
 
     if (!rows || rows.length == 0) {

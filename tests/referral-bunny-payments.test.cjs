@@ -22,3 +22,11 @@ test('disconnect and refund after preparation prevent pending reward delivery',a
 }finally{await f.pg.close();}});
 test('expired attribution and accounts created before referral do not qualify',async()=>{for(const sql of ["UPDATE referral_bunny_attributions SET referred_at='2026-07-01'","UPDATE user_credentials SET created_date='2026-08-01'"]){const f=await setup();try{await f.invoice(1);await f.pg.exec(sql);assert.equal((await f.service.prepare()).held,1);}finally{await f.pg.close();}}});
 test('feature disabled does not inspect or transmit financial records',async()=>{const f=await setup();try{f.config.enabled=false;await assert.rejects(()=>f.service.prepare(),{code:'PAYMENT_CONNECTOR_DISABLED'});assert.equal(f.sent.length,0);}finally{await f.pg.close();}});
+
+ test('internal company usage is excluded before queueing and rechecked before delivery',async()=>{const f=await setup();try{
+ await f.pg.exec("ALTER TABLE companies ADD COLUMN account_usage text DEFAULT 'customer'");
+ await f.invoice(1);await f.pg.exec("UPDATE companies SET account_usage='internal'");
+ assert.deepEqual(await f.service.prepare(),{queued:0,held:0});assert.equal(f.sent.length,0);
+ await f.pg.exec("UPDATE companies SET account_usage='customer'");assert.equal((await f.service.prepare()).queued,1);
+ await f.pg.exec("UPDATE companies SET account_usage='internal'");assert.equal((await f.service.deliverNext()).delivered,false);assert.equal(f.sent.length,0);
+ }finally{await f.pg.close();}});
