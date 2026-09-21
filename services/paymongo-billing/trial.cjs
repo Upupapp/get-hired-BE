@@ -9,7 +9,7 @@ async function provision(db,schema,companyId,subscriptionId){
   const old=await q.query(`SELECT * FROM ${schema}.companies_subscription WHERE company_id=$1 ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,[companyId]);
   if(old.rows.length)return old.rows[0];
   const start=new Date(),end=new Date(+start+7*86400000);
-  return (await q.query(`INSERT INTO ${schema}.companies_subscription(company_id,subscription_id,created_at,period_start,period_end,is_paid,payment_date,sub_status,plan_slug,billing_cycle,engagement_plan_version) VALUES($1,1,$2,$2,$3,FALSE,NULL,'trialing','free_trial','monthly','legacy_v4') RETURNING *`,[companyId,start,end])).rows[0];
+  return (await q.query(`INSERT INTO ${schema}.companies_subscription(company_id,subscription_id,created_at,period_start,period_end,is_paid,payment_date,sub_status,plan_slug,billing_cycle,engagement_plan_version) VALUES($1,1,$2::timestamptz,$2::timestamptz,$3::timestamptz,FALSE,NULL,'trialing','free_trial','monthly','legacy_v4') RETURNING *`,[companyId,start,end])).rows[0];
  });
 }
 module.exports={provision};
