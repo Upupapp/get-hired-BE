@@ -1,3 +1,4 @@
+const {isInternal,accessSummary}=require('./internalAccess.cjs');
 /**
  * SubscriptionEntitlementService V4
  * Resolves employer's active plan, evaluates entitlement decisions.
@@ -31,6 +32,7 @@ function getEnforcementMode() {
 export async function resolveCompanyPlan(companyId) {
   try {
     const q = `SELECT cs.company_id, cs.created_at, cs.is_paid, cs.payment_date,
+      to_jsonb(cs)->>'access_kind' AS access_kind, to_jsonb(cs)->>'access_granted_by' AS access_granted_by, to_jsonb(cs)->>'access_granted_at' AS access_granted_at,
       s.subscription_id, s.job_post, s.admin, s.video_response,
       s.with_customer_care, s.price, s.price_currency,
       s.subscription_name, s.payment_occurence
@@ -73,7 +75,9 @@ function deriveStatusFromRow(row) {
   var status = 'none';
   var health = 'unknown';
 
-  if (dbId === 1) {
+  if (isInternal(row)) {
+    status='subscription_active';health='healthy';periodEnd=null;
+  } else if (dbId === 1) {
     if (periodEnd && now > periodEnd) {
       status = 'trial_expired'; health = 'action_needed';
     } else if (periodEnd && (periodEnd - now) < 2 * 24 * 60 * 60 * 1000) {
@@ -94,13 +98,14 @@ function deriveStatusFromRow(row) {
   var billingInterval = (row.payment_occurence === 'annually') ? 'annual' : 'monthly';
 
   return {
+    ...accessSummary(row),
     status: status,
     health: health,
     planCode: planCode,
     planName: row.subscription_name || planCode,
-    billingInterval: billingInterval,
+    billingInterval: isInternal(row)?null:billingInterval,
     dbSubscriptionId: dbId,
-    priceAmount: row.price || 0,
+    priceAmount: isInternal(row)?0:(row.price || 0),
     priceCurrency: row.price_currency || 'PHP',
     startedAt: createdAt ? createdAt.toISOString() : null,
     currentPeriodStart: createdAt ? createdAt.toISOString() : null,

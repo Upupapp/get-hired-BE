@@ -1,5 +1,6 @@
 'use strict';
 const crypto=require('crypto');
+const {isInternal}=require('../internalAccess.cjs');
 const {verify,normalize,assertRuntime,fail}=require('./security.cjs');
 const {domain}=require('./subscription-domain.cjs');
 const {isAdmin}=require('../subscription-engagement/suppression.cjs');
@@ -79,6 +80,7 @@ function billing(db,schema,config,provider) {
   assertRuntime(config);request(input);
   const prepared=await db.transaction(async q=> {
    await lock(q,context.companyId);
+   if(isInternal(await subscriptions.current(q,context.companyId)))throw fail('INTERNAL_ACCOUNT_BILLING_DISABLED',422);
    if(input.idempotencyKey) {
     const existing=await q.query(`SELECT * FROM ${t('payment_attempts')} WHERE company_id=$1 AND initiated_by_uid=$2 AND client_key=$3`,[context.companyId,context.uid,input.idempotencyKey]);
     if(existing.rows.length) {

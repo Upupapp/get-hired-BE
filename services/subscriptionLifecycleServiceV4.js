@@ -1,3 +1,4 @@
+const {isInternal,accessSummary}=require('./internalAccess.cjs');
 /**
  * Subscription Lifecycle Service V4
  * Tracks and derives subscription lifecycle states from DB records.
@@ -19,6 +20,7 @@ const dbSchema = env.schema;
  */
 function deriveLifecycleStatus(row) {
   if (!row) return 'unknown';
+  if (isInternal(row)) return 'active';
 
   var now = new Date();
   var subStatus = (row.sub_status || row.status || '').toLowerCase();
@@ -125,14 +127,15 @@ async function getCompanyLifecycleSummary(companyId) {
   }
 
   return {
+    ...accessSummary(row),
     status: status,
     planSlug: row.canonical_slug || row.plan_slug || null,
-    billingCycle: billingCycle,
+    billingCycle: isInternal(row)?null:billingCycle,
     periodStart: row.period_start ? new Date(row.period_start).toISOString() : null,
-    periodEnd: row.period_end ? new Date(row.period_end).toISOString() : null,
+    periodEnd: !isInternal(row) && row.period_end ? new Date(row.period_end).toISOString() : null,
     trialEndsAt: trialEndsAt,
     amountPaid: row.amount_paid || null,
-    isPaid: row.is_paid || false,
+    isPaid: accessSummary(row).isPaid,
     subscriptionId: row.subscription_id,
     subscriptionName: row.subscription_name,
   };
