@@ -359,7 +359,9 @@ export async function getAnalytics(companyId, rangeKey) {
       return {
         jobId: r.job_id,
         title: r.job_title || 'Untitled job',
-        status: r.job_status_id === '2' ? 'Published' : 'Draft',
+        // pg can return this id as either a string or a number depending on
+        // the column type/driver parser. Normalize before comparing.
+        status: safeInt(r.job_status_id) === 2 ? 'Published' : 'Draft',
         views: views,
         applications: apps,
         conversionRate: conv.label,
