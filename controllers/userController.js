@@ -34,9 +34,9 @@ import {
   sendPasswordResetEmailFirebase,
   updateUserProfileInFirebase,
   registerNewUserInFirebaseWithEmail,
-  deleteUserAccountInFirebaseById,
   updateUserPasswordInFirebase,
 } from "../helpers/firebaseFunctions";
+import { deleteAccount } from "../services/accountDeletionService";
 import env from "../env";
 
 const dbSchema = env.schema;
@@ -733,23 +733,11 @@ const deleteAccountById = async (req, res) => {
   }
 
   try {
-    const account = await deleteUserAccount(userId);
+    const account = await deleteAccount(userId);
     return res.status(status.success).json(successResponse(account));
   } catch (error) {
     console.error('[deleteAccountById] error:', error);
     return res.status(status.error).json(errorResponse("Operation not successful. Please try again."));
-  }
-};
-
-const deleteUserAccount = async (uid) => {
-  const deleteQuery = `DELETE from ${dbSchema}.user_credentials where uid=$1`;
-
-  try {
-    const deleteInFirebase = await deleteUserAccountInFirebaseById(uid);
-    const { rows } = await dbQuery.query(deleteQuery, [uid]);
-    return "User deleted";
-  } catch (error) {
-    throw error;
   }
 };
 
