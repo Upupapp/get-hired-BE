@@ -42,6 +42,17 @@ test('all employer mutation paths call the authoritative plan guards', () => {
   assert.match(applications, /guardApplication\(/);
 });
 
+test('public pricing and legacy subscription summary use the authoritative catalog', () => {
+  const routes = read('routes/subscriptionGuardrailsRoutesV4.js');
+  const legacy = read('controllers/subscriptionController.js');
+  assert.match(routes, /router\.get\('\/subscriptions\/pricing-catalog',\s*getPricingCatalogEndpoint\)/);
+  assert.doesNotMatch(routes, /pricing-catalog',\s*verifyAuth/);
+  assert.match(legacy, /getPlanBySlug\(planCode\)/);
+  assert.match(legacy, /authoritativeEntitlements\.active_job_posts/);
+  assert.match(legacy, /authoritativeEntitlements\.admin_users/);
+  assert.match(legacy, /authoritativeEntitlements\.video_responses/);
+});
+
 test('storage accounting migration is additive and usage recording cannot reject applications', () => {
   const migration = read('db/20260913_stored_media.sql');
   const application = read('services/application.service.js');
