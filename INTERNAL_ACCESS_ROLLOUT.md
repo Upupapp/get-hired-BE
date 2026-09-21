@@ -34,3 +34,16 @@ Return backend to recorded pre-release commit and reload PM2. Restore the record
 ## Remaining boundary
 
 This release does not authorize provider-mode enablement, collect a real payment, or enable outgoing referral payment delivery. Synthetic signed payment tests demonstrate the implementation under test conditions, not a live PayMongo transaction.
+
+## Completed deployment receipt
+
+- Backend deployed commit: `53b9946fa69938367e7763b543b7b94945dbc9e8`. Both PM2 workers verified online.
+- Frontend deployed commit: `cf1df109e0a82ca243fe8867a40cb37c4f229e5f`.
+- Cloudflare production deployment: `2218970b-b9f2-485b-bd2f-1b4975ac5059`; only 8 new assets uploaded, 304 reused. Public-domain main/runtime hashes match the local release artifact.
+- Previous Cloudflare deployment retained for rollback: `53d27e5f-1ebb-4623-a77e-5bb706ae6974`.
+- Root-only backup: `/root/gethired-rollbacks/20260921-internal/gethired-before.dump`; archive directory validated. Backend and Cloudflare before-state receipts stored alongside it.
+- Exactly one audited internal grant applied. Production has 16 subscriptions: 15 unpaid trials and one internal complimentary Premium; zero marked paid, zero invoices and zero referral payment rows.
+- Production controller/database verification: internal account resolves correctly, Premium active, unpaid, no billing interval or expiry, limits 40 jobs / 15 users / 200 GiB / 400 video responses. Checkout returns INTERNAL_ACCOUNT_BILLING_DISABLED without creating a cart. Lifecycle copy states no payment is required.
+- Chrome verifies the current signed-in trial account's subscription and billing-history screens remain accessible after deployment; trial history remains labeled Trial, not paid. The internal identity itself was verified through production controllers/database and its UI through isolated staging, not by signing Chrome into that account.
+- Billing foundation migrations were not applied to production. New billing foundation, engagement and outgoing referral payment-delivery flags remain disabled. No real payment or payout performed.
+- LGUIDS was not accessed or modified. GitHub Actions remained disabled; no Netlify build was invoked.
