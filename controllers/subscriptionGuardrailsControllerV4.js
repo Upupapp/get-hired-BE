@@ -226,7 +226,10 @@ export async function createCheckoutIntent(req, res) {
     var description = ctx.companyId + '-' + ctx.planSlug + '-' + ctx.billingCycle;
     var link;
     try {
-      link = await createPaymongoLink(cartId, description, ctx.amountCentavos);
+      // createPaymongoLink accepts pesos and performs the single conversion
+      // to PayMongo's centavo amount internally. Passing amountCentavos here
+      // multiplied the charge by 100 a second time (PHP 3,490 -> 349,000).
+      link = await createPaymongoLink(cartId, description, ctx.amountPHP);
     } catch (payErr) {
       console.error('[subscriptionGuardrailsV4] PayMongo link error:', payErr && payErr.message);
       return res.status(502).json({ message: 'We couldn\'t prepare checkout right now. Please try again later.' });

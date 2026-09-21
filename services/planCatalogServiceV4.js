@@ -85,14 +85,14 @@ var PLAN_CATALOG = [
     name: 'Business',
     dbSubscriptionId: 4, // maps to 'premium' in legacy code; V4 renames to 'business'
     durationDays: null,
-    priceMonthlyPHP: 6990,
-    priceAnnualPHP: 69900,
-    effectiveMonthlyPHP: 5825, // 69900/12 = 5825
-    annualSavingsPHP: 13980,   // 6990*2
+    priceMonthlyPHP: 5990,
+    priceAnnualPHP: 59900,
+    effectiveMonthlyPHP: 4992, // 59900/12 = 4991.67, rounded
+    annualSavingsPHP: 11980,   // 5990*2
     billingCycles: ['monthly', 'annual'],
     entitlements: {
-      active_job_posts: 20,
-      admin_users: 8,
+      active_job_posts: 40,
+      admin_users: 15,
       video_responses: 400,
       customized_company_page: true,
       video_interview_questions: true,
