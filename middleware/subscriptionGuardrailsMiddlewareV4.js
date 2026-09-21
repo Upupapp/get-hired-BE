@@ -1,7 +1,6 @@
 /**
  * Subscription Guardrails Middleware V4
- * Provides:
- * - checkSubscriptionLimit(entitlementKey, action): mutation guard middleware
+ * Provides (plan-limit refusals live in services/planLimitGuard.js, the one 402 emitter):
  * - validateCheckoutIntent: validates plan/billing-cycle, computes server-side price
  * - billingCycleDisclosure: ensures disclosure metadata on checkout responses
  *
@@ -9,56 +8,9 @@
  */
 
 import { getUserCompanyForRequest } from '../controllers/companiesController';
-import { checkEntitlement, getEnforcementMode } from '../services/subscriptionEntitlementServiceV4';
 import { getPlanBySlug, isValidPlanSlug, isValidBillingCycle, getAmountForCheckout, getAmountInCentavos, getBillingCycleMeta, getPlanByDbId } from '../services/planCatalogServiceV4';
-import { logSubscriptionDecision, logCheckoutIntent, logValidationRejection } from '../services/subscriptionAuditLogServiceV4';
+import { logCheckoutIntent, logValidationRejection } from '../services/subscriptionAuditLogServiceV4';
 import idGenerator from '../helpers/randomNumberForId';
-
-// ── Subscription limit check middleware factory ────────────────────────────────
-/**
- * Returns an Express middleware that checks an entitlement before a mutation.
- * Usage: router.post('/jobs/publish', verifyAuth, checkSubscriptionLimit('active_job_posts', 'publish_job'), publishHandler)
- */
-export function checkSubscriptionLimit(entitlementKey, action) {
-  return async function subscriptionLimitMiddleware(req, res, next) {
-    try {
-      var uid = req.user && req.user.uid;
-      if (!uid) return res.status(401).json({ message: 'Unauthorized.' });
-
-      var company = await getUserCompanyForRequest(req, uid);
-      if (Array.isArray(company) || !company || !company.companyId) {
-        return res.status(403).json({ message: 'No company context.' });
-      }
-
-      var companyId = company.companyId;
-      var decision = await checkEntitlement(companyId, uid, action, entitlementKey);
-
-      // Attach decision to req for downstream handlers
-      req.subscriptionDecision = decision;
-
-      // Log the decision
-      logSubscriptionDecision(decision);
-
-      var mode = getEnforcementMode();
-      if (!decision.allowed && mode === 'enforce') {
-        return res.status(402).json({
-          allowed: false,
-          reasonCode: decision.reasonCode,
-          userMessage: decision.userMessage,
-          upgrade: decision.upgrade,
-          preserveWork: decision.preserveWork,
-          pricingDisplay: decision.pricingDisplay,
-        });
-      }
-
-      // In off/observe/warn mode or when allowed — proceed
-      next();
-    } catch (err) {
-      console.error('[subscriptionLimitMiddleware] error:', err && err.message);
-      next(); // fail open — do not block on middleware error
-    }
-  };
-}
 
 // ── Checkout intent validation middleware ─────────────────────────────────────
 /**

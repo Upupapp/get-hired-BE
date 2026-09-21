@@ -190,4 +190,11 @@ INSERT INTO gethired.billing_plan_versions(id,plan_code,catalog_version,legacy_s
  ('pricing_2026_09_21:growth','growth','pricing_2026_09_21',3,349000,3490000,'{"jobs":6,"users":3,"storage":null,"video":100}'),
  ('pricing_2026_09_21:premium','premium','pricing_2026_09_21',4,599000,5990000,'{"jobs":40,"users":15,"storage":null,"video":400}')
 ON CONFLICT(id) DO NOTHING;
+-- Production catalog capacities reconciled with main at 93177c8.
+-- New immutable version: retain prior versions for historical agreements.
+INSERT INTO gethired.billing_plan_versions(id,plan_code,catalog_version,legacy_subscription_id,monthly_minor,annual_minor,entitlements) VALUES
+ ('pricing_2026_09_21_v2:starter','starter','pricing_2026_09_21_v2',2,149000,1490000,'{"jobs":5,"users":2,"storage":10737418240,"video":25}'),
+ ('pricing_2026_09_21_v2:growth','growth','pricing_2026_09_21_v2',3,349000,3490000,'{"jobs":15,"users":5,"storage":53687091200,"video":100}'),
+ ('pricing_2026_09_21_v2:premium','premium','pricing_2026_09_21_v2',4,599000,5990000,'{"jobs":40,"users":15,"storage":214748364800,"video":400}')
+ON CONFLICT(id) DO NOTHING;
 COMMIT;

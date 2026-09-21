@@ -18,8 +18,10 @@ import {
 const router = express.Router();
 
 // GET /api/subscriptions/pricing-catalog
-// Public (optionally authenticated for current-plan highlighting)
-router.get('/subscriptions/pricing-catalog', verifyAuth, getPricingCatalogEndpoint);
+// Public by design: prices and capacities must remain available even when an
+// employer's Firebase token is being refreshed. Current-plan highlighting is
+// derived by the authenticated summary endpoints and the frontend.
+router.get('/subscriptions/pricing-catalog', getPricingCatalogEndpoint);
 
 // GET /api/subscriptions/employer/summary
 // Authenticated employer only

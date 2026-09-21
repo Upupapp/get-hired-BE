@@ -1,4 +1,7 @@
 import idGenerator from "../helpers/randomNumberForId";
+import { resolveMediaSizeBytes } from "../helpers/mediaSize";
+import { recordApplicationMedia } from "./storedMediaService";
+import { guardApplication, planLimitError } from "./planLimitGuard";
 import dbQuery from "../db/dbQuery";
 import env from "../env";
 import uploadInStorage from "../helpers/uploader";
@@ -191,6 +194,15 @@ const jobApply = async (jobApplication, userId) => {
 
   const jobApplicantionId = idGenerator(6, "APPL");
 
+  // Plan limits (SPRINT-01 A3, A3.1): the only refusal a candidate can meet is a Free
+  // Trial job past its applicant cap -- never the employer's missing subscription or
+  // storage. Checked before anything is written, so a refusal leaves no partial
+  // application; the candidate gets a neutral 400, as for a closed job.
+  const planGate = await guardApplication({ companyId: job.companyId, jobId });
+  if (!planGate.allowed) {
+    throw planLimitError(planGate.refusal, planGate.httpStatus);
+  }
+
   try {
     const insertQuery = `INSERT INTO ${dbSchema}.job_applicants
           (job_application_id, job_id, date_applied, candidate_id, application_status_id)
@@ -220,7 +232,8 @@ const jobApply = async (jobApplication, userId) => {
             applicantId,
             "applicant_covered_letter",
             "applicant_id",
-            jobId
+            jobId,
+            jobApplicantionId
           );
         })
       );
@@ -234,7 +247,8 @@ const jobApply = async (jobApplication, userId) => {
             applicantId,
             "applicant_resume",
             "applicant_id",
-            jobId
+            jobId,
+            jobApplicantionId
           );
         })
       );
@@ -248,7 +262,8 @@ const jobApply = async (jobApplication, userId) => {
             applicantId,
             "applicant_government_files",
             "applicant_id",
-            jobId
+            jobId,
+            jobApplicantionId
           );
         })
       );
@@ -262,6 +277,7 @@ const jobApply = async (jobApplication, userId) => {
             answerFile: item.answerFile,
             jobId,
             applicantId,
+            applicationId: jobApplicantionId,
           };
 
           return await saveInterviewAnswer(answer);
@@ -324,9 +340,20 @@ const jobApply = async (jobApplication, userId) => {
   }
 };
 
+// "data:video/webm;codecs=vp9;base64,..." -> "video/webm"; null for anything else.
+const dataUrlMimeType = (value) => {
+  const match = typeof value === "string" ? /^data:([^;,]+)[;,]/.exec(value) : null;
+  return match ? match[1] : null;
+};
+
 const saveInterviewAnswer = async (answer) => {
-  const { questionId, answerFile, jobId, applicantId } = answer;
+  const { questionId, answerFile, jobId, applicantId, applicationId } = answer;
   let rawUrl = "";
+
+  // Measured from the bytes received: this meters the employer's Recruitment
+  // Storage, and a recorded video answer is usually the largest object an
+  // application carries. See helpers/mediaSize.js.
+  const sizeBytes = resolveMediaSizeBytes(answerFile, undefined, "application.saveInterviewAnswer");
 
   const insertQuery = `INSERT INTO ${dbSchema}.interview_answers
   (question_id, answer_url, created_at, job_id, applicant_id)
@@ -356,6 +383,22 @@ const saveInterviewAnswer = async (answer) => {
       throw "Failed to save video";
     }
 
+    // Recruitment Storage: the answer video now sits in the employer's workspace.
+    // Recorded only after the answer row is saved, and never allowed to throw
+    // (see recordApplicationMedia's contract).
+    if (rawUrl) {
+      await recordApplicationMedia({
+        jobId: jobId,
+        applicantId: applicantId,
+        applicationId: applicationId || null,
+        tableName: "interview_answers",
+        objectKey: rawUrl,
+        originalFilename: filename,
+        mimeType: dataUrlMimeType(answerFile),
+        sizeBytes: sizeBytes,
+      });
+    }
+
     const dbResponse = rows[0];
     return {
       questionId: dbResponse.question_id,
@@ -374,7 +417,8 @@ const uploadApplicationAttachment = async (
   applicantId,
   tableName,
   column,
-  jobId
+  jobId,
+  applicationId
 ) => {
   let rawUrl = "";
   let generalQuery = "";
@@ -389,6 +433,10 @@ const uploadApplicationAttachment = async (
   // real one. Reading the correct key and falling back to it when there's
   // no new file to upload.
   const { id, file, fileurl, size, type, filename } = attachment;
+
+  // Measured server-side, not trusted from the caller -- this value meters the
+  // employer's Recruitment Storage. See helpers/mediaSize.js.
+  const sizeBytes = resolveMediaSizeBytes(file, size, "application.saveAttachment");
 
   const name = `${filename}-${Date.now()}`;
 
@@ -406,11 +454,29 @@ const uploadApplicationAttachment = async (
     const { rows } = await dbQuery.query(generalQuery, [
       rawUrl,
       name,
-      size,
+      sizeBytes,
       type,
       applicantId,
       jobId,
     ]);
+
+    // Recruitment Storage: this attachment now sits in the employer's workspace,
+    // so it becomes billable to them (owner ruling: metered per employer, so the
+    // same CV sent to ten employers bills ten times). object_key is the storage
+    // URL, which is the same value whether the file was freshly uploaded or an
+    // existing one was re-attached -- that shared key is what lets one physical
+    // object be reference-counted across employers.
+    // Awaited but never allowed to throw: see recordApplicationMedia's contract.
+    await recordApplicationMedia({
+      jobId: jobId,
+      applicantId: applicantId,
+      applicationId: applicationId || null,
+      tableName: tableName,
+      objectKey: rawUrl,
+      originalFilename: filename,
+      mimeType: type,
+      sizeBytes: sizeBytes,
+    });
 
     if (rows && rows.length == 0) {
       throw "Failed to save Url in DB";
@@ -683,4 +749,4 @@ const totalJobs = async (uid) => {
   };
 };
 
-export { jobApply, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };
+export { jobApply, uploadApplicationAttachment, saveInterviewAnswer, updateApplicationStatus, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById, charts, graph, statistic, totalJobs };

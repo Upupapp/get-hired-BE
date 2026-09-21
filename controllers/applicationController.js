@@ -1,5 +1,6 @@
 import { jobApply, updateApplicationStatus as updateApplicationStatusService, APPLICANT_SAFE_LABEL_BY_NAME, getStatusNameById } from "../services/application.service";
 import { successResponse, errorResponse, status } from "../helpers/status";
+import { isPlanLimitError, sendPlanLimitRefusal } from "../services/planLimitGuard";
 import {
   getApplicationSnapshot,
   getCompletenessSnapshot,
@@ -68,6 +69,9 @@ const submitApplication = async (req, res) => {
     // GH-FOUND-B01: duplicate application is a normal, expected user
     // state, not a server error -- give it its own safe response instead
     // of falling into the generic 500/raw-error path.
+    if (isPlanLimitError(error)) {
+      return sendPlanLimitRefusal(res, error.refusal, error.httpStatus);
+    }
     if (error && error.code === "JOB_APPLICATION_ALREADY_EXISTS") {
       return res.status(409).send({
         success: false,

@@ -28,13 +28,13 @@ test('legacy backfill reports unmapped accounts and applies only explicit approv
 test('current catalog preserves published monthly and annual prices and entitlements',async()=>{
  const f=await setup();try{
   delete f.config.catalogVersion;
-  for(const [plan,monthly,annual,jobs,users] of [['starter',149000,1490000,2,1],['growth',349000,3490000,6,3],['premium',599000,5990000,40,15]]){
-   const p=(await f.pg.query('SELECT * FROM gethired.billing_plan_versions WHERE id=$1',['pricing_2026_09_21:'+plan])).rows[0];
+  for(const [plan,monthly,annual,jobs,users] of [['starter',149000,1490000,5,2],['growth',349000,3490000,15,5],['premium',599000,5990000,40,15]]){
+   const p=(await f.pg.query('SELECT * FROM gethired.billing_plan_versions WHERE id=$1',['pricing_2026_09_21_v2:'+plan])).rows[0];
    assert.equal(Number(p.monthly_minor),monthly);assert.equal(Number(p.annual_minor),annual);assert.equal(p.entitlements.jobs,jobs);assert.equal(p.entitlements.users,users);
   }
   const a=await f.s.checkout(f.c,{planCode:'growth',billingCycle:'annual'});assert.equal(a.amountMinor,3490000);
-  await f.s.webhook(...f.signed(f.event(a)));assert.equal((await f.s.effective(f.c)).entitlements.jobs,6);
-  assert.equal((await f.pg.query('SELECT plan_version_id FROM gethired.payment_attempts')).rows[0].plan_version_id,'pricing_2026_09_21:growth');
+  await f.s.webhook(...f.signed(f.event(a)));assert.equal((await f.s.effective(f.c)).entitlements.jobs,15);
+  assert.equal((await f.pg.query('SELECT plan_version_id FROM gethired.payment_attempts')).rows[0].plan_version_id,'pricing_2026_09_21_v2:growth');
  }finally{await f.close();}
 });
 test('new trial is unpaid and idempotent and cannot grant a paid subscription',async()=>{

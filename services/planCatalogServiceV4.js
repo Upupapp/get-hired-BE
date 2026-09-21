@@ -10,6 +10,8 @@
 // Effective monthly = annual_price / 12 (rounded to nearest whole peso).
 // Annual savings = (monthly_price * 12) - annual_price = monthly_price * 2.
 
+var GB = 1073741824; // binary GiB — matches the brief's own figures (50 GB = 53687091200)
+
 var PLAN_CATALOG = [
   {
     slug: 'free_trial',
@@ -24,7 +26,11 @@ var PLAN_CATALOG = [
     entitlements: {
       active_job_posts: 1,
       admin_users: 1,
+      applicants: 25,
+      recruitment_storage_bytes: 1 * GB,
+      video_questions_per_job: 1,
       video_responses: 5,
+      featured_job_credits: 0,
       customized_company_page: true,
       video_interview_questions: true,
       dedicated_support: false,
@@ -45,9 +51,13 @@ var PLAN_CATALOG = [
     annualSavingsPHP: 2980,    // 1490*2
     billingCycles: ['monthly', 'annual'],
     entitlements: {
-      active_job_posts: 2,
-      admin_users: 1,
+      active_job_posts: 5,
+      admin_users: 2,
+      applicants: null,
+      recruitment_storage_bytes: 10 * GB,
+      video_questions_per_job: 3,
       video_responses: 25,
+      featured_job_credits: 0,
       customized_company_page: true,
       video_interview_questions: true,
       dedicated_support: false,
@@ -68,9 +78,13 @@ var PLAN_CATALOG = [
     annualSavingsPHP: 6980,    // 3490*2
     billingCycles: ['monthly', 'annual'],
     entitlements: {
-      active_job_posts: 6,
-      admin_users: 3,
+      active_job_posts: 15,
+      admin_users: 5,
+      applicants: null,
+      recruitment_storage_bytes: 50 * GB,
+      video_questions_per_job: 5,
       video_responses: 100,
+      featured_job_credits: 0,
       customized_company_page: true,
       video_interview_questions: true,
       dedicated_support: false,
@@ -82,8 +96,8 @@ var PLAN_CATALOG = [
   },
   {
     slug: 'business',
-    name: 'Business',
-    dbSubscriptionId: 4, // maps to 'premium' in legacy code; V4 renames to 'business'
+    name: 'Premium', // slug stays 'business' (DEC-02); the product calls this tier Premium (Operating Order v2 §0)
+    dbSubscriptionId: 4, // legacy slug 'premium' aliases here; the slug stays 'business' (DEC-02)
     durationDays: null,
     priceMonthlyPHP: 5990,
     priceAnnualPHP: 59900,
@@ -93,7 +107,11 @@ var PLAN_CATALOG = [
     entitlements: {
       active_job_posts: 40,
       admin_users: 15,
+      applicants: null,
+      recruitment_storage_bytes: 200 * GB,
+      video_questions_per_job: 10,
       video_responses: 400,
+      featured_job_credits: 5,
       customized_company_page: true,
       video_interview_questions: true,
       dedicated_support: true,
@@ -102,6 +120,37 @@ var PLAN_CATALOG = [
     recommended: false,
     trial: false,
     enterprise: false,
+  },
+  {
+    // Enterprise: every numeric limit is null = "no catalog limit; resolved from the
+    // account's custom override". Never encode a fake-unlimited integer such as
+    // 999999 — getWarningLevel() and buildEntitlementUsage() both already treat a
+    // non-number limit as unlimited, so null flows through the existing meters.
+    slug: 'enterprise',
+    name: 'Enterprise',
+    dbSubscriptionId: 5,
+    durationDays: null,
+    priceMonthlyPHP: null, // custom pricing — negotiated per account
+    priceAnnualPHP: null,
+    effectiveMonthlyPHP: null,
+    annualSavingsPHP: 0,
+    billingCycles: ['custom'],
+    entitlements: {
+      active_job_posts: null,
+      admin_users: null,
+      applicants: null,
+      recruitment_storage_bytes: null, // contractual; 500 GB+ typical starting point
+      video_questions_per_job: null,
+      video_responses: null,
+      featured_job_credits: null,
+      customized_company_page: true,
+      video_interview_questions: true,
+      dedicated_support: true,
+    },
+    audience: 'For multi-brand and high-volume hiring with a custom agreement.',
+    recommended: false,
+    trial: false,
+    enterprise: true,
   },
 ];
 
@@ -150,7 +199,7 @@ var UPGRADE_PATH = {
   free_trial: 'growth',
   starter: 'growth',
   growth: 'business',
-  business: 'business',
+  business: 'business', // not 'enterprise': consumers build unlocks from numeric limits and a self-serve route
   enterprise: null,
   premium: 'business', // legacy alias
 };
@@ -179,6 +228,11 @@ export function isValidBillingCycle(cycle) {
 export function getAmountForCheckout(slug, billingCycle) {
   var plan = getPlanBySlug(slug);
   if (!plan) return null;
+  // Custom-priced plans (Enterprise) have no catalog amount and must never reach
+  // self-serve checkout — the price is contractual, not published. Returning null
+  // here also keeps getAmountInCentavos() from coercing null to 0, which would
+  // otherwise create a zero-peso PayMongo charge.
+  if (plan.enterprise) return null;
   if (billingCycle === 'annual') return plan.priceAnnualPHP;
   if (billingCycle === 'monthly') return plan.priceMonthlyPHP;
   return null;
@@ -217,6 +271,14 @@ export function getAllPlans() {
   return PLAN_CATALOG.slice();
 }
 
+// Renders a peso label, or a fallback when the amount is null (custom pricing).
+// ES2019 only — no ?. or ?? anywhere in this file (esm@3.2.25 cannot parse them).
+function pricingLabel(amount, customText, zeroText, render) {
+  if (amount === null || typeof amount === 'undefined') return customText;
+  if (amount === 0) return zeroText;
+  return render(amount.toLocaleString());
+}
+
 // Pricing catalog display shape for GET /api/subscriptions/pricing-catalog
 export function getPricingCatalog(currentPlanSlug) {
   var current = currentPlanSlug ? (LEGACY_SLUG_ALIASES[currentPlanSlug] || currentPlanSlug) : null;
@@ -235,25 +297,29 @@ export function getPricingCatalog(currentPlanSlug) {
         trial: p.trial,
         enterprise: p.enterprise,
         current: current ? (p.slug === current) : false,
+        // pricingLabel() guards every label: a custom-priced plan carries null amounts, and
+        // null.toLocaleString() would throw and take the whole pricing endpoint
+        // down rather than just that one row.
         pricing: {
           monthly: {
             amount: p.priceMonthlyPHP,
             currency: 'PHP',
-            label: p.priceMonthlyPHP === 0 ? 'Free' : 'PHP ' + p.priceMonthlyPHP.toLocaleString() + '/month',
-            renewalLabel: 'Paid monthly, recurring',
+            label: pricingLabel(p.priceMonthlyPHP, 'Custom pricing', 'Free', function(v) { return 'PHP ' + v + '/month'; }),
+            renewalLabel: p.enterprise ? 'Billed per your agreement' : 'Paid monthly, recurring',
           },
           annual: {
             amount: p.priceAnnualPHP,
             currency: 'PHP',
-            dueTodayLabel: p.priceAnnualPHP === 0 ? 'Free' : 'Billed today: PHP ' + p.priceAnnualPHP.toLocaleString() + ' for 12 months.',
-            effectiveMonthlyLabel: p.effectiveMonthlyPHP === 0 ? 'Free' : 'PHP ' + p.effectiveMonthlyPHP.toLocaleString() + '/mo effective',
+            dueTodayLabel: pricingLabel(p.priceAnnualPHP, 'Custom pricing', 'Free', function(v) { return 'Billed today: PHP ' + v + ' for 12 months.'; }),
+            effectiveMonthlyLabel: pricingLabel(p.effectiveMonthlyPHP, 'Custom pricing', 'Free', function(v) { return 'PHP ' + v + '/mo effective'; }),
             savingsCopy: p.annualSavingsPHP > 0 ? 'Save 2 months with annual billing' : null,
             annualSavingsAmount: p.annualSavingsPHP,
-            renewalLabel: p.priceAnnualPHP === 0 ? 'Free trial' : 'Pay once today and get 12 months of GetHired access.',
+            renewalLabel: p.priceAnnualPHP === 0 ? 'Free trial' : (p.enterprise ? 'Billed per your agreement' : 'Pay once today and get 12 months of GetHired access.'),
           },
         },
         entitlements: p.entitlements,
-        upgradeRoute: p.slug === 'free_trial' ? null : '/recruiter/subscription/upgrade/' + p.slug,
+        upgradeRoute: (p.slug === 'free_trial' || p.enterprise) ? null : '/recruiter/subscription/upgrade/' + p.slug,
+        contactSalesRequired: !!p.enterprise,
         defaultBillingCycle: 'annual',
       };
     }),

@@ -19,3 +19,5 @@ Implemented on codex/billing-foundation-integration only. No production migratio
 Frontend presentation and end-to-end portal access verification remain rollout work. No claim is made that the live portal now displays the new label. Referral-program metric exclusion must be independently verified across integration feeds before treating the internal account as fully excluded from all analytics; this access change creates no referral reward or payment evidence.
 
 LGUIDS is outside scope. GitHub Actions must stay disabled; run validation locally and deploy directly when ready.
+
+Production reconciliation completed against 93177c8; see PRODUCTION_INTEGRATION_2026_09_21.md for preserved guards and the new immutable billing catalog version. No deployment occurred.

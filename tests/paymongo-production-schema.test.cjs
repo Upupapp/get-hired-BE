@@ -45,7 +45,17 @@ test('production schema: repeatable migrations preserve legacy records and do no
   const before=await snapshot(pg);
   for(let pass=0;pass<2;pass++){
    await pg.exec(engagement);await pg.exec(migration);await unchanged(pg,before);
-   assert.equal(await count(pg,'billing_plan_versions'),7);
+   assert.equal(await count(pg,'billing_plan_versions'),10);
+   const compiled=require('esbuild').transformSync(read('services/planCatalogServiceV4.js'),{format:'cjs'}).code;
+   const module={exports:{}};require('node:vm').runInNewContext(compiled,{module,exports:module.exports});
+   for(const [billingCode,catalogCode] of [['starter','starter'],['growth','growth'],['premium','business']]){
+    const catalog=module.exports.getPlanBySlug(catalogCode);
+    const plan=(await pg.query('SELECT * FROM gethired.billing_plan_versions WHERE id=$1',['pricing_2026_09_21_v2:'+billingCode])).rows[0];
+    assert.equal(Number(plan.monthly_minor),catalog.priceMonthlyPHP*100);
+    assert.equal(Number(plan.annual_minor),catalog.priceAnnualPHP*100);
+    for(const [billingKey,catalogKey] of [['jobs','active_job_posts'],['users','admin_users'],['storage','recruitment_storage_bytes'],['video','video_responses']])assert.equal(plan.entitlements[billingKey],catalog.entitlements[catalogKey],billingCode+':'+catalogKey);
+   }
+
    for(const table of ['payment_attempts','payment_transactions','billing_fulfillments','subscription_billing_history','engagement_events']) assert.equal(await count(pg,table),0,table);
   }
   const rows=(await pg.query('SELECT is_paid,payment_date,amount_paid,provider_reference,billing_plan_version_id,billing_revision FROM gethired.companies_subscription')).rows;
@@ -93,9 +103,9 @@ test('production schema: trial, signed mocked payment, duplicate delivery and im
   assert.equal((await s.webhook(raw,signature)).status,'DUPLICATE');
   for(const table of ['payment_transactions','billing_fulfillments','subscription_billing_history'])assert.equal(await count(pg,table),1,table);
   assert.equal(await count(pg,'invoices'),2);
-  assert.equal((await s.effective(context)).entitlements.jobs,6);
+  assert.equal((await s.effective(context)).entitlements.jobs,15);
   await assert.rejects(()=>pg.query('UPDATE gethired.payment_attempts SET expected_amount_minor=100 WHERE id=$1',[checkout.paymentAttemptId]),/immutable/);
-  await assert.rejects(()=>pg.query("UPDATE gethired.billing_plan_versions SET monthly_minor=100 WHERE id='pricing_2026_09_21:growth'"),/immutable/);
+  await assert.rejects(()=>pg.query("UPDATE gethired.billing_plan_versions SET monthly_minor=100 WHERE id='pricing_2026_09_21_v2:growth'"),/immutable/);
   await assert.rejects(()=>pg.query("INSERT INTO gethired.invoices(company_id,billing_attempt_id) VALUES('trial-company','missing-attempt')"),{code:'23503'});
   await pg.exec(migration);
   assert.equal((await s.status(context,checkout.paymentAttemptId)).status,'PAID');

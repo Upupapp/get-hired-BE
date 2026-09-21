@@ -27,6 +27,7 @@ import { listOfJobAppliedByApplicant } from "../services/applicant.service";
 import { getUserCompanyForRequest } from "./companiesController";
 import { getAccessContextForRequest, hasPermission, canAccessJob, sqlJobScopeFilter } from "../services/accessControl.service";
 import { addJobAssignment } from "../services/teamAccess.service";
+import { guardJobLive, sendPlanLimitRefusal } from "../services/planLimitGuard";
 
 import { createDynamicLink } from "../helpers/firebaseFunctions";
 import { insertLogs } from "../services/user.service";
@@ -102,6 +103,19 @@ const createJobs = async (req, res) => {
     const accessCtx = await getAccessContextForRequest(req, uid);
     if (!accessCtx || !hasPermission(accessCtx, "jobs.create")) {
       return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
+    // Plan limits (SPRINT-01 A3). A draft is never refused. Publishing takes an
+    // active-job slot and puts the job's video questions live, so both must fit.
+    const planGate = await guardJobLive({
+      companyId,
+      actorId: uid,
+      jobId: null,
+      requestedStatusId: jobStatusId,
+      questionsAdded: Array.isArray(interviewQuestions) ? interviewQuestions.length : 0,
+    });
+    if (!planGate.allowed) {
+      return sendPlanLimitRefusal(res, planGate.refusal);
     }
 
     if (bannerFile && bannerFile.length != 0) {
@@ -395,6 +409,22 @@ const updateJob = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to update this job." });
     }
 
+    // Plan limits (SPRINT-01 A3): refused only when this save leaves the job live AND
+    // takes a new active-job slot or puts new video questions live. A draft save, or an
+    // edit to an already-live job that adds no questions, always passes.
+    const planGate = await guardJobLive({
+      companyId: callerCompany.companyId,
+      actorId: req.user.uid,
+      jobId,
+      requestedStatusId: jobStatusId,
+      questionsAdded: Array.isArray(interviewQuestions)
+        ? interviewQuestions.filter((question) => question && !question.questionId).length
+        : 0,
+    });
+    if (!planGate.allowed) {
+      return sendPlanLimitRefusal(res, planGate.refusal);
+    }
+
     if (bannerFile && bannerFile != "") {
       rawUrl = await uploadInStorage(
         "Job-Banner",
@@ -496,6 +526,19 @@ const updateStatusOfJob = async (req, res) => {
     const accessCtx = await getAccessContextForRequest(req, req.user.uid);
     if (!hasPermission(accessCtx, "jobs.publish") || !canAccessJob(accessCtx, jobId)) {
       return res.status(403).json({ message: "You don't have permission to do that." });
+    }
+
+    // Plan limits (SPRINT-01 A3): publishing or reopening (status 2) takes an active-job
+    // slot and puts the job's questions live. Closing or archiving is never refused.
+    const planGate = await guardJobLive({
+      companyId: callerCompany.companyId,
+      actorId: req.user.uid,
+      jobId,
+      requestedStatusId: statusId,
+      questionsAdded: 0,
+    });
+    if (!planGate.allowed) {
+      return sendPlanLimitRefusal(res, planGate.refusal);
     }
 
     const updateJob = await updateJobStatus(statusId, jobId, callerCompany.companyId);

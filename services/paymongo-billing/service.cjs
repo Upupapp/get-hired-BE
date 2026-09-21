@@ -56,7 +56,7 @@ function billing(db,schema,config,provider) {
    if(agreed===null || agreed===undefined) throw fail('BILLING_AGREEMENT_REQUIRED',422);
    amount=money(agreed);purchaseType='SUBSCRIPTION_RENEWAL';
   }else {
-   version=await plan(q,(config.catalogVersion || 'pricing_2026_09_21')+':'+input.planCode);
+   version=await plan(q,(config.catalogVersion || 'pricing_2026_09_21_v2')+':'+input.planCode);
    if(!version || !version.available || !version.self_serve) throw fail('INVALID_PLAN',422);
    const codes=['free_trial','starter','growth','premium','enterprise'];
    let currentCode=current && current.plan_slug;

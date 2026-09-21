@@ -1,6 +1,7 @@
 import { successResponse, errorResponse, status } from "../helpers/status";
 import { getAccessContextForRequest, hasPermission } from "../services/accessControl.service";
 import { removeTeamMember as removeTeamMemberById } from "../services/teamAccess.service";
+import { guardTeamSeats, sendPlanLimitRefusal } from "../services/planLimitGuard";
 import uploadInStorage, { uploadImageWithOptimization } from "../helpers/uploader";
 import idGenerator from "../helpers/randomNumberForId";
 import { getIdByEmail } from "../helpers/userDetails";
@@ -715,6 +716,17 @@ const addCompanyUser = async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to do that." });
     }
     const companyId = callerCompany.companyId;
+
+    // Plan limits (SPRINT-01 A3): the whole request is checked against the seat limit
+    // before any account is created, so a refusal never leaves a partial team.
+    const planGate = await guardTeamSeats({
+      companyId,
+      actorId: uid,
+      requested: Array.isArray(emails) ? emails.length : 0,
+    });
+    if (!planGate.allowed) {
+      return sendPlanLimitRefusal(res, planGate.refusal);
+    }
 
     const userStatus = await Promise.all(
       await emails.map(async (item) => {

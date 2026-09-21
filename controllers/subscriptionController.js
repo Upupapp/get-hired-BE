@@ -14,6 +14,7 @@ import { getAllVideoResponsesByJobIds } from "../services/job.service";
 
 import { getUserCompanyForRequest } from "./companiesController";
 import { createPaymongoLink } from "./paymentController";
+import { getPlanBySlug } from "../services/planCatalogServiceV4";
 const dbSchema = env.schema;
 
 
@@ -241,13 +242,22 @@ const mappedUserSubscription = (raw) => {
 };
 
 const mappedSubscription = (raw) => {
+  var slug = raw.subscription_id === 1 ? 'free_trial' :
+             raw.subscription_id === 2 ? 'starter' :
+             raw.subscription_id === 3 ? 'growth' :
+             raw.subscription_id === 4 ? 'business' : 'enterprise';
+  var catalogPlan = getPlanBySlug(slug);
+  var entitlements = catalogPlan && catalogPlan.entitlements;
+  var catalogPrice = catalogPlan
+    ? (raw.payment_occurence === 'annually' ? catalogPlan.priceAnnualPHP : catalogPlan.priceMonthlyPHP)
+    : raw.price;
   return {
     subscriptionId: raw.subscription_id,
-    jobPost: raw.job_post,
-    admin: raw.admin,
-    videoResponse: raw.video_response,
+    jobPost: entitlements ? entitlements.active_job_posts : raw.job_post,
+    admin: entitlements ? entitlements.admin_users : raw.admin,
+    videoResponse: entitlements ? entitlements.video_responses : raw.video_response,
     withCustomerCare: raw.with_customer_care,
-    price: raw.price,
+    price: catalogPrice,
     priceCurrency: raw.price_currency,
     subscriptionName: raw.subscription_name,
     paymentOccurence: raw.payment_occurence,
@@ -346,8 +356,13 @@ const getSubscriptionSummary = async (req, res) => {
                  latestSub.subscription_id === 3 ? 'growth' :
                  latestSub.subscription_id === 4 ? 'premium' : 'enterprise';
 
+      // The subscription table contains legacy capacities which predate the
+      // approved catalog. Use it for lifecycle/payment state only; all limits
+      // and advertised prices come from the same catalog used by checkout.
+      var currentCatalogPlan = getPlanBySlug(planCode);
+
       planName = (latestSub.subscription_name) || 'Plan';
-      priceAmount = latestSub.price || 0;
+      priceAmount = currentCatalogPlan ? currentCatalogPlan.priceMonthlyPHP : (latestSub.price || 0);
       priceCurrency = latestSub.price_currency || 'PHP';
 
       var daysForPlan = latestSub.subscription_id === 1 ? 7
@@ -399,11 +414,19 @@ const getSubscriptionSummary = async (req, res) => {
     var videoResponseBool = false;
 
     if (latestSub) {
-      jobPostIncluded = latestSub.job_post < 0 ? 'unlimited' : latestSub.job_post;
-      adminIncluded = latestSub.admin < 0 ? 'unlimited' : latestSub.admin;
+      var authoritativePlan = getPlanBySlug(planCode);
+      var authoritativeEntitlements = authoritativePlan && authoritativePlan.entitlements;
+      jobPostIncluded = authoritativeEntitlements
+        ? authoritativeEntitlements.active_job_posts
+        : (latestSub.job_post < 0 ? 'unlimited' : latestSub.job_post);
+      adminIncluded = authoritativeEntitlements
+        ? authoritativeEntitlements.admin_users
+        : (latestSub.admin < 0 ? 'unlimited' : latestSub.admin);
       // video_response column may be boolean (legacy) or numeric. Boolean true/false
       // maps to a BooleanEntitlement (null = not included), not a numeric meter.
-      var vrRaw = latestSub.video_response;
+      var vrRaw = authoritativeEntitlements
+        ? authoritativeEntitlements.video_responses
+        : latestSub.video_response;
       if (typeof vrRaw === 'boolean') {
         videoResponseIncluded = vrRaw ? null : null; // boolean: no numeric limit tracked; FE reads videoResponseBool
         videoResponseBool = vrRaw;
@@ -436,6 +459,8 @@ const getSubscriptionSummary = async (req, res) => {
                  p.subscription_id === 3 ? 'growth' :
                  p.subscription_id === 4 ? 'premium' : 'enterprise';
       var isCurrent = code === planCode;
+      var catalogPlan = getPlanBySlug(code);
+      var catalogEntitlements = catalogPlan && catalogPlan.entitlements;
       var targetIdx = planOrder.indexOf(code);
       var ctaAction = isCurrent ? 'current' :
                       code === 'enterprise' ? 'contact_sales' :
@@ -451,7 +476,7 @@ const getSubscriptionSummary = async (req, res) => {
                   code === 'growth' ? 'For active hiring teams.' :
                   code === 'premium' ? 'For frequent hiring and larger teams.' :
                   'For large employers and custom hiring operations.',
-        priceMonthly: p.price || 0,
+        priceMonthly: catalogPlan ? catalogPlan.priceMonthlyPHP : (p.price || 0),
         currency: p.price_currency || 'PHP',
         recommended: p.subscription_id === 3,
         current: isCurrent,
@@ -459,9 +484,9 @@ const getSubscriptionSummary = async (req, res) => {
         enterprise: p.subscription_id >= 5,
         features: [],
         limits: {
-          activeJobs: p.job_post < 0 ? 'unlimited' : p.job_post,
-          adminUsers: p.admin < 0 ? 'unlimited' : p.admin,
-          videoResponses: p.video_response < 0 ? 'unlimited' : p.video_response,
+          activeJobs: catalogEntitlements ? catalogEntitlements.active_job_posts : (p.job_post < 0 ? 'unlimited' : p.job_post),
+          adminUsers: catalogEntitlements ? catalogEntitlements.admin_users : (p.admin < 0 ? 'unlimited' : p.admin),
+          videoResponses: catalogEntitlements ? catalogEntitlements.video_responses : (p.video_response < 0 ? 'unlimited' : p.video_response),
         },
         ctaLabel: isCurrent ? 'Current plan' :
                   code === 'enterprise' ? 'Contact sales' :
