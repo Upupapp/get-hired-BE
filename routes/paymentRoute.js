@@ -1,3 +1,4 @@
+import {billingCheckout} from '../middleware/paymongoBillingGate';
 import express from "express";
 import {
   paymongoPaymentLink,
@@ -11,7 +12,7 @@ const router = express.Router();
 // PayMongo payment link unauthenticated. Zero frontend consumers found in
 // this repo, so adding auth here breaks no existing caller (same pattern
 // as the earlier subscriptionController fix this session).
-router.post("/payment/paymongopaymentlink", verifyAuth, paymongoPaymentLink);
+router.post("/payment/paymongopaymentlink", verifyAuth, billingCheckout, paymongoPaymentLink);
 // Webhook intentionally NOT auth-gated -- PayMongo calls this directly and
 // cannot supply a Firebase token. It needs signature verification instead,
 // which is still missing (see GETHIRED_PAYMENT_WEBHOOK_SECURITY_AUDIT.md).

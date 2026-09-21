@@ -1,3 +1,4 @@
+const {isInternal,accessSummary}=require('../services/internalAccess.cjs');
 import dbQuery from "../db/dbQuery";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import env from "../env";
@@ -36,6 +37,8 @@ const createPaymentIntent = async (req, res) => {
       throw "User not registered in any Company";
     }
 
+    const accessRows=await dbQuery.query(`SELECT * FROM ${dbSchema}.companies_subscription WHERE company_id=$1 ORDER BY created_at DESC LIMIT 1`,[companyId]);
+    if(isInternal(accessRows.rows[0]))return res.status(422).json({code:'INTERNAL_ACCOUNT_BILLING_DISABLED',message:'Internal complimentary access does not require payment.'});
     const amnt = parseFloat(price * 55).toFixed(2);
 
     const { rows } = await dbQuery.query(insertQuery, [
@@ -80,6 +83,7 @@ const createPaymentIntent = async (req, res) => {
 };
 
 const createCompanySubscription = async (companyId, subscriptionId) => {
+  if(process.env.PAYMONGO_BILLING_ENABLED==='true')return require('../services/paymongo-billing/trial.cjs').provision(dbQuery,dbSchema,companyId,subscriptionId);
   // NOTIFY-P1 FIX: idempotency guard — check before insert to prevent duplicate
   // subscription rows from PayMongo webhook retries.
   // A unique DB constraint on (company_id, subscription_id) would give stronger
@@ -107,8 +111,8 @@ const createCompanySubscription = async (companyId, subscriptionId) => {
       companyId,
       subscriptionId,
       new Date(),
-      true,
-      new Date(),
+      Number(subscriptionId) !== 1,
+      Number(subscriptionId) === 1 ? null : new Date(),
     ]);
 
     if (!rows || rows.length == 0) {
@@ -163,7 +167,8 @@ const getCompanySubscriptions = async (req, res) => {
 };
 
 const companySubscriptions = async (companyId) => {
-  const seachrQuery = `select cs.company_id, cs.created_at, cs.is_paid, cs.payment_date, s.* from ${dbSchema}.companies_subscription cs
+  const seachrQuery = `select cs.company_id, cs.created_at, cs.is_paid, cs.payment_date,
+      to_jsonb(cs)->>'access_kind' AS access_kind, to_jsonb(cs)->>'access_granted_by' AS access_granted_by, to_jsonb(cs)->>'access_granted_at' AS access_granted_at, s.* from ${dbSchema}.companies_subscription cs
     left join ${dbSchema}."subscription" s 
     on s.subscription_id = cs.subscription_id 
     where cs.company_id = $1 order by created_at DESC`;
@@ -231,7 +236,7 @@ const mappedUserSubscription = (raw) => {
   return {
     companyId: raw.company_id,
     createdAt: raw.created_at,
-    isPaid: raw.is_paid,
+    ...accessSummary(raw),
     paymentDate: raw.payment_date,
   };
 };
@@ -292,6 +297,7 @@ const getSubscriptionSummary = async (req, res) => {
     // --- Current subscription ---
     const subRows = await (function() {
       const q = `SELECT cs.company_id, cs.created_at, cs.is_paid, cs.payment_date,
+      to_jsonb(cs)->>'access_kind' AS access_kind, to_jsonb(cs)->>'access_granted_by' AS access_granted_by, to_jsonb(cs)->>'access_granted_at' AS access_granted_at,
         s.subscription_id, s.job_post, s.admin, s.video_response,
         s.with_customer_care, s.price, s.price_currency,
         s.subscription_name, s.payment_occurence
@@ -371,7 +377,9 @@ const getSubscriptionSummary = async (req, res) => {
       var now = new Date();
       var endDate = planPeriodEnd ? new Date(planPeriodEnd) : null;
 
-      if (latestSub.subscription_id === 1) {
+      if (isInternal(latestSub)) {
+        planStatus='active';planHealth='healthy';planPeriodEnd=null;priceAmount=0;paymentProvider=null;
+      } else if (latestSub.subscription_id === 1) {
         // Free trial
         if (endDate && now > endDate) {
           planStatus = 'expired';
@@ -496,11 +504,12 @@ const getSubscriptionSummary = async (req, res) => {
         email: companyData.company_email || null,
       },
       currentPlan: {
+        ...accessSummary(latestSub),
         id: latestSub ? (latestSub.subscription_id || null) : null,
         code: planCode,
         name: planName,
         status: planStatus,
-        billingInterval: 'monthly',
+        billingInterval: isInternal(latestSub)?null:'monthly',
         currency: priceCurrency,
         priceAmount: priceAmount,
         startedAt: planStartedAt,
@@ -551,13 +560,14 @@ const getSubscriptionSummary = async (req, res) => {
       availablePlans: availablePlans,
       invoices: [],
       paymentMethod: null,
-      billingActions: billingActions,
+      billingActions: isInternal(latestSub)?[{type:'contact_support',label:'Contact support',priority:'low'}]:billingActions,
     };
 
     // --- Invoices from companies_subscription history ---
     try {
       const invoiceRows = await (function() {
         const q = `SELECT cs.company_id, cs.created_at, cs.is_paid, cs.payment_date,
+      to_jsonb(cs)->>'access_kind' AS access_kind, to_jsonb(cs)->>'access_granted_by' AS access_granted_by, to_jsonb(cs)->>'access_granted_at' AS access_granted_at,
           s.subscription_id, s.subscription_name, s.price, s.price_currency
           FROM ${dbSchema}.companies_subscription cs
           LEFT JOIN ${dbSchema}."subscription" s ON s.subscription_id = cs.subscription_id
@@ -566,7 +576,7 @@ const getSubscriptionSummary = async (req, res) => {
         return dbQuery.query(q, [companyId]);
       })();
 
-      summary.invoices = ((invoiceRows.rows) || []).map(function(inv) {
+      summary.invoices = ((invoiceRows.rows) || []).filter(inv=>!isInternal(inv)).map(function(inv) {
         var isPaid = inv.is_paid;
         var invStatus = isPaid ? 'paid' : 'pending';
         if (inv.subscription_id === 1) { invStatus = 'trial'; }

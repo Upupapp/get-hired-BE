@@ -1,3 +1,4 @@
+const {isInternal,accessSummary}=require('../services/internalAccess.cjs');
 /**
  * Subscription Guardrails Controller V4
  * New endpoints for employer subscription summary, pricing catalog, checkout intent.
@@ -87,7 +88,9 @@ export async function getEmployerSubscriptionSummary(req, res) {
       var now = new Date();
       var endDate = periodEnd ? new Date(periodEnd) : null;
 
-      if (dbId === 1) {
+      if (isInternal(planRow)) {
+        planStatus='subscription_active';planHealth='healthy';periodEnd=null;priceAmount=0;billingCycle=null;
+      } else if (dbId === 1) {
         if (endDate && now > endDate) { planStatus = 'trial_expired'; planHealth = 'action_needed'; }
         else if (endDate && (endDate - now) < 2 * 24 * 60 * 60 * 1000) { planStatus = 'trial_ending'; planHealth = 'action_needed'; trialEndsAt = periodEnd; }
         else { planStatus = 'trial_active'; planHealth = 'healthy'; trialEndsAt = periodEnd; }
@@ -125,6 +128,7 @@ export async function getEmployerSubscriptionSummary(req, res) {
 
     var summary = {
       plan: {
+        ...accessSummary(planRow),
         slug: planCode,
         name: planName,
         status: planStatus,
@@ -159,7 +163,7 @@ export async function getEmployerSubscriptionSummary(req, res) {
         defaultBillingCycle: 'annual',
       } : null,
       enforcementMode: mode,
-      billingActions: buildBillingActions(planStatus, planCode),
+      billingActions: isInternal(planRow)?[{type:'contact_support',label:'Contact support',priority:'low'}]:buildBillingActions(planStatus, planCode),
     };
 
     return res.status(200).json({ success: true, summary: summary });
@@ -195,6 +199,7 @@ export async function createCheckoutIntent(req, res) {
   }
 
   try {
+    if (isInternal(await resolveCompanyPlan(ctx.companyId))) return res.status(422).json({code:'INTERNAL_ACCOUNT_BILLING_DISABLED',message:'Internal complimentary access does not require payment.'});
     // Check for duplicate in-flight checkout intent (idempotency)
     // Using cart_id prefix pattern consistent with existing cart_table
     var existingQ = `SELECT cart_id, created_at FROM ${dbSchema}.cart_table

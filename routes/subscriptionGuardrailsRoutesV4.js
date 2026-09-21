@@ -1,3 +1,4 @@
+import {billingCheckout,billingStatus} from '../middleware/paymongoBillingGate';
 /**
  * Subscription Guardrails Routes V4
  * New routes alongside existing /api/subscription/* — do not replace legacy routes.
@@ -32,6 +33,7 @@ router.get('/subscriptions/employer/summary', verifyAuth, getEmployerSubscriptio
 router.post(
   '/subscriptions/checkout-intent',
   verifyAuth,
+  billingCheckout,
   validateCheckoutIntent,
   billingCycleDisclosure,
   createCheckoutIntent
@@ -39,6 +41,6 @@ router.post(
 
 // GET /api/subscriptions/checkout-intent/:id/status
 // Authenticated employer only. BOLA-enforced: company_id matched to JWT.
-router.get('/subscriptions/checkout-intent/:id/status', verifyAuth, getCheckoutIntentStatus);
+router.get('/subscriptions/checkout-intent/:id/status', verifyAuth, billingStatus, getCheckoutIntentStatus);
 
 export default router;

@@ -127,7 +127,7 @@ function connector(db, schema, config, transport) {
     const cursor=input.cursor || '';
     if(typeof cursor!=='string'||cursor.length>128)throw failure('INVALID_CURSOR');
     // Full scans restart after the final page, so concurrent registrations cannot be skipped permanently.
-    const rows=(await db.query(`SELECT r.uid,r.membership_id,r.click_id,r.referred_at,u.created_date FROM ${t('referral_bunny_attributions')} r JOIN ${t('user_credentials')} u ON u.uid=r.uid WHERE r.connection_id=$1 AND r.program_id=$2 AND r.uid>$3 AND u.role=2 AND u.is_archive=FALSE ORDER BY r.uid LIMIT 100`,[a.connection_id,a.program_id,cursor])).rows;
+    const rows=(await db.query(`SELECT r.uid,r.membership_id,r.click_id,r.referred_at,u.created_date FROM ${t('referral_bunny_attributions')} r JOIN ${t('user_credentials')} u ON u.uid=r.uid WHERE r.connection_id=$1 AND r.program_id=$2 AND r.uid>$3 AND u.role=2 AND u.is_archive=FALSE AND NOT EXISTS(SELECT 1 FROM ${t('companies')} c WHERE c.created_by=r.uid AND to_jsonb(c)->>'account_usage'='internal') ORDER BY r.uid LIMIT 100`,[a.connection_id,a.program_id,cursor])).rows;
     return {connectionId:a.connection_id,programId:a.program_id,rows:rows.map(r=>({customerId:sha(a.connection_id+':'+r.uid),membershipId:r.membership_id,clickId:r.click_id,referredAt:new Date(r.referred_at).toISOString(),occurredAt:new Date(r.created_date).toISOString()})),cursor:rows.length===100?rows[rows.length-1].uid:null};
   }
   async function paymentContext(){const a=await active();if(!config.paymentsEnabled||!a.payments_authorized)throw failure('PAYMENT_AUTHORIZATION_REQUIRED',403);return {...a,secret:unseal(a.secret_cipher)};}

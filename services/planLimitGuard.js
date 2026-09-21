@@ -398,4 +398,3 @@ export function isPlanLimitError(err) {
 export function sendPlanLimitRefusal(res, refusal, httpStatus) {
   return res.status(httpStatus || PLAN_LIMIT_HTTP_STATUS).json(refusal);
 }
-

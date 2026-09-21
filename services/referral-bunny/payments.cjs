@@ -38,7 +38,7 @@ function payments(db,schema,connector,config,transport){
     LEFT JOIN ${t('referral_bunny_customers')} bound ON bound.company_id=c.company_id AND bound.connection_id=$1
     LEFT JOIN ${t('referral_bunny_attributions')} r ON r.uid=c.created_by AND r.connection_id=$1 AND r.program_id=$2
     JOIN ${t('user_credentials')} u ON u.uid=COALESCE(bound.uid,r.uid) AND u.role=2 AND u.is_archive=FALSE
-    WHERE i.status='paid' AND i.amount_due=0 AND p.status IN (${config.refundsEnabled ? "'PAID','REFUNDED','PARTIALLY_REFUNDED'" : "'PAID'"}) AND ${config.refundsEnabled ? `(p.refund_minor=0 OR p.refund_minor=(SELECT COALESCE(SUM(r.amount_minor),0) FROM ${t('referral_bunny_provider_refunds')} r WHERE r.provider_payment_id=p.provider_payment_id AND r.livemode=TRUE))` : 'p.refund_minor=0'} AND a.status='PAID'
+    WHERE to_jsonb(c)->>'account_usage' IS DISTINCT FROM 'internal' AND i.status='paid' AND i.amount_due=0 AND p.status IN (${config.refundsEnabled ? "'PAID','REFUNDED','PARTIALLY_REFUNDED'" : "'PAID'"}) AND ${config.refundsEnabled ? `(p.refund_minor=0 OR p.refund_minor=(SELECT COALESCE(SUM(r.amount_minor),0) FROM ${t('referral_bunny_provider_refunds')} r WHERE r.provider_payment_id=p.provider_payment_id AND r.livemode=TRUE))` : 'p.refund_minor=0'} AND a.status='PAID'
       AND p.livemode=TRUE AND a.livemode=TRUE AND p.provider='PAYMONGO' AND a.paymongo_payment_id=p.provider_payment_id
       AND a.purchase_type IN ('SUBSCRIPTION_START','SUBSCRIPTION_RENEWAL')
       AND EXISTS(SELECT 1 FROM ${t('payment_webhook_events')} e WHERE e.provider='paymongo' AND e.attempt_id=a.id AND e.provider_payment_id=p.provider_payment_id AND e.status='processed' AND e.livemode=TRUE)
@@ -79,7 +79,8 @@ function payments(db,schema,connector,config,transport){
    // A known refund or changed invoice must be reconciled before sending a reward.
    const current=(await q.query(`SELECT p.gross_minor,(i.tax_amount*100)::text AS tax_minor FROM ${t('payment_transactions')} p
       JOIN ${t('invoices')} i ON i.billing_attempt_id=p.attempt_id AND i.transaction_id=p.provider_payment_id AND i.company_id=p.company_id
-      WHERE p.provider_payment_id=$1 AND p.livemode=TRUE AND p.status IN (${config.refundsEnabled ? "'PAID','REFUNDED','PARTIALLY_REFUNDED'" : "'PAID'"})
+      JOIN ${t('companies')} c ON c.company_id=p.company_id
+      WHERE to_jsonb(c)->>'account_usage' IS DISTINCT FROM 'internal' AND p.provider_payment_id=$1 AND p.livemode=TRUE AND p.status IN (${config.refundsEnabled ? "'PAID','REFUNDED','PARTIALLY_REFUNDED'" : "'PAID'"})
       AND ${config.refundsEnabled ? `(p.refund_minor=0 OR p.refund_minor=(SELECT COALESCE(SUM(r.amount_minor),0) FROM ${t('referral_bunny_provider_refunds')} r WHERE r.provider_payment_id=p.provider_payment_id AND r.livemode=TRUE))` : 'p.refund_minor=0'}
       AND i.id::text=$2 AND i.status='paid' AND i.amount_due=0 AND i.amount_paid*100=p.gross_minor AND i.total_amount*100=p.gross_minor`,[row.provider_payment_id,row.invoice_id])).rows[0];
    if(!current || cents(current.gross_minor)-cents(current.tax_minor)!==JSON.parse(row.payload).amount_minor){

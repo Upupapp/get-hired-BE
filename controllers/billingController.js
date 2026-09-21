@@ -15,7 +15,11 @@ const resolveCompanyId = async (req) => {
   if (!uid) return null;
   try {
     const company = await getUserCompanyForRequest(req, uid);
-    return (company && company.company_id) || null;
+    // getUserCompanyForRequest returns the public mapped company shape
+    // (`companyId`). Accept the legacy database-style key as well because
+    // older tests and internal callers can still provide it. Looking only at
+    // `company_id` made valid authenticated billing requests fail as 401.
+    return (company && (company.companyId || company.company_id)) || null;
   } catch (e) {
     return null;
   }
@@ -206,8 +210,13 @@ export const sendInvoiceEmail = async (req, res) => {
       overrideEmail: overrideEmail || null,
     });
 
+    // E3.1: only a delivered email is reported as sent. A send the delivery guard suppressed
+    // (sink or allowlist mode, never production's live mode) is not an error, but it reached nobody.
+    if (result.sent && result.delivered) {
+      return res.json(okResponse({ message: "Invoice sent successfully.", delivered: true }));
+    }
     if (result.sent) {
-      return res.json(okResponse({ message: "Invoice sent successfully." }));
+      return res.json(okResponse({ message: "Invoice email not delivered: email delivery is turned off in this environment.", delivered: false }));
     }
 
     // Don't expose internal reasons to the client

@@ -42,6 +42,9 @@ export async function getLifecycleStatus(req, res) {
         trialEndsAt: summary.trialEndsAt,
         amountPaid: summary.amountPaid,
         isPaid: summary.isPaid,
+        accessKind: summary.accessKind,
+        accessLabel: summary.accessLabel,
+        isComplimentary: summary.isComplimentary,
         subscriptionId: summary.subscriptionId,
         subscriptionName: summary.subscriptionName,
         // Checkout return copy — billing cycle specific
@@ -191,6 +194,7 @@ export async function triggerDunningCheck(req, res) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function buildStatusCopy(summary) {
+  if (summary.isComplimentary) return 'Your internal complimentary access is active. No payment is required.';
   var status = summary.status;
   var isAnnual = summary.billingCycle === 'annual';
   var copies = {

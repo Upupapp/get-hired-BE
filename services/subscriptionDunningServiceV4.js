@@ -1,3 +1,4 @@
+const {isInternal,accessSummary}=require('./internalAccess.cjs');
 /**
  * Subscription Dunning Service V4
  * Calculates dunning state, overdue sequences, and grace period logic.
@@ -26,6 +27,7 @@ var DEFAULT_GRACE_DAYS = 7;
  */
 function calculateDunningState(row) {
   if (!row) return { state: 'no_subscription', notifications: [] };
+  if (isInternal(row)) return {state:'internal_complimentary',notifications:[]};
 
   var now = new Date();
   var subscriptionId = row.subscription_id;
@@ -151,7 +153,7 @@ function calculateGracePeriodEnd(periodEnd, billingCycle) {
  * Is company in grace period?
  */
 function isInGracePeriod(row) {
-  if (!row || !row.period_end) return false;
+  if (!row || isInternal(row) || !row.period_end) return false;
   var now = new Date();
   var periodEnd = new Date(row.period_end);
   if (now.getTime() <= periodEnd.getTime()) return false;

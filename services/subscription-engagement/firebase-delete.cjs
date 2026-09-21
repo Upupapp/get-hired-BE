@@ -1,0 +1,4 @@
+'use strict';
+function objectName(downloadUrl,expectedBucket){let u;try{u=new URL(downloadUrl);}catch(e){throw Object.assign(Error('Invalid storage URL'),{code:'STORAGE_URL_INVALID'});}if(u.protocol!=='https:'||u.hostname!=='firebasestorage.googleapis.com')throw Object.assign(Error('Invalid storage origin'),{code:'STORAGE_URL_INVALID'});const m=/^\/v0\/b\/([^/]+)\/o\/([^/]+)$/.exec(u.pathname);if(!m||decodeURIComponent(m[1])!==expectedBucket)throw Object.assign(Error('Storage bucket mismatch'),{code:'STORAGE_URL_INVALID'});const name=decodeURIComponent(m[2]);if(!name||name.includes('..'))throw Object.assign(Error('Invalid object name'),{code:'STORAGE_URL_INVALID'});return name;}
+function firebaseDelete(bucket,expectedBucket){return async url=>{const name=objectName(url,expectedBucket);await bucket.file(name).delete({ignoreNotFound:true});};}
+module.exports={objectName,firebaseDelete};
