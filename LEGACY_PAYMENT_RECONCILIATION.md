@@ -28,3 +28,12 @@ This reconciliation performs no production updates. Existing entitlement behavio
 New trial creation in the integration branch already explicitly sets is_paid=false and payment_date=null. The timestamp compatibility fix is covered by the production-schema rehearsal. This branch is not yet deployed.
 
 No LGUIDS tenant was accessed or changed. No GitHub Actions were used.
+
+
+## Applied trial correction
+
+On 2026-09-21, following the owner's selection of the audited flag correction, applied scripts/maintenance/correct-legacy-trial-paid-flags.sql directly to GetHired. Corrected exactly 15 trial rows: is_paid=false and payment_date=null. Original plan IDs, creation dates, periods and all other fields were preserved. Before/after snapshots are retained in gethired.subscription_data_corrections under 20260921_unpaid_trials. No invoice, transaction or reward was created.
+
+Two local production-schema tests passed: exact preservation/idempotency and rollback if fresh webhook evidence appears. Production verification confirmed 15 audited rows and exact after-state matches. Premium remains unchanged because deployed access logic depends on its paid flag; the owner was asked to choose its disposition. This supersedes the earlier no-production-updates statement for these 15 trial rows only.
+
+No application deployment, billing foundation migration or feature enablement occurred. New trial creation in the currently deployed application can still require the pending application fix; this was a bounded historical cleanup, not a full rollout.
