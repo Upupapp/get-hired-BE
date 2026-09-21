@@ -96,10 +96,22 @@ test('signup feed retains verified click attribution, is connection scoped and e
   const feed=await f.s.signups({connectionId:'connection-1'});
   assert.equal(feed.rows.length,1);assert.equal(feed.rows[0].clickId,'12345678-1234-4234-8234-123456789abc');
   assert.equal(feed.rows[0].membershipId,'member');assert.equal(feed.rows[0].occurredAt,'2026-09-20T10:00:01.000Z');
+  assert.deepEqual(feed.rows[0].paymentCustomerIds,[]);
+  const originalCustomerId=feed.rows[0].customerId;
+  await f.pg.exec("INSERT INTO companies VALUES('customer-after-signup','new','customer')");
+  const enriched=await f.s.signups({connectionId:'connection-1'});
+  assert.equal(enriched.rows.length,1);assert.equal(enriched.rows[0].customerId,originalCustomerId);
+  assert.deepEqual(enriched.rows[0].paymentCustomerIds,['customer-after-signup']);
+  assert.deepEqual((await f.s.signups({connectionId:'connection-1'})).rows,enriched.rows);
+  await f.pg.exec("INSERT INTO referral_bunny_customers VALUES('connection-1','customer-after-signup','employer','another-member','2026-09-01','conflicting-invoice')");
+  assert.deepEqual((await f.s.signups({connectionId:'connection-1'})).rows[0].paymentCustomerIds,[]);
+  const binding=(await f.pg.query("SELECT uid,membership_id FROM referral_bunny_customers WHERE connection_id='connection-1' AND company_id='customer-after-signup'")).rows[0];
+  assert.deepEqual(binding,{uid:'employer',membership_id:'another-member'});
+  await f.pg.exec("DELETE FROM referral_bunny_customers WHERE company_id='customer-after-signup'");
   assert.equal(JSON.stringify(feed).includes('new@example.com'),false);assert.equal(feed.cursor,null);
   await f.pg.exec("INSERT INTO companies VALUES('internal','new','internal')");
   assert.equal((await f.s.signups({connectionId:'connection-1'})).rows.length,0);
-  await f.pg.exec("UPDATE companies SET account_usage='customer'");
+  await f.pg.exec("UPDATE companies SET account_usage='customer' WHERE company_id='internal'");
   assert.equal((await f.s.signups({connectionId:'connection-1'})).rows.length,1);
   await assert.rejects(()=>f.s.signups({connectionId:'other'}),{httpStatus:403});
  }finally{await f.pg.close();}
