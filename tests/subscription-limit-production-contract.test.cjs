@@ -51,6 +51,9 @@ test('public pricing and legacy subscription summary use the authoritative catal
   assert.match(legacy, /authoritativeEntitlements\.active_job_posts/);
   assert.match(legacy, /authoritativeEntitlements\.admin_users/);
   assert.match(legacy, /authoritativeEntitlements\.video_responses/);
+  assert.match(legacy, /jobPost: entitlements \? entitlements\.active_job_posts/);
+  assert.match(legacy, /admin: entitlements \? entitlements\.admin_users/);
+  assert.match(legacy, /videoResponse: entitlements \? entitlements\.video_responses/);
 });
 
 test('storage accounting migration is additive and usage recording cannot reject applications', () => {

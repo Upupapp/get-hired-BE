@@ -237,13 +237,22 @@ const mappedUserSubscription = (raw) => {
 };
 
 const mappedSubscription = (raw) => {
+  var slug = raw.subscription_id === 1 ? 'free_trial' :
+             raw.subscription_id === 2 ? 'starter' :
+             raw.subscription_id === 3 ? 'growth' :
+             raw.subscription_id === 4 ? 'business' : 'enterprise';
+  var catalogPlan = getPlanBySlug(slug);
+  var entitlements = catalogPlan && catalogPlan.entitlements;
+  var catalogPrice = catalogPlan
+    ? (raw.payment_occurence === 'annually' ? catalogPlan.priceAnnualPHP : catalogPlan.priceMonthlyPHP)
+    : raw.price;
   return {
     subscriptionId: raw.subscription_id,
-    jobPost: raw.job_post,
-    admin: raw.admin,
-    videoResponse: raw.video_response,
+    jobPost: entitlements ? entitlements.active_job_posts : raw.job_post,
+    admin: entitlements ? entitlements.admin_users : raw.admin,
+    videoResponse: entitlements ? entitlements.video_responses : raw.video_response,
     withCustomerCare: raw.with_customer_care,
-    price: raw.price,
+    price: catalogPrice,
     priceCurrency: raw.price_currency,
     subscriptionName: raw.subscription_name,
     paymentOccurence: raw.payment_occurence,
