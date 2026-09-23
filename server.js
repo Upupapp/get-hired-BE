@@ -37,6 +37,8 @@ import publicJobPreviewRoutes from "./routes/publicJobPreviewRoutes";
 import googleAuthRoutes from "./routes/googleAuthRoutes";
 import linkedinAuthRoutes from "./routes/linkedinAuthRoutes";
 import privacyRoutes from "./routes/privacyRoutes";
+import jobOpeningAlertRoutes from "./routes/jobOpeningAlertRoutes";
+import { startJobOpeningAlertScheduler } from "./services/jobOpeningAlertScheduler";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -269,6 +271,7 @@ app.use("/api", subscriptionGuardrailsRoutesV4);
 app.use("/api", subscriptionLifecycleRoutesV4);
 app.use("/api", subscriptionUpgradeRecommendationRoutesV4);
 app.use("/api", recruiterDashboardAnalyticsRoutes);
+app.use("/api", jobOpeningAlertRoutes);
 app.use("/api", paymongoBillingRoutes);
 app.use("/api", billingRoutes);
 app.use("/api", publicJobPreviewRoutes);
@@ -404,6 +407,9 @@ app.use((err, req, res, next) => {
 
 app.listen(env.port).on("listening", () => {
   console.log(`running server on port ${env.port}`);
+  if (process.env.NODE_ENV !== "test") {
+    startJobOpeningAlertScheduler();
+  }
 });
 
 // dbQuery.connect();
