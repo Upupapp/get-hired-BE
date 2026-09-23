@@ -35,6 +35,7 @@ import { insertLogs } from "../services/user.service";
 // events. The service is a no-op unless GOOGLE_INDEXING_API_ENABLED=true.
 // Import is always safe; actual HTTP calls only happen when enabled.
 import { notifyJobUrlUpdated, notifyJobUrlDeleted } from "../services/googleIndexing.service";
+import { maybeSendJobLiveEmail } from "../services/employerJobEmailService";
 
 import { companySubscriptions } from "../controllers/subscriptionController";
 import { getSavedJobStatus, toggleSavedJob } from "../services/savedJobsService";
@@ -217,6 +218,17 @@ const createJobs = async (req, res) => {
     // SEO: notify Google the new job URL is available (fire-and-forget).
     // No-op unless GOOGLE_INDEXING_API_ENABLED=true in the environment.
     notifyJobUrlUpdated(dbResponse);
+    // Employer job-live email — only when created already published (status 2).
+    if (Number(jobStatusId) === 2) {
+      maybeSendJobLiveEmail(dbResponse.jobId || jobId, {
+        jobTitle: dbResponse.jobTitle || jobTitle,
+        companyId: companyId,
+        companyName: dbResponse.companyName,
+      }).catch(function(err) {
+        console.error('[createJobs] EMPLOYER_JOB_LIVE_EMAIL_FAILED (non-blocking):',
+          err && err.message ? err.message.substring(0, 80) : 'unknown');
+      });
+    }
     return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[createJobs] error:', error);
@@ -425,6 +437,20 @@ const updateJob = async (req, res) => {
       return sendPlanLimitRefusal(res, planGate.refusal);
     }
 
+    // Employer job-live: capture previous status so we only fire on transition into published (2).
+    let previousJobStatusId = null;
+    try {
+      const prevRes = await dbQuery.query(
+        `SELECT job_status_id FROM ${dbSchema}.jobs WHERE job_id = $1 AND company_id = $2 LIMIT 1`,
+        [jobId, callerCompany.companyId]
+      );
+      if (prevRes.rows && prevRes.rows.length > 0) {
+        previousJobStatusId = prevRes.rows[0].job_status_id;
+      }
+    } catch (prevErr) {
+      console.warn('[updateJob] previous status read failed (non-blocking):', prevErr && prevErr.message);
+    }
+
     if (bannerFile && bannerFile != "") {
       rawUrl = await uploadInStorage(
         "Job-Banner",
@@ -501,6 +527,18 @@ const updateJob = async (req, res) => {
       dbResponse.interviewTemplateId = interviewResult.interviewTemplateId;
     }
 
+    // Employer job-live email — only on real transition into published (2).
+    if (Number(jobStatusId) === 2 && Number(previousJobStatusId) !== 2) {
+      maybeSendJobLiveEmail(dbResponse.jobId || jobId, {
+        jobTitle: dbResponse.jobTitle || jobTitle,
+        companyId: callerCompany.companyId,
+        companyName: dbResponse.companyName,
+      }).catch(function(err) {
+        console.error('[updateJob] EMPLOYER_JOB_LIVE_EMAIL_FAILED (non-blocking):',
+          err && err.message ? err.message.substring(0, 80) : 'unknown');
+      });
+    }
+
     return res.status(status.success).json(successResponse(dbResponse));
   } catch (error) {
     console.error('[updateJob] error:', error);
@@ -541,6 +579,21 @@ const updateStatusOfJob = async (req, res) => {
       return sendPlanLimitRefusal(res, planGate.refusal);
     }
 
+    // Employer job-live: previous status for transition guard (into status 2 only).
+    let previousJobStatusId = null;
+    try {
+      const prevRes = await dbQuery.query(
+        `SELECT job_status_id FROM ${dbSchema}.jobs WHERE job_id = $1 AND company_id = $2 LIMIT 1`,
+        [jobId, callerCompany.companyId]
+      );
+      if (prevRes.rows && prevRes.rows.length > 0) {
+        previousJobStatusId = prevRes.rows[0].job_status_id;
+      }
+    } catch (prevErr) {
+      console.warn('[updateStatusOfJob] previous status read failed (non-blocking):',
+        prevErr && prevErr.message);
+    }
+
     const updateJob = await updateJobStatus(statusId, jobId, callerCompany.companyId);
 
     // SEO: notify Google when a job is published (status 2 = active/published)
@@ -558,6 +611,18 @@ const updateStatusOfJob = async (req, res) => {
     if (statusId == 2 && updateJob && updateJob.jobId) {
       responseData = Object.assign({}, updateJob, {
         postPublish: { publicJobUrl: '/jobs/details/' + updateJob.jobId }
+      });
+    }
+
+    // Employer job-live email — only on transition into published (2).
+    if (Number(statusId) === 2 && Number(previousJobStatusId) !== 2 && updateJob && updateJob.jobId) {
+      maybeSendJobLiveEmail(updateJob.jobId, {
+        jobTitle: updateJob.jobTitle,
+        companyId: callerCompany.companyId,
+        companyName: updateJob.companyName,
+      }).catch(function(err) {
+        console.error('[updateStatusOfJob] EMPLOYER_JOB_LIVE_EMAIL_FAILED (non-blocking):',
+          err && err.message ? err.message.substring(0, 80) : 'unknown');
       });
     }
 

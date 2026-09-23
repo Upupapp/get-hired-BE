@@ -17,6 +17,7 @@ import { createApplicationSnapshots } from './applicationSnapshotService';
 import { validateDocumentFile } from './documentUploadValidationService';
 import { canAccessJob } from './accessControl.service';
 import { createNotification } from './notification.service';
+import { maybeSendApplicantMilestoneEmail } from './employerJobEmailService';
 
 const dbSchema = env.schema;
 
@@ -306,6 +307,16 @@ const jobApply = async (jobApplication, userId) => {
         err && err.message ? err.message.substring(0, 80) : 'unknown');
     });
     console.log('[application] APPLICATION_CONFIRMATION_EMAIL_QUEUED', { applicationId: jobApplicantionId, jobId: jobId });
+
+    // Employer milestone emails (1/10/20/40/50) — non-blocking; never blocks apply.
+    maybeSendApplicantMilestoneEmail(jobId, {
+      jobTitle: job.jobTitle,
+      companyId: job.companyId,
+      companyName: job.companyName,
+    }).catch(function(err) {
+      console.error('[application] EMPLOYER_MILESTONE_EMAIL_FAILED (non-blocking):',
+        err && err.message ? err.message.substring(0, 80) : 'unknown');
+    });
 
     // Best-effort: build application/completeness/match snapshots.
     // Never throws — snapshot failure must never block submission.
