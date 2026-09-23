@@ -35,6 +35,9 @@ var MAX_JOBS = 10;
 var MAX_ACTIVE_SUBSCRIPTIONS = 30;
 var MIN_SUBSTRING = 3;
 var INSTANT_CLAIM_TTL_MINUTES = 10;
+// access_roles / user_credentials.role from db/user_ddl.sql.
+// 0 super_admin, 1 admin, 2 employer, 3 candidate (jobseeker).
+var JOBSEEKER_ROLE_ID = 3;
 var MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 var TEMPLATE_KEY = 'job_opening_alert';
 var FROM = {
@@ -697,10 +700,14 @@ function createJobOpeningAlertHttp(service, present, deps) {
   return { list: list, subscribe: subscribe, unsubscribe: unsubscribe, digest: digest };
 }
 
-function mountJobOpeningAlertRoutes(router, handlers, auth) {
-  router.get('/job-opening-alerts', auth, handlers.list);
-  router.post('/job-opening-alerts', auth, handlers.subscribe);
-  router.delete('/job-opening-alerts/:id', auth, handlers.unsubscribe);
+function mountJobOpeningAlertRoutes(router, handlers, auth, authorize) {
+  var gate = typeof authorize === 'function'
+    ? authorize
+    : function(req, res, next) { next(); };
+  router.get('/job-opening-alerts', auth, gate, handlers.list);
+  router.post('/job-opening-alerts', auth, gate, handlers.subscribe);
+  router.delete('/job-opening-alerts/:id', auth, gate, handlers.unsubscribe);
+  // Digest stays cron-secret only. No Firebase auth and no role gate.
   router.post('/internal/job-opening-alerts/digest', handlers.digest);
 }
 
@@ -747,6 +754,7 @@ module.exports = {
   MAX_JOBS: MAX_JOBS,
   MAX_ACTIVE_SUBSCRIPTIONS: MAX_ACTIVE_SUBSCRIPTIONS,
   INSTANT_CLAIM_TTL_MINUTES: INSTANT_CLAIM_TTL_MINUTES,
+  JOBSEEKER_ROLE_ID: JOBSEEKER_ROLE_ID,
   TEMPLATE_KEY: TEMPLATE_KEY,
   FROM: FROM,
   normalizePosition: normalizePosition,

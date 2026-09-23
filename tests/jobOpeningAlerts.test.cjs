@@ -85,6 +85,13 @@ describe('job opening alert rules', function() {
     assert.equal(alerts.shouldRunScheduler({ JOB_OPENING_ALERTS_SCHEDULER: 'false', NODE_APP_INSTANCE: '0' }), false);
   });
 
+  test('jobseeker role id is the existing candidate role, not a new id', function() {
+    assert.equal(alerts.JOBSEEKER_ROLE_ID, 3);
+    var routeSrc = fs.readFileSync(path.join(__dirname, '../routes/jobOpeningAlertRoutes.js'), 'utf8');
+    assert.match(routeSrc, /verifyRoles\(\[JOBSEEKER_ROLE_ID\]\)/);
+    assert.match(routeSrc, /mountJobOpeningAlertRoutes\(router, handlers, verifyAuth, verifyRoles\(\[JOBSEEKER_ROLE_ID\]\)\)/);
+  });
+
   test('instant claim lease is 10 minutes', function() {
     assert.equal(alerts.INSTANT_CLAIM_TTL_MINUTES, 10);
     assert.ok(alerts.INSTANT_CLAIM_TTL_MINUTES >= 5 && alerts.INSTANT_CLAIM_TTL_MINUTES <= 15);
@@ -508,13 +515,20 @@ describe('job opening alert HTTP', function() {
     var handlers = alerts.createJobOpeningAlertHttp(service, present, { cronSecret: 'cron-test-secret' });
     var auth = function(req, res, next) {
       if (!req.headers['x-test-uid']) return res.status(401).json(present.errorResponse('Unauthorized'));
-      req.user = { uid: req.headers['x-test-uid'] };
+      var roleHeader = req.headers['x-test-role'];
+      var role = roleHeader == null || roleHeader === '' ? alerts.JOBSEEKER_ROLE_ID : Number(roleHeader);
+      req.user = { uid: req.headers['x-test-uid'], role: role };
       next();
     };
+    // Same 403 JSON verifyRoles returns for a real employer/admin.
+    function jobseekerOnly(req, res, next) {
+      if (req.user && req.user.role === alerts.JOBSEEKER_ROLE_ID) return next();
+      return res.status(403).json({ message: 'User not allowed to access this API' });
+    }
     var app = express();
     app.use(express.json());
     var router = express.Router();
-    alerts.mountJobOpeningAlertRoutes(router, handlers, auth);
+    alerts.mountJobOpeningAlertRoutes(router, handlers, auth, jobseekerOnly);
     app.use('/api', router);
     server = app.listen(0, '127.0.0.1');
     await new Promise(function(resolve) { server.on('listening', resolve); });
@@ -571,6 +585,23 @@ describe('job opening alert HTTP', function() {
     assert.equal(removedBody.data.active, false);
   });
 
+  test('employers and admins get 403 and do not subscribe', async function() {
+    var before = sends.length;
+    var employerPost = await request('POST', '/api/job-opening-alerts', 'employer-1', { position: 'Accountant' }, { 'x-test-role': '2' });
+    assert.equal(employerPost.status, 403);
+    var employerBody = await employerPost.json();
+    assert.deepEqual(employerBody, { message: 'User not allowed to access this API' });
+    assert.equal(sends.length, before);
+
+    var adminGet = await request('GET', '/api/job-opening-alerts', 'admin-1', null, { 'x-test-role': '1' });
+    assert.equal(adminGet.status, 403);
+    assert.deepEqual(await adminGet.json(), { message: 'User not allowed to access this API' });
+
+    var employerDelete = await request('DELETE', '/api/job-opening-alerts/1', 'employer-1', null, { 'x-test-role': '2' });
+    assert.equal(employerDelete.status, 403);
+    assert.equal(sends.length, before);
+  });
+
   test('digest endpoint is closed without the cron secret and runs with it', async function() {
     var open = alerts.createJobOpeningAlertHttp(
       { runDigest: async function() { throw new Error('should not run'); } },
@@ -595,8 +626,9 @@ describe('job opening alert HTTP', function() {
     });
     assert.equal(denied.status, 401);
 
-    var allowed = await request('POST', '/api/internal/job-opening-alerts/digest', null, { force: true }, {
+    var allowed = await request('POST', '/api/internal/job-opening-alerts/digest', 'employer-1', { force: true }, {
       'x-job-opening-alert-cron': 'cron-test-secret',
+      'x-test-role': '2',
     });
     assert.equal(allowed.status, 200);
     var body = await allowed.json();
