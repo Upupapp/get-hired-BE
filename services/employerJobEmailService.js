@@ -3,9 +3,9 @@
  * Non-blocking — never throws to callers. Claim-first idempotency via
  * employer_job_email_events UNIQUE(job_id, milestone).
  *
- * Prefs: if engagement_preferences has JOB_ALERTS, respect it; otherwise
- * fail-open (send + log) when no prefs row / no JOB_ALERTS key.
- * See SENDGRID_EMPLOYER_MILESTONES_DRY_RUN.md for open questions.
+ * Prefs v1 (Emailer/Aryhan): send unless explicitly opted out. No required
+ * engagement_preferences key. If an explicit mute/opt-out for job/employer
+ * alerts exists (e.g. JOB_ALERTS === false), respect it; else fail-open send.
  */
 
 import dbQuery from '../db/dbQuery';
@@ -61,8 +61,8 @@ function buildJobManageUrl(jobId) {
 }
 
 function buildManageNotificationsUrl() {
-  // Interim until dedicated prefs UI ships (Aryhan/Emailer open question).
-  return appBaseUrl() + '/recruiter/company/settings';
+  // Emailer product stub interim (2026-09-23): public employer settings.
+  return publicSiteBaseUrl() + '/employer/settings';
 }
 
 function buildShareFacebookUrl(jobPublicUrl) {
@@ -85,14 +85,23 @@ async function countApplicantsForJob(jobId) {
 }
 
 /**
- * Prefs gate for employer job product emails.
- * - If any engagement_preferences row for company has JOB_ALERTS === false → deny
- * - If JOB_ALERTS === true on any row → allow
- * - If no prefs rows / no JOB_ALERTS key → fail-open allow + log
- * ACCOUNT_CRITICAL / PRODUCT_GUIDANCE exist in engagement module but are not
- * used as the gate for these product emails unless JOB_ALERTS is absent
- * product-wide (documented in dry-run notes).
+ * Prefs gate v1: send unless explicitly opted out.
+ * Known opt-out: engagement_preferences.JOB_ALERTS === false (or
+ * EMPLOYER_JOB_ALERTS / job_alerts === false if present). Missing key / missing
+ * table / missing row → fail-open allow + log. Do not require JOB_ALERTS true.
  */
+function prefsObjectOptedOut(prefs) {
+  if (!prefs || typeof prefs !== 'object') return false;
+  var keys = ['JOB_ALERTS', 'EMPLOYER_JOB_ALERTS', 'job_alerts'];
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (Object.prototype.hasOwnProperty.call(prefs, k) && prefs[k] === false) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function isEmployerJobEmailAllowed(companyId) {
   if (!companyId) {
     console.log('[employerJobEmail] PREFS_FAIL_OPEN reason=no_company_id');
@@ -109,26 +118,13 @@ async function isEmployerJobEmailAllowed(companyId) {
       console.log('[employerJobEmail] PREFS_FAIL_OPEN reason=no_prefs_row companyId=[REDACTED]');
       return { allowed: true, reason: 'no_prefs_row' };
     }
-    var sawJobAlerts = false;
-    var anyTrue = false;
-    var anyFalse = false;
     for (var i = 0; i < res.rows.length; i++) {
-      var prefs = res.rows[i].preferences || {};
-      if (Object.prototype.hasOwnProperty.call(prefs, 'JOB_ALERTS')) {
-        sawJobAlerts = true;
-        if (prefs.JOB_ALERTS === true) anyTrue = true;
-        if (prefs.JOB_ALERTS === false) anyFalse = true;
+      if (prefsObjectOptedOut(res.rows[i].preferences || {})) {
+        return { allowed: false, reason: 'explicit_opt_out' };
       }
     }
-    if (!sawJobAlerts) {
-      console.log('[employerJobEmail] PREFS_FAIL_OPEN reason=no_JOB_ALERTS_key companyId=[REDACTED]');
-      return { allowed: true, reason: 'no_JOB_ALERTS_key' };
-    }
-    // Deny only if every prefs row that defines JOB_ALERTS has it false
-    // (and none true). If any recipient opted in, allow.
-    if (anyTrue) return { allowed: true, reason: 'JOB_ALERTS_true' };
-    if (anyFalse) return { allowed: false, reason: 'JOB_ALERTS_false' };
-    return { allowed: true, reason: 'JOB_ALERTS_unset' };
+    console.log('[employerJobEmail] PREFS_FAIL_OPEN reason=no_explicit_opt_out companyId=[REDACTED]');
+    return { allowed: true, reason: 'no_explicit_opt_out' };
   } catch (err) {
     if (err && err.code === '42P01') {
       console.log('[employerJobEmail] PREFS_FAIL_OPEN reason=engagement_preferences_missing');

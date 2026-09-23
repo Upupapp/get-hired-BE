@@ -26,8 +26,9 @@ function buildJobApplicantsUrl(jobId, envApp) {
 function buildJobManageUrl(jobId, envApp) {
   return appBaseUrl(envApp) + '/recruiter/jobs/edit?id=' + encodeURIComponent(jobId);
 }
-function buildManageNotificationsUrl(envApp) {
-  return appBaseUrl(envApp) + '/recruiter/company/settings';
+function buildManageNotificationsUrl(envApp, publicSite) {
+  // Emailer stub: https://gethiredonline.app/employer/settings
+  return publicSiteBaseUrl(envApp, publicSite) + '/employer/settings';
 }
 function buildShareFacebookUrl(jobPublicUrl) {
   return 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(jobPublicUrl);
@@ -65,10 +66,10 @@ describe('employer job email URL builders', () => {
     );
   });
 
-  test('manage_notifications_url interim settings path', () => {
+  test('manage_notifications_url interim employer settings path', () => {
     assert.equal(
-      buildManageNotificationsUrl('https://app.gethiredonline.app'),
-      'https://app.gethiredonline.app/recruiter/company/settings'
+      buildManageNotificationsUrl('https://app.gethiredonline.app', 'https://gethiredonline.app'),
+      'https://gethiredonline.app/employer/settings'
     );
   });
 });
