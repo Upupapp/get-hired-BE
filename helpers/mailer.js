@@ -51,6 +51,11 @@ const gethiredSendgrid = {
   employer_milestone_40: "d-0e294950e8a54863b26e352fda7ab2fa",
   employer_milestone_50: "d-d1ea2c7986ca40e1895a7cb62fad02b7",
   employer_job_live:     "d-aaa81d288c5c47b89ff5f1cb07424135",
+  // Seeker job-opening alerts (instant + Tuesday digest share this Dynamic Template).
+  // Empty until Emailer publishes the template and JOB_OPENING_ALERT_TEMPLATE_ID is set.
+  // Handlebars: first_name, position, job_count, jobs[] (job_title, company_name,
+  // location, job_url, posted_at), manage_alerts_url, alert_kind, digest_week.
+  job_opening_alert: (process.env.JOB_OPENING_ALERT_TEMPLATE_ID || "").trim(),
 };
 
 const eucannajobsSendgrid = {
