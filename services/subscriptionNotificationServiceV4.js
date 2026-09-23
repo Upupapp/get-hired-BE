@@ -254,4 +254,5 @@ export {
   getUnreadNotifications,
   markNotificationRead,
   createInAppNotification,
+  getCompanyAdminEmails,
 };

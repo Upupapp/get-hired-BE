@@ -44,6 +44,13 @@ const gethiredSendgrid = {
   subscription_expired:              "d-761e40f9ed9e45548edba32f28a02d8b",
   // Invoice Vault — published 2026-06-30 via SendGrid API
   invoice_issued:                    "d-8584306d5098429490840e8d234ada89",
+  // Employer product emails — Dynamic Templates (2026-09-23)
+  employer_milestone_1:  "d-d91c57747612444cba76c8ecdb4f1d31",
+  employer_milestone_10: "d-1de4ba3ec9ed44378c235cdbf2ed9c4d",
+  employer_milestone_20: "d-04a7bb0c51334134a62a95175400072b",
+  employer_milestone_40: "d-0e294950e8a54863b26e352fda7ab2fa",
+  employer_milestone_50: "d-d1ea2c7986ca40e1895a7cb62fad02b7",
+  employer_job_live:     "d-aaa81d288c5c47b89ff5f1cb07424135",
 };
 
 const eucannajobsSendgrid = {
@@ -67,9 +74,27 @@ const getTemplate = (template) => {
   }
 };
 
-// LAUNCH-02: send() is now async and returns { sent: true } or { sent: false, reason }.
-// It never throws — callers can safely fire-and-forget or await/catch.
-const send = async (recipient, templateToUse, data) => {
+function resolveFrom(options) {
+  if (options && options.fromEmail) {
+    if (options.fromName) {
+      return { email: options.fromEmail, name: options.fromName };
+    }
+    return options.fromEmail;
+  }
+  return env.mailerSender;
+}
+
+function extractMessageId(response) {
+  if (!response) return null;
+  var headers = response.headers || {};
+  return headers["x-message-id"] || headers["X-Message-Id"] || null;
+}
+
+// LAUNCH-02: send() is now async and returns { sent: true, messageId } or
+// { sent: false, reason }. It never throws — callers can safely fire-and-forget.
+// Optional 4th arg `options`: { fromEmail, fromName } for per-template From
+// without changing global MAILER_SENDER (used by employer milestone/job-live).
+const send = async (recipient, templateToUse, data, options) => {
   const email = isValidEmail(recipient.trim()) ? recipient : env.mailerSender;
   const templateId = getTemplate(templateToUse);
   if (!templateId) {
@@ -78,13 +103,16 @@ const send = async (recipient, templateToUse, data) => {
   }
   const msg = {
     to: email,
-    from: env.mailerSender,
+    from: resolveFrom(options),
     templateId: templateId,
     dynamic_template_data: { ...data },
   };
   try {
-    await sgMail.send(msg);
-    return { sent: true };
+    const sgResult = await sgMail.send(msg);
+    // @sendgrid/mail returns [ClientResponse, body] or ClientResponse depending on version
+    const response = Array.isArray(sgResult) ? sgResult[0] : sgResult;
+    const messageId = extractMessageId(response);
+    return { sent: true, messageId: messageId || null };
   } catch (error) {
     const code = error && error.code ? error.code : 'SENDGRID_ERROR';
     const body = error && error.response && error.response.body
@@ -95,4 +123,4 @@ const send = async (recipient, templateToUse, data) => {
   }
 };
 
-export { send };
+export { send, gethiredSendgrid, getTemplate };
