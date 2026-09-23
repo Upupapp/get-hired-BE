@@ -85,6 +85,11 @@ describe('job opening alert rules', function() {
     assert.equal(alerts.shouldRunScheduler({ JOB_OPENING_ALERTS_SCHEDULER: 'false', NODE_APP_INSTANCE: '0' }), false);
   });
 
+  test('instant claim lease is 10 minutes', function() {
+    assert.equal(alerts.INSTANT_CLAIM_TTL_MINUTES, 10);
+    assert.ok(alerts.INSTANT_CLAIM_TTL_MINUTES >= 5 && alerts.INSTANT_CLAIM_TTL_MINUTES <= 15);
+  });
+
   test('cron secret compare rejects length mismatches', function() {
     assert.equal(alerts.secretsMatch('abc', 'abc'), true);
     assert.equal(alerts.secretsMatch('abd', 'abc'), false);
@@ -344,6 +349,45 @@ describe('job opening alerts against Postgres', function() {
       assert.equal(msg.to, 'ana@example.com');
     });
     clock = at('2026-09-22T13:00:00.000Z');
+  });
+
+  test('a stale instant claim can be retried; a fresh claim cannot', async function() {
+    await db.exec(`
+      INSERT INTO gethired.jobs (job_id, job_title, company_id, job_role_id, job_status_id, job_city, job_country, created_at, updated_at, expiration_date)
+      VALUES ('LEASE1', 'Claim Lease', 'CO1', NULL, 2, 'Manila', 'Philippines', '2026-09-12T01:00:00Z', '2026-09-12T01:00:00Z', NULL)
+    `);
+    await db.query(
+      "INSERT INTO gethired.job_opening_alert_subscriptions (user_uid, position, position_normalized, active, instant_claimed_at) "
+      + "VALUES ('seeker-1', 'Claim Lease', 'claim lease', TRUE, NOW() - INTERVAL '11 minutes')"
+    );
+    var localSends = [];
+    var local = alerts.createJobOpeningAlertService({
+      schema: 'gethired',
+      publicSiteUrl: 'https://gethiredonline.app',
+      now: function() { return at('2026-09-22T13:00:00.000Z'); },
+      query: function(text, params) { return db.query(text, params); },
+      send: async function() {
+        localSends.push(1);
+        return { sent: true, messageId: 'lease-1' };
+      },
+    });
+    var retried = await local.subscribe({ uid: 'seeker-1', body: { position: 'Claim Lease' } });
+    assert.equal(retried.created, false);
+    assert.equal(retried.instant.sent, true);
+    assert.equal(retried.instant.jobCount, 1);
+    assert.equal(localSends.length, 1);
+    assert.ok(retried.subscription.instantSentAt);
+
+    await db.query(
+      "UPDATE gethired.job_opening_alert_subscriptions "
+      + "SET instant_sent_at = NULL, instant_message_id = NULL, instant_job_count = NULL, instant_claimed_at = NOW() "
+      + "WHERE user_uid = 'seeker-1' AND position_normalized = 'claim lease'"
+    );
+    var held = await local.subscribe({ uid: 'seeker-1', body: { position: 'Claim Lease' } });
+    assert.equal(held.instant.sent, false);
+    assert.equal(held.instant.reason, 'already_sent');
+    assert.equal(held.subscription.instantSentAt, null);
+    assert.equal(localSends.length, 1);
   });
 
   test('a failed instant does not consume the slot; the next subscribe sends once', async function() {

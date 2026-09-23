@@ -1,6 +1,9 @@
 -- Seeker job-opening alert subscriptions (Linode Postgres).
 -- One row per registered user + normalized position.
 -- instant_sent_at is the once-per-subscription instant-email guard.
+-- instant_claimed_at is an in-flight lease. The service reclaims it when
+-- instant_sent_at is still null and the claim is older than 10 minutes
+-- (process died mid-send). A newer claim is left in place.
 -- last_digest_week is the Tuesday digest idempotency key (Asia/Manila date of that Tuesday).
 --
 -- Safe/additive. Deploys do not apply this file. Run by hand when rollout is authorized:

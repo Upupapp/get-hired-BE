@@ -20,6 +20,10 @@
  * catch-up. No node-cron. PM2 cluster runs the timer on instance 0 only.
  * Digest idempotency is last_digest_week (the Manila date of that Tuesday).
  * Instant idempotency is instant_sent_at on the subscription row.
+ * instant_claimed_at is an in-flight lease. Employer milestone mail has no
+ * claim TTL (a dead process leaves the row queued). This lease expires after
+ * INSTANT_CLAIM_TTL_MINUTES (10) so a crash mid-send can be retried. A claim
+ * younger than that is left alone so two overlapping subscribes cannot both send.
  *
  * From: GetHired <hrmanager@gethiredonline.app> — the verified transactional
  * sender already used by employer job mail. Display name is seeker-facing.
@@ -30,6 +34,7 @@ var crypto = require('crypto');
 var MAX_JOBS = 10;
 var MAX_ACTIVE_SUBSCRIPTIONS = 30;
 var MIN_SUBSTRING = 3;
+var INSTANT_CLAIM_TTL_MINUTES = 10;
 var MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 var TEMPLATE_KEY = 'job_opening_alert';
 var FROM = {
@@ -390,9 +395,10 @@ function createJobOpeningAlertService(deps) {
     var claimed = await query(
       'UPDATE ' + table + ' SET instant_claimed_at = NOW(), updated_at = NOW() '
       + 'WHERE id = $1 AND user_uid = $2 AND active = TRUE '
-      + 'AND instant_sent_at IS NULL AND instant_claimed_at IS NULL '
+      + 'AND instant_sent_at IS NULL '
+      + 'AND (instant_claimed_at IS NULL OR instant_claimed_at < NOW() - ($3::int * INTERVAL \'1 minute\')) '
       + 'RETURNING id',
-      [row.id, row.user_uid]
+      [row.id, row.user_uid, INSTANT_CLAIM_TTL_MINUTES]
     );
     if (!claimed.length) {
       return { sent: false, reason: 'already_sent', jobCount: 0, dryRun: false };
@@ -740,6 +746,7 @@ function startJobOpeningAlertScheduler(opts) {
 module.exports = {
   MAX_JOBS: MAX_JOBS,
   MAX_ACTIVE_SUBSCRIPTIONS: MAX_ACTIVE_SUBSCRIPTIONS,
+  INSTANT_CLAIM_TTL_MINUTES: INSTANT_CLAIM_TTL_MINUTES,
   TEMPLATE_KEY: TEMPLATE_KEY,
   FROM: FROM,
   normalizePosition: normalizePosition,
