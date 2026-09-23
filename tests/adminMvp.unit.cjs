@@ -3,7 +3,9 @@
  * Run: node --test tests/adminMvp.unit.cjs
  *
  * Schema assumptions locked in here:
- * - role 1 admin, 2 employer, 3 jobseeker (candidate)
+ * - role 0 super_admin and role 1 admin may call these routes; FE still treats '1' as admin
+ * - role 2 employer, 3 jobseeker (candidate)
+ * - user_credentials.is_archive = false unless includeArchived=true
  * - jobs.job_status_id 2 = published/active; unpublish sets 4 (Archived)
  * - user names are users.firstname/lastname; timestamp is user_credentials.created_date
  * - applications are counted on job_applicants.date_applied
@@ -30,8 +32,11 @@ function loadController(dbStub, indexingStub) {
   stubs.set(path.join(root, "db/dbQuery.js"), { default: dbStub });
   stubs.set(path.join(root, "env.js"), { default: { schema: "gethired" } });
   stubs.set(path.join(root, "helpers/userDetails.js"), {
-    getUserRoleById: async () => 1,
-    getUserProfileById: async () => ({ uid: "u1" }),
+    getUserRoleById: async () => caller.role,
+    getUserProfileById: async (id) => {
+      caller.profileReads += 1;
+      return { uid: id || "u1" };
+    },
   });
   stubs.set(path.join(root, "services/googleIndexing.service.js"), {
     notifyJobUrlDeleted: indexingStub,
@@ -105,6 +110,7 @@ const dbQuery = {
   async close() {},
 };
 const indexingCalls = [];
+const caller = { role: 1, profileReads: 0 };
 const admin = loadController(dbQuery, (job) => {
   indexingCalls.push(job);
 });
@@ -135,6 +141,8 @@ function req(query, params) {
 beforeEach(() => {
   calls.length = 0;
   indexingCalls.length = 0;
+  caller.role = 1;
+  caller.profileReads = 0;
   dbQuery.query = async (sql, params) => {
     calls.push({ sql: String(sql), params: params || [] });
     return { rows: [], rowCount: 0 };
@@ -146,14 +154,15 @@ function sqlBlob() {
 }
 
 describe("admin route gate", () => {
-  test("every admin route uses verifyAuth and verifyRoles([1])", () => {
+  test("every admin route uses verifyAuth and verifyRoles([0, 1])", () => {
     const src = fs.readFileSync(path.join(__dirname, "../routes/adminRoute.js"), "utf8");
     const lines = src.split("\n").filter((line) => line.indexOf("router.") === 0);
     assert.equal(lines.length, 6);
     lines.forEach((line) => {
       assert.match(line, /verifyAuth/);
-      assert.match(line, /verifyRoles\(\[1\]\)/);
+      assert.match(line, /verifyRoles\(\[0, 1\]\)/);
     });
+    assert.doesNotMatch(src, /verifyRoles\(\[1\]\)/);
     assert.match(src, /router\.get\("\/admin\/dashboard"/);
     assert.match(src, /router\.get\("\/admin\/users"/);
     assert.match(src, /router\.get\("\/admin\/userprofile"/);
@@ -205,6 +214,18 @@ describe("GET /api/admin/dashboard", () => {
     assert.match(sql, /date_applied >= NOW\(\) - INTERVAL '7 days'/);
     assert.match(sql, /date_applied >= NOW\(\) - INTERVAL '30 days'/);
     assert.doesNotMatch(sql, /password/i);
+    assert.match(sql, /user_credentials WHERE is_archive = false/);
+    assert.match(sql, /role = 3 AND is_archive = false/);
+    assert.match(sql, /role = 2 AND is_archive = false/);
+    assert.match(sql, /role = 1 AND is_archive = false/);
+    assert.doesNotMatch(sql, /FROM gethired\.jobs WHERE is_archive/);
+  });
+
+  test("includeArchived=true counts archived users in the KPIs", async () => {
+    const res = mockRes();
+    await admin.getDashboard(req({ includeArchived: "true" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.doesNotMatch(sqlBlob(), /is_archive/);
   });
 });
 
@@ -243,6 +264,7 @@ describe("GET /api/admin/users", () => {
       first_name: "Ada",
       last_name: "Lovelace",
       created_at: "2026-01-02T00:00:00.000Z",
+      is_archived: false,
     });
     assert.equal(Object.prototype.hasOwnProperty.call(res.body.data.items[0], "password"), false);
 
@@ -252,6 +274,7 @@ describe("GET /api/admin/users", () => {
     assert.match(listCall.sql, /u\.firstname/);
     assert.match(listCall.sql, /u\.lastname/);
     assert.match(listCall.sql, /c\.created_date/);
+    assert.match(listCall.sql, /c\.is_archive = false/);
     assert.doesNotMatch(listCall.sql, /password/i);
     assert.equal(listCall.params[0], "%100\\%\\_ada%");
     assert.equal(listCall.params[1], 3);
@@ -263,6 +286,21 @@ describe("GET /api/admin/users", () => {
   test("rejects a non-integer role before querying", async () => {
     const res = mockRes();
     await admin.listUsers(req({ role: "admin" }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(calls.length, 0);
+  });
+
+  test("includeArchived=true keeps archived accounts in the directory", async () => {
+    const res = mockRes();
+    await admin.listUsers(req({ includeArchived: "1" }), res);
+    assert.equal(res.statusCode, 200);
+    const listCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.doesNotMatch(listCall.sql, /is_archive = false/);
+  });
+
+  test("rejects an invalid includeArchived flag before querying", async () => {
+    const res = mockRes();
+    await admin.listUsers(req({ includeArchived: "maybe" }), res);
     assert.equal(res.statusCode, 400);
     assert.equal(calls.length, 0);
   });
@@ -341,6 +379,7 @@ describe("POST /api/admin/jobs/:jobId/unpublish", () => {
       status_name: "Archived",
       previous_status: 2,
       unpublished: true,
+      already_unpublished: false,
     });
     const update = calls.find((call) => call.sql.indexOf("UPDATE") !== -1);
     assert.ok(update);
@@ -379,6 +418,36 @@ describe("POST /api/admin/jobs/:jobId/unpublish", () => {
     await admin.unpublishJob(req({}, { jobId: " " }), res);
     assert.equal(res.statusCode, 400);
     assert.equal(calls.length, 0);
+  });
+});
+
+describe("GET /api/admin/userprofile", () => {
+  test("role 1 still receives the profile", async () => {
+    caller.role = 1;
+    const res = mockRes();
+    await admin.getUserProfile(req({ id: "u1" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.status, "success");
+    assert.equal(caller.profileReads, 1);
+    assert.equal(res.sent, null);
+  });
+
+  test("role 0 super_admin is allowed on the backend", async () => {
+    caller.role = 0;
+    const res = mockRes();
+    await admin.getUserProfile(req({ id: "u1" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(caller.profileReads, 1);
+  });
+
+  test("a non-admin 403 is the JSON message used by verifyRoles, not plain text", async () => {
+    caller.role = 2;
+    const res = mockRes();
+    await admin.getUserProfile(req({ id: "u1" }), res);
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.body, { message: "User not allowed to access this API" });
+    assert.equal(res.sent, null);
+    assert.equal(caller.profileReads, 0);
   });
 });
 

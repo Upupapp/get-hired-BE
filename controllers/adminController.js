@@ -6,7 +6,10 @@ import { notifyJobUrlDeleted } from "../services/googleIndexing.service";
 
 // Role integers (db/user_ddl.sql access_roles seed + FE sign-in):
 //   0 super_admin, 1 admin, 2 employer, 3 candidate/jobseeker.
-// Admin routes are gated to role 1. admins_total counts role 1 only.
+// Admin routes allow 0 and 1. The FE still treats role '1' as admin;
+// role 0 is an additional backend pass and does not change role-1 behavior.
+// admins_total counts role 1 only.
+const ADMIN_ROLES = [0, 1];
 const ADMIN_ROLE = 1;
 const EMPLOYER_ROLE = 2;
 const JOBSEEKER_ROLE = 3;
@@ -73,6 +76,16 @@ function parseOptionalPositiveInt(value, fallback) {
     return { error: "page and pageSize must be positive integers." };
   }
   return { value: n };
+}
+
+function parseIncludeArchived(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return { value: false };
+  }
+  const text = String(value).trim().toLowerCase();
+  if (text === "true" || text === "1") return { value: true };
+  if (text === "false" || text === "0") return { value: false };
+  return { error: "includeArchived must be true or false." };
 }
 
 function parseOptionalIntFilter(value, label) {
@@ -142,6 +155,11 @@ function userFilters(parsed) {
     params.push(parsed.role);
     where.push("c.role = $" + params.length);
   }
+  // user_credentials.is_archive defaults false. Hide archived accounts
+  // unless the caller passes includeArchived=true.
+  if (!parsed.includeArchived) {
+    where.push("c.is_archive = false");
+  }
   return { where: where, params: params };
 }
 
@@ -201,11 +219,12 @@ const getUserProfile = async (req, res) => {
   const { id } = req.query;
 
   try {
-    // Kept in addition to verifyRoles([1]) on the route so a direct call
-    // still cannot read another user's profile.
+    // Same allow-list as verifyRoles([0, 1]) on the route, so a direct
+    // call still cannot read another user's profile. Role 1 keeps working;
+    // role 0 (super_admin) is allowed here too.
     const callerRole = await getUserRoleById(req.user.uid);
-    if (callerRole !== ADMIN_ROLE) {
-      return res.status(403).send("Forbidden");
+    if (ADMIN_ROLES.indexOf(callerRole) === -1) {
+      return res.status(403).json({ message: "User not allowed to access this API" });
     }
 
     const creds = await getUserProfileById(id);
@@ -217,18 +236,25 @@ const getUserProfile = async (req, res) => {
 };
 
 const getDashboard = async (req, res) => {
+  const archived = parseIncludeArchived(req.query && req.query.includeArchived);
+  if (archived.error) {
+    return res.status(status.bad).json(errorResponse(archived.error));
+  }
   const s = safeSchema();
   if (s.error) return fail(res, s.error, "getDashboard");
 
   // user_credentials: uid, email, password, role, created_date, is_archive.
   // Names live on users (firstname/lastname). Applications use date_applied.
-  // password is never selected.
+  // password is never selected. Archived users are excluded unless
+  // includeArchived=true. Jobs and companies are not archive-filtered.
+  const userWhere = archived.value ? "" : " WHERE is_archive = false";
+  const userAnd = archived.value ? "" : " AND is_archive = false";
   const sql = `
     SELECT
-      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials) AS users_total,
-      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials WHERE role = ${JOBSEEKER_ROLE}) AS jobseekers_total,
-      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials WHERE role = ${EMPLOYER_ROLE}) AS employers_total,
-      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials WHERE role = ${ADMIN_ROLE}) AS admins_total,
+      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials${userWhere}) AS users_total,
+      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials WHERE role = ${JOBSEEKER_ROLE}${userAnd}) AS jobseekers_total,
+      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials WHERE role = ${EMPLOYER_ROLE}${userAnd}) AS employers_total,
+      (SELECT COUNT(*)::int FROM ${s.name}.user_credentials WHERE role = ${ADMIN_ROLE}${userAnd}) AS admins_total,
       (SELECT COUNT(*)::int FROM ${s.name}.jobs WHERE job_status_id = ${PUBLISHED_JOB_STATUS_ID}) AS jobs_active,
       (SELECT COUNT(*)::int FROM ${s.name}.jobs) AS jobs_total,
       (SELECT COUNT(*)::int FROM ${s.name}.job_applicants WHERE date_applied >= NOW() - INTERVAL '7 days') AS applications_7d,
@@ -268,6 +294,11 @@ const listUsers = async (req, res) => {
   if (parsed.error) {
     return res.status(status.bad).json(errorResponse(parsed.error));
   }
+  const archived = parseIncludeArchived(req.query && req.query.includeArchived);
+  if (archived.error) {
+    return res.status(status.bad).json(errorResponse(archived.error));
+  }
+  parsed.includeArchived = archived.value;
   const s = safeSchema();
   if (s.error) return fail(res, s.error, "listUsers");
 
@@ -287,7 +318,8 @@ const listUsers = async (req, res) => {
       c.role,
       u.firstname,
       u.lastname,
-      c.created_date
+      c.created_date,
+      c.is_archive
     ${from}
     ORDER BY c.created_date DESC NULLS LAST, c.uid ASC
     LIMIT $${page.limitIdx} OFFSET $${page.offsetIdx}
@@ -312,6 +344,7 @@ const listUsers = async (req, res) => {
       first_name: row.firstname || null,
       last_name: row.lastname || null,
       created_at: row.created_date || null,
+      is_archived: row.is_archive === true,
     }));
     return res.status(status.success).json(successResponse(paged(items, total, parsed)));
   } catch (error) {
@@ -450,6 +483,7 @@ const unpublishJob = async (req, res) => {
       status_name: JOB_STATUS_NAMES[ARCHIVED_JOB_STATUS_ID],
       previous_status: PUBLISHED_JOB_STATUS_ID,
       unpublished: true,
+      already_unpublished: false,
     }));
   } catch (error) {
     return fail(res, error, "unpublishJob");
