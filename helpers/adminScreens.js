@@ -765,4 +765,7 @@ export {
   validCompanyId,
   isMissingSchemaObject,
   isComplimentary,
+  parseYmd,
+  addCalendarDays,
+  ymd,
 };

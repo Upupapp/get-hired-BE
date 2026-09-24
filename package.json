@@ -13,7 +13,8 @@
     "eucanna-server": "ssh -i keys/eucanna-ssh root@206.81.16.32",
     "gethired-server": "ssh -i keys/gethired_rsa root@206.81.16.32",
     "test:billing": "node --test tests/paymongo*.test.cjs tests/subscription-checkout-pricing.test.cjs tests/referral-*.test.cjs",
-    "test:job-opening-alerts": "node --test tests/jobOpeningAlerts.test.cjs"
+    "test:job-opening-alerts": "node --test tests/jobOpeningAlerts.test.cjs",
+    "test:daily-product-metrics": "node --test tests/dailyProductMetrics.unit.cjs"
   },
   "repository": {
     "type": "git",
