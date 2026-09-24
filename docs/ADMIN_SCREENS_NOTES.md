@@ -4,20 +4,26 @@ For Aryhan to take to Paul. Draft only. No analytics credentials were added.
 
 ## Visits
 
-There is no pageview, session, or analytics table in this repo, and no Cloudflare or GA feed wired into the API. `GET /admin/dashboard` therefore returns:
+Paul approved first-party pageview ingest (2026-09-24). No GA or Cloudflare tokens.
 
-- `visits_total: 0`
-- `visits_previous: 0`
-- `visits_series`: one `{ date, count: 0 }` per Manila day overlapping the selected range
-- `visits_metric_label: "Site visits not collected"`
+Migration (apply on Linode only when Paul authorises the release; not applied by this PR):
 
-That label is intentionally not "Unique sessions" and not "Pageviews". Counting nothing as uniques, or labeling a pageview counter as uniques, would be false.
+`db/20260924_site_pageviews.sql` → `gethired.site_pageviews`
 
-Options, if Paul wants a real number later:
+Columns: `id`, `occurred_at`, `path`, `referrer_host`, `session_id`, `is_authenticated`. Indexes on `(occurred_at)` and `(occurred_at, path)`. IP, user agent, uid, email, and query strings are not stored. `session_id` is an opaque client UUID kept for a later uniques upgrade. v1 does not `COUNT(DISTINCT session_id)`.
 
-1. Keep this stub until a source exists. The FE can show the label and a flat sparkline.
-2. Minimal ingest: one `pageviews` (or `site_events`) table written by a same-origin beacon or by log shipping. Count rows in range and label the KPI **Pageviews**. Do not call that uniques unless the row stores a real session or visitor id and the query counts distinct ids.
-3. Do not paste GA or Cloudflare API tokens into this service as part of the admin screens pass.
+Retention follow-up, not in this migration: delete rows older than 90 days.
+
+Ingest: `POST /api/public/pageview` (no auth). Mounted before `billingRoutes` so the billing catch-all auth gate does not reject it. Allow-list is explicit: `https://gethiredonline.app`, `https://www.gethiredonline.app`, `http://localhost:4200`, `http://127.0.0.1:4200`. This repo has no Cloudflare Pages preview host pattern, so preview hosts are not allowed until one is named. Origin or Referer must match. Body `{ path, session_id?, referrer?, is_authenticated? }`. Path is reduced to a pathname (max 512). Referrer is stored as hostname only. Rate limit 60/minute/IP (in memory only). Success is **204** with an empty body. A database failure is logged and still returns 204, never 5xx.
+
+Dashboard, when the table exists:
+
+- `visits_total` = `COUNT(*)` in `[fromAt, toAt)`
+- `visits_previous` = the equal-length window before that
+- `visits_series` = daily counts. Today and custom use Asia/Manila calendar days. 7d and 30d use rolling 24-hour buckets.
+- `visits_metric_label` = **"Pageviews"**
+
+If the table is missing (`42P01`), the dashboard keeps zeros and `visits_metric_label` = `"Site visits not collected"`.
 
 Recruiter `GET /api/recruiter/dashboard/analytics` is company job views, not site visits. It is not reused here.
 

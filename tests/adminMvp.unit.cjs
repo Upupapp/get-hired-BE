@@ -215,7 +215,7 @@ describe("GET /api/admin/dashboard", () => {
     assert.equal(res.body.data.applications_in_range, 0);
     assert.equal(res.body.data.visits_total, 0);
     assert.equal(res.body.data.visits_previous, 0);
-    assert.equal(res.body.data.visits_metric_label, "Site visits not collected");
+    assert.equal(res.body.data.visits_metric_label, "Pageviews");
     assert.equal(res.body.data.range, "7d");
     assert.match(res.body.data.from, /^\d{4}-\d{2}-\d{2}$/);
     assert.match(res.body.data.to, /^\d{4}-\d{2}-\d{2}$/);
@@ -224,7 +224,8 @@ describe("GET /api/admin/dashboard", () => {
       assert.equal(point.count, 0);
       assert.match(point.date, /^\d{4}-\d{2}-\d{2}$/);
     });
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 4);
+    assert.doesNotMatch(sqlBlob(), /COUNT\s*\(\s*DISTINCT/i);
     const sql = sqlBlob();
     assert.match(sql, /role = 3/);
     assert.match(sql, /role = 2/);
@@ -245,6 +246,112 @@ describe("GET /api/admin/dashboard", () => {
     await admin.getDashboard(req({ includeArchived: "true" }), res);
     assert.equal(res.statusCode, 200);
     assert.doesNotMatch(sqlBlob(), /is_archive/);
+  });
+
+  test("counts pageview rows in range and the previous window", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      const text = String(sql);
+      if (text.indexOf("visits_total") !== -1) {
+        return { rows: [{ visits_total: 5, visits_previous: 2 }] };
+      }
+      if (text.indexOf("AS bucket") !== -1) {
+        return { rows: [{ bucket: 0, count: 3 }, { bucket: 1, count: 2 }] };
+      }
+      if (text.indexOf("applications_in_range") !== -1) {
+        return { rows: [{ applications_in_range: 4 }] };
+      }
+      return {
+        rows: [{
+          users_total: 1,
+          jobseekers_total: 1,
+          employers_total: 0,
+          admins_total: 0,
+          jobs_active: 0,
+          jobs_total: 0,
+          applications_7d: 1,
+          applications_30d: 1,
+          companies_total: 1,
+        }],
+      };
+    };
+
+    const res = mockRes();
+    await admin.getDashboard(req({ range: "7d" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.visits_total, 5);
+    assert.equal(res.body.data.visits_previous, 2);
+    assert.equal(res.body.data.visits_metric_label, "Pageviews");
+    assert.equal(res.body.data.visits_series.length, 7);
+    assert.equal(res.body.data.visits_series[0].count, 3);
+    assert.equal(res.body.data.visits_series[1].count, 2);
+    assert.equal(res.body.data.visits_series[2].count, 0);
+    assert.equal(res.body.data.applications_in_range, 4);
+    const totals = calls.find((call) => call.sql.indexOf("visits_total") !== -1);
+    assert.equal(totals.params.length, 3);
+    assert.ok(totals.params[2] < totals.params[0]);
+    assert.equal(totals.params[1] > totals.params[0], true);
+    assert.doesNotMatch(totals.sql, /COUNT\s*\(\s*DISTINCT/i);
+    assert.doesNotMatch(totals.sql, /session_id/i);
+  });
+
+  test("today pageviews use Manila calendar buckets", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      const text = String(sql);
+      if (text.indexOf("visits_total") !== -1) {
+        return { rows: [{ visits_total: 2, visits_previous: 1 }] };
+      }
+      if (text.indexOf("Asia/Manila") !== -1) {
+        return { rows: [{ date: "2026-09-24", count: 2 }] };
+      }
+      return { rows: [{ users_total: 0, jobseekers_total: 0, employers_total: 0, admins_total: 0, jobs_active: 0, jobs_total: 0, applications_7d: 0, applications_30d: 0, companies_total: 0, applications_in_range: 0 }] };
+    };
+    const res = mockRes();
+    await admin.getDashboard(req({ range: "today" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.visits_metric_label, "Pageviews");
+    assert.equal(res.body.data.visits_series.length, 1);
+    assert.equal(res.body.data.visits_total, 2);
+    const series = calls.find((call) => call.sql.indexOf("Asia/Manila") !== -1);
+    assert.ok(series);
+    assert.doesNotMatch(series.sql, /AS bucket/);
+  });
+
+  test("a missing site_pageviews table keeps the honest zero stub", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      if (String(sql).indexOf("site_pageviews") !== -1) {
+        const error = new Error('relation "site_pageviews" does not exist');
+        error.code = "42P01";
+        throw error;
+      }
+      if (String(sql).indexOf("applications_in_range") !== -1) {
+        return { rows: [{ applications_in_range: 0 }] };
+      }
+      return {
+        rows: [{
+          users_total: 3,
+          jobseekers_total: 1,
+          employers_total: 1,
+          admins_total: 1,
+          jobs_active: 1,
+          jobs_total: 1,
+          applications_7d: 0,
+          applications_30d: 0,
+          companies_total: 1,
+        }],
+      };
+    };
+    const res = mockRes();
+    await admin.getDashboard(req({ range: "7d" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.users_total, 3);
+    assert.equal(res.body.data.visits_total, 0);
+    assert.equal(res.body.data.visits_previous, 0);
+    assert.equal(res.body.data.visits_metric_label, "Site visits not collected");
+    assert.ok(res.body.data.visits_series.length >= 7);
+    res.body.data.visits_series.forEach((point) => assert.equal(point.count, 0));
   });
 });
 

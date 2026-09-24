@@ -3,7 +3,7 @@ import env from "../env";
 import { getUserProfileById, getUserRoleById } from "../helpers/userDetails";
 import { successResponse, errorResponse, status } from "../helpers/status";
 import { notifyJobUrlDeleted } from "../services/googleIndexing.service";
-import { PLAN_FACTS, SUBSCRIPTION_STATUSES, PAYMENT_STATUSES, parseAdminRange, hasRangeInput, emptyVisits, normalizeSubscriptionRow, entitlementMeters, paymentFromLedger, mergePayments, assembleFinance, historyFromLifecycle, historyFromPayments, mergeHistory, validCompanyId, isMissingSchemaObject } from "../helpers/adminScreens";
+import { PLAN_FACTS, SUBSCRIPTION_STATUSES, PAYMENT_STATUSES, parseAdminRange, hasRangeInput, emptyVisits, buildPageviewVisits, normalizeSubscriptionRow, entitlementMeters, paymentFromLedger, mergePayments, assembleFinance, historyFromLifecycle, historyFromPayments, mergeHistory, validCompanyId, isMissingSchemaObject } from "../helpers/adminScreens";
 
 // Role integers (db/user_ddl.sql access_roles seed + FE sign-in):
 //   0 super_admin, 1 admin, 2 employer, 3 candidate/jobseeker.
@@ -303,6 +303,30 @@ const getDashboard = async (req, res) => {
     FROM ${s.name}.job_applicants
     WHERE date_applied >= $1 AND date_applied < $2
   `;
+  // Row counts only. Do not COUNT(DISTINCT session_id). That would be uniques.
+  const visitsSql = `
+    SELECT
+      COUNT(*) FILTER (WHERE occurred_at >= $1 AND occurred_at < $2)::int AS visits_total,
+      COUNT(*) FILTER (WHERE occurred_at >= $3 AND occurred_at < $1)::int AS visits_previous
+    FROM ${s.name}.site_pageviews
+    WHERE occurred_at >= $3 AND occurred_at < $2
+  `;
+  const rollingSeries = range.range === "7d" || range.range === "30d";
+  const seriesSql = rollingSeries
+    ? `
+      SELECT FLOOR(EXTRACT(EPOCH FROM (occurred_at - $1::timestamptz)) / 86400)::int AS bucket,
+             COUNT(*)::int AS count
+      FROM ${s.name}.site_pageviews
+      WHERE occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
+      GROUP BY 1
+    `
+    : `
+      SELECT to_char(occurred_at AT TIME ZONE 'Asia/Manila', 'YYYY-MM-DD') AS date,
+             COUNT(*)::int AS count
+      FROM ${s.name}.site_pageviews
+      WHERE occurred_at >= $1::timestamptz AND occurred_at < $2::timestamptz
+      GROUP BY 1
+    `;
 
   try {
     const results = await Promise.all([
@@ -313,7 +337,25 @@ const getDashboard = async (req, res) => {
     const inRange = results[1];
     const row = (result && result.rows && result.rows[0]) || {};
     const inRangeRow = (inRange && inRange.rows && inRange.rows[0]) || {};
-    const visits = emptyVisits(range);
+    const pageviewTotals = await queryOptional(
+      visitsSql,
+      [range.fromAt, range.toAt, range.previousFromAt],
+      "site_pageviews"
+    );
+    let visits = emptyVisits(range);
+    if (!pageviewTotals.missing) {
+      const seriesResult = await queryOptional(
+        seriesSql,
+        [range.fromAt, range.toAt],
+        "site_pageviews series"
+      );
+      if (seriesResult.missing) {
+        visits = emptyVisits(range);
+      } else {
+        const totalRow = (pageviewTotals.rows && pageviewTotals.rows[0]) || {};
+        visits = buildPageviewVisits(range, totalRow, seriesResult.rows);
+      }
+    }
     return res.status(status.success).json(successResponse({
       users_total: asInt(row.users_total),
       jobseekers_total: asInt(row.jobseekers_total),

@@ -11,9 +11,10 @@
  * when present. Admin plan_label for slug business is "Business"
  * (addendum). The catalog product name for that slug is "Premium".
  *
- * No pageview, session, or analytics table exists in this repo. Visits
- * are zeros with visits_metric_label "Site visits not collected".
- * That label is not "uniques" and not "pageviews".
+ * Visits are pageview row counts from gethired.site_pageviews
+ * (visits_metric_label "Pageviews"). They are not unique sessions.
+ * If that table is missing, the dashboard keeps zeros and the label
+ * "Site visits not collected".
  *
  * ESM-safe: no optional chaining and no nullish coalescing.
  */
@@ -24,6 +25,7 @@ var DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 var MAX_RANGE_DAYS = 366;
 
 var VISITS_METRIC_LABEL = "Site visits not collected";
+var PAGEVIEWS_METRIC_LABEL = "Pageviews";
 var MRR_NOTE = "Current monthly recurring (snapshot)";
 var PLAN_BREAKDOWN_NOTE = "Share of companies with a plan row";
 
@@ -209,6 +211,51 @@ function emptyVisits(range) {
     visits_previous: 0,
     visits_series: series,
     visits_metric_label: VISITS_METRIC_LABEL,
+  };
+}
+
+function intOrZero(value) {
+  var n = parseInt(value, 10);
+  return isFinite(n) ? n : 0;
+}
+
+function buildPageviewVisits(range, totalRow, seriesRows) {
+  var total = intOrZero(totalRow && totalRow.visits_total);
+  var previous = intOrZero(totalRow && totalRow.visits_previous);
+  var rows = seriesRows || [];
+  var series = [];
+  var i;
+  if (range && (range.range === "7d" || range.range === "30d")) {
+    var buckets = range.range === "30d" ? 30 : 7;
+    var byBucket = {};
+    for (i = 0; i < rows.length; i++) {
+      if (rows[i].bucket === undefined || rows[i].bucket === null || rows[i].bucket === "") continue;
+      byBucket[String(parseInt(rows[i].bucket, 10))] = intOrZero(rows[i].count);
+    }
+    var startMs = new Date(range.fromAt).getTime();
+    for (i = 0; i < buckets; i++) {
+      var parts = manilaYmd(new Date(startMs + i * DAY_MS));
+      series.push({
+        date: ymd(parts.y, parts.m, parts.d),
+        count: byBucket[String(i)] || 0,
+      });
+    }
+  } else {
+    var byDate = {};
+    for (i = 0; i < rows.length; i++) {
+      if (!rows[i].date) continue;
+      byDate[String(rows[i].date)] = intOrZero(rows[i].count);
+    }
+    var dates = (range && range.seriesDates) || [];
+    for (i = 0; i < dates.length; i++) {
+      series.push({ date: dates[i], count: byDate[dates[i]] || 0 });
+    }
+  }
+  return {
+    visits_total: total,
+    visits_previous: previous,
+    visits_series: series,
+    visits_metric_label: PAGEVIEWS_METRIC_LABEL,
   };
 }
 
@@ -702,6 +749,8 @@ export {
   parseAdminRange,
   hasRangeInput,
   emptyVisits,
+  buildPageviewVisits,
+  PAGEVIEWS_METRIC_LABEL,
   resolvePlanSlug,
   planLabel,
   normalizeSubscriptionRow,
