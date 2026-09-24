@@ -1205,4 +1205,5 @@ export {
   normalizeSubscriptionRow,
   entitlementMeters,
   PLAN_FACTS,
+  loadPayments,
 };

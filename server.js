@@ -38,6 +38,7 @@ import googleAuthRoutes from "./routes/googleAuthRoutes";
 import linkedinAuthRoutes from "./routes/linkedinAuthRoutes";
 import privacyRoutes from "./routes/privacyRoutes";
 import jobOpeningAlertRoutes from "./routes/jobOpeningAlertRoutes";
+import dailyProductMetricsRoutes from "./routes/dailyProductMetricsRoutes";
 import pageviewRoutes from "./routes/pageviewRoutes";
 import { isAllowedPageviewOrigin } from "./helpers/pageviewIngest";
 import { startJobOpeningAlertScheduler } from "./services/jobOpeningAlertScheduler";
@@ -286,6 +287,9 @@ app.use("/api", subscriptionLifecycleRoutesV4);
 app.use("/api", subscriptionUpgradeRecommendationRoutesV4);
 app.use("/api", recruiterDashboardAnalyticsRoutes);
 app.use("/api", jobOpeningAlertRoutes);
+// Cron-secret only. No Firebase auth. Must be mounted before billingRoutes,
+// whose router.use(verifyAuth) rejects later routes that have no auth.
+app.use("/api", dailyProductMetricsRoutes);
 // Public pageview beacon. No auth. Must be mounted before billingRoutes,
 // whose router.use(verifyAuth) rejects later routes that have no auth.
 app.use("/api", pageviewRoutes);
