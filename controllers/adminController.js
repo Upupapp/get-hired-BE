@@ -1190,6 +1190,316 @@ const getCompany = async (req, res) => {
   }
 };
 
+function isUndefinedTable(error) {
+  return !!(error && error.code === "42P01");
+}
+
+function parseActiveFilter(value) {
+  // Direction lock: Active is the default chip. Omitted (or blank) means
+  // active = true. Inactive is false. All is the explicit value "all",
+  // which drops the predicate. true/false/1/0 match the other admin flags.
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return { value: true };
+  }
+  const text = String(value).trim().toLowerCase();
+  if (text === "true" || text === "1") return { value: true };
+  if (text === "false" || text === "0") return { value: false };
+  if (text === "all") return { value: null };
+  return { error: "active must be true, false, or all." };
+}
+
+function parseOptionalUserUid(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return { value: null };
+  }
+  const text = String(value).trim();
+  if (text.length > 128 || /[\u0000-\u001f\u007f]/.test(text)) {
+    return { error: "user_uid is invalid." };
+  }
+  return { value: text };
+}
+
+function parseRequiredUserUid(value) {
+  const parsed = parseOptionalUserUid(value);
+  if (parsed.error) return parsed;
+  if (!parsed.value) return { error: "user_uid is required." };
+  return parsed;
+}
+
+function asId(value) {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+  const text = String(value);
+  if (/^[0-9]+$/.test(text)) {
+    const n = Number(text);
+    if (Number.isSafeInteger(n)) return n;
+  }
+  return text;
+}
+
+function seekerName(row) {
+  if (!row) return null;
+  const name = [row.firstname, row.lastname].filter(Boolean).join(" ").trim();
+  return name || null;
+}
+
+function mapJobAlertSubscription(row, withSeeker) {
+  const item = {
+    id: asId(row.id),
+    user_uid: row.user_uid || null,
+    position: row.position || null,
+    position_normalized: row.position_normalized || null,
+    job_role_id: asNullableInt(row.job_role_id),
+    active: row.active === true,
+    created_at: row.created_at || null,
+    updated_at: row.updated_at || null,
+    instant_sent_at: row.instant_sent_at || null,
+    instant_claimed_at: row.instant_claimed_at || null,
+    instant_message_id: row.instant_message_id || null,
+    instant_job_count: asNullableInt(row.instant_job_count),
+    last_digest_week: row.last_digest_week || null,
+    last_digest_sent_at: row.last_digest_sent_at || null,
+    last_digest_message_id: row.last_digest_message_id || null,
+    last_digest_job_count: asNullableInt(row.last_digest_job_count),
+  };
+  if (withSeeker) {
+    const joined = row.seeker_uid != null || row.email != null || row.role != null || row.is_archive != null;
+    item.seeker_email = row.email || null;
+    item.seeker_name = seekerName(row);
+    item.seeker_role = asNullableInt(row.role);
+    item.seeker_archived = joined ? row.is_archive === true : null;
+  }
+  return item;
+}
+
+function mapSeekerSummary(row) {
+  if (!row) {
+    return {
+      seeker_email: null,
+      seeker_name: null,
+      seeker_role: null,
+      seeker_archived: null,
+      seeker_created_at: null,
+    };
+  }
+  return {
+    seeker_email: row.email || null,
+    seeker_name: seekerName(row),
+    seeker_role: asNullableInt(row.role),
+    seeker_archived: row.is_archive === true,
+    seeker_created_at: row.created_date || null,
+  };
+}
+
+const JOB_ALERT_SELECT = `
+      s.id,
+      s.user_uid,
+      s.position,
+      s.position_normalized,
+      s.job_role_id,
+      s.active,
+      s.created_at,
+      s.updated_at,
+      s.instant_sent_at,
+      s.instant_claimed_at,
+      s.instant_message_id,
+      s.instant_job_count,
+      s.last_digest_week,
+      s.last_digest_sent_at,
+      s.last_digest_message_id,
+      s.last_digest_job_count`;
+
+function jobAlertFilters(parsed, activeValue, userUid, range) {
+  const where = [];
+  const params = [];
+  if (parsed.q) {
+    params.push(likePattern(parsed.q));
+    where.push(searchClause(
+      [
+        "uc.email",
+        "u.firstname",
+        "u.lastname",
+        "concat_ws(' ', u.firstname, u.lastname)",
+        "s.position",
+      ],
+      params.length
+    ));
+  }
+  if (activeValue !== null) {
+    params.push(activeValue);
+    where.push("s.active = $" + params.length);
+  }
+  if (userUid) {
+    params.push(userUid);
+    where.push("s.user_uid = $" + params.length);
+  }
+  params.push(range.fromAt);
+  where.push("s.created_at >= $" + params.length);
+  params.push(range.toAt);
+  where.push("s.created_at < $" + params.length);
+  return { where: where, params: params };
+}
+
+function unavailableJobAlerts(parsed) {
+  return {
+    items: [],
+    total: 0,
+    page: parsed.page,
+    pageSize: parsed.pageSize,
+    joa_available: false,
+  };
+}
+
+function warnJobAlertsUnavailable(error) {
+  console.warn(
+    "[adminController] job opening alerts unavailable:",
+    error && error.message ? error.message : error
+  );
+}
+
+const listJobOpeningAlerts = async (req, res) => {
+  const parsed = parseListQuery(req.query, {});
+  if (parsed.error) {
+    return res.status(status.bad).json(errorResponse(parsed.error));
+  }
+  const active = parseActiveFilter(req.query && req.query.active);
+  if (active.error) {
+    return res.status(status.bad).json(errorResponse(active.error));
+  }
+  const source = req.query || {};
+  const uidRaw = source.user_uid !== undefined && source.user_uid !== null && String(source.user_uid).trim() !== ""
+    ? source.user_uid
+    : source.user;
+  const userUid = parseOptionalUserUid(uidRaw);
+  if (userUid.error) {
+    return res.status(status.bad).json(errorResponse(userUid.error));
+  }
+  // Same presets as dashboard/applications (today, 7d, 30d, custom from/to).
+  // Omitted range is last 7 days, matching the Job Alerts time-filter default.
+  // today/custom are inclusive Asia/Manila dates; 7d/30d are the shared rolling windows.
+  const range = parseAdminRange(req.query, new Date());
+  if (range.error) {
+    return res.status(status.bad).json(errorResponse(range.error));
+  }
+  const s = safeSchema();
+  if (s.error) return fail(res, s.error, "listJobOpeningAlerts");
+
+  const filters = jobAlertFilters(parsed, active.value, userUid.value, range);
+  const page = withPage(filters.params, parsed);
+  const from = `
+    FROM ${s.name}.job_opening_alert_subscriptions s
+    LEFT JOIN ${s.name}.user_credentials uc ON uc.uid = s.user_uid
+    LEFT JOIN ${s.name}.users u ON u.uid = s.user_uid
+    ${whereSql(filters.where)}
+  `;
+  const listSql = `
+    SELECT
+      ${JOB_ALERT_SELECT},
+      uc.uid AS seeker_uid,
+      uc.email,
+      uc.role,
+      uc.is_archive,
+      u.firstname,
+      u.lastname
+    ${from}
+    ORDER BY s.created_at DESC NULLS LAST, s.id DESC
+    LIMIT $${page.limitIdx} OFFSET $${page.offsetIdx}
+  `;
+  const countSql = `SELECT COUNT(*)::int AS total ${from}`;
+
+  try {
+    const results = await Promise.all([
+      dbQuery.query(countSql, filters.params),
+      dbQuery.query(listSql, page.listParams),
+    ]);
+    const total = results[0] && results[0].rows && results[0].rows[0]
+      ? asInt(results[0].rows[0].total)
+      : 0;
+    const rows = (results[1] && results[1].rows) || [];
+    const items = rows.map((row) => mapJobAlertSubscription(row, true));
+    return res.status(status.success).json(successResponse({
+      items: items,
+      total: total,
+      page: parsed.page,
+      pageSize: parsed.pageSize,
+      joa_available: true,
+    }));
+  } catch (error) {
+    if (isUndefinedTable(error)) {
+      warnJobAlertsUnavailable(error);
+      return res.status(status.success).json(successResponse(unavailableJobAlerts(parsed)));
+    }
+    return fail(res, error, "listJobOpeningAlerts");
+  }
+};
+
+const getJobOpeningAlertUser = async (req, res) => {
+  const userUid = parseRequiredUserUid(req.params && req.params.userUid);
+  if (userUid.error) {
+    return res.status(status.bad).json(errorResponse(userUid.error));
+  }
+  const s = safeSchema();
+  if (s.error) return fail(res, s.error, "getJobOpeningAlertUser");
+
+  const seekerSql = `
+    SELECT
+      uc.email,
+      uc.role,
+      uc.created_date,
+      uc.is_archive,
+      u.firstname,
+      u.lastname
+    FROM ${s.name}.user_credentials uc
+    LEFT JOIN ${s.name}.users u ON u.uid = uc.uid
+    WHERE uc.uid = $1
+  `;
+  const subsSql = `
+    SELECT
+      ${JOB_ALERT_SELECT}
+    FROM ${s.name}.job_opening_alert_subscriptions s
+    WHERE s.user_uid = $1
+    ORDER BY s.created_at DESC NULLS LAST, s.id DESC
+  `;
+
+  try {
+    const seekerResult = await dbQuery.query(seekerSql, [userUid.value]);
+    const seekerRow = seekerResult && seekerResult.rows && seekerResult.rows[0];
+    let rows = [];
+    let available = true;
+    try {
+      const subResult = await dbQuery.query(subsSql, [userUid.value]);
+      rows = (subResult && subResult.rows) || [];
+    } catch (error) {
+      if (!isUndefinedTable(error)) throw error;
+      available = false;
+      warnJobAlertsUnavailable(error);
+    }
+    const subscriptions = available
+      ? rows.map((row) => mapJobAlertSubscription(row, false))
+      : [];
+    let activeCount = 0;
+    let i;
+    for (i = 0; i < subscriptions.length; i++) {
+      if (subscriptions[i].active) activeCount += 1;
+    }
+    const summary = mapSeekerSummary(seekerRow);
+    return res.status(status.success).json(successResponse({
+      joa_available: available,
+      user_uid: userUid.value,
+      seeker_email: summary.seeker_email,
+      seeker_name: summary.seeker_name,
+      seeker_role: summary.seeker_role,
+      seeker_archived: summary.seeker_archived,
+      seeker_created_at: summary.seeker_created_at,
+      active_count: activeCount,
+      total_count: subscriptions.length,
+      subscriptions: subscriptions,
+    }));
+  } catch (error) {
+    return fail(res, error, "getJobOpeningAlertUser");
+  }
+};
+
 export {
   getUserProfile,
   getDashboard,
@@ -1198,6 +1508,8 @@ export {
   unpublishJob,
   listCompanies,
   listApplications,
+  listJobOpeningAlerts,
+  getJobOpeningAlertUser,
   getFinance,
   getCompany,
   parseAdminRange,
