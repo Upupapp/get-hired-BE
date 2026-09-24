@@ -157,7 +157,7 @@ describe("admin route gate", () => {
   test("every admin route uses verifyAuth and verifyRoles([0, 1])", () => {
     const src = fs.readFileSync(path.join(__dirname, "../routes/adminRoute.js"), "utf8");
     const lines = src.split("\n").filter((line) => line.indexOf("router.") === 0);
-    assert.equal(lines.length, 6);
+    assert.equal(lines.length, 9);
     lines.forEach((line) => {
       assert.match(line, /verifyAuth/);
       assert.match(line, /verifyRoles\(\[0, 1\]\)/);
@@ -169,6 +169,14 @@ describe("admin route gate", () => {
     assert.match(src, /router\.get\("\/admin\/jobs"/);
     assert.match(src, /router\.post\("\/admin\/jobs\/:jobId\/unpublish"/);
     assert.match(src, /router\.get\("\/admin\/companies"/);
+    assert.match(src, /router\.get\("\/admin\/applications"/);
+    assert.match(src, /router\.get\("\/admin\/finance"/);
+    assert.match(src, /router\.get\("\/admin\/companies\/:companyId"/);
+    const authSrc = fs.readFileSync(path.join(__dirname, "../middleware/verifyAuth.js"), "utf8");
+    const rolesSrc = fs.readFileSync(path.join(__dirname, "../middleware/verifyRoles.js"), "utf8");
+    assert.match(authSrc, /res\.status\(401\)/);
+    assert.match(rolesSrc, /status\(403\)/);
+    assert.match(rolesSrc, /allowedRoles\.includes\(rows\[0\]\.role\)/);
   });
 });
 
@@ -195,17 +203,28 @@ describe("GET /api/admin/dashboard", () => {
     await admin.getDashboard(req(), res);
 
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.body.data, {
-      users_total: 10,
-      jobseekers_total: 6,
-      employers_total: 3,
-      admins_total: 1,
-      jobs_active: 4,
-      jobs_total: 9,
-      applications_7d: 2,
-      applications_30d: 7,
-      companies_total: 5,
+    assert.equal(res.body.data.users_total, 10);
+    assert.equal(res.body.data.jobseekers_total, 6);
+    assert.equal(res.body.data.employers_total, 3);
+    assert.equal(res.body.data.admins_total, 1);
+    assert.equal(res.body.data.jobs_active, 4);
+    assert.equal(res.body.data.jobs_total, 9);
+    assert.equal(res.body.data.applications_7d, 2);
+    assert.equal(res.body.data.applications_30d, 7);
+    assert.equal(res.body.data.companies_total, 5);
+    assert.equal(res.body.data.applications_in_range, 0);
+    assert.equal(res.body.data.visits_total, 0);
+    assert.equal(res.body.data.visits_previous, 0);
+    assert.equal(res.body.data.visits_metric_label, "Site visits not collected");
+    assert.equal(res.body.data.range, "7d");
+    assert.match(res.body.data.from, /^\d{4}-\d{2}-\d{2}$/);
+    assert.match(res.body.data.to, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(res.body.data.visits_series.length >= 7);
+    res.body.data.visits_series.forEach((point) => {
+      assert.equal(point.count, 0);
+      assert.match(point.date, /^\d{4}-\d{2}-\d{2}$/);
     });
+    assert.equal(calls.length, 2);
     const sql = sqlBlob();
     assert.match(sql, /role = 3/);
     assert.match(sql, /role = 2/);
@@ -264,6 +283,7 @@ describe("GET /api/admin/users", () => {
       first_name: "Ada",
       last_name: "Lovelace",
       created_at: "2026-01-02T00:00:00.000Z",
+      last_login: null,
       is_archived: false,
     });
     assert.equal(Object.prototype.hasOwnProperty.call(res.body.data.items[0], "password"), false);
@@ -483,5 +503,494 @@ describe("GET /api/admin/companies", () => {
     assert.match(listCall.sql, /company_slug/);
     assert.match(listCall.sql, /job_status_id = 2/);
     assert.equal(listCall.params[0], "%acme%");
+  });
+});
+
+const MANILA_NOW = new Date("2026-09-24T02:30:00.000Z");
+
+describe("Asia/Manila admin ranges", () => {
+  test("today is the Manila calendar day, and 7d is a rolling 7x24h window", () => {
+    const today = admin.parseAdminRange({ range: "today" }, MANILA_NOW);
+    assert.equal(today.range, "today");
+    assert.equal(today.from, "2026-09-24");
+    assert.equal(today.to, "2026-09-24");
+    assert.equal(today.fromAt, "2026-09-23T16:00:00.000Z");
+    assert.equal(today.toAt, "2026-09-24T16:00:00.000Z");
+    assert.deepEqual(today.seriesDates, ["2026-09-24"]);
+    assert.equal(today.previousFromAt, "2026-09-22T16:00:00.000Z");
+
+    const week = admin.parseAdminRange({ range: "7d" }, MANILA_NOW);
+    assert.equal(week.fromAt, "2026-09-17T02:30:00.000Z");
+    assert.equal(week.toAt, "2026-09-24T02:30:00.000Z");
+    assert.equal(week.from, "2026-09-17");
+    assert.equal(week.to, "2026-09-24");
+    assert.equal(week.seriesDates.length, 8);
+
+    const omitted = admin.parseAdminRange({}, MANILA_NOW);
+    assert.equal(omitted.range, "7d");
+    assert.equal(omitted.fromAt, week.fromAt);
+    assert.equal(omitted.toAt, week.toAt);
+
+    const month = admin.parseAdminRange({ range: "30d" }, MANILA_NOW);
+    assert.equal(month.fromAt, "2026-08-25T02:30:00.000Z");
+    assert.equal(month.toAt, MANILA_NOW.toISOString());
+  });
+
+  test("custom bounds are inclusive Manila dates and reject an inverted range", () => {
+    const oneDay = admin.parseAdminRange({ range: "custom", from: "2026-09-01", to: "2026-09-01" }, MANILA_NOW);
+    assert.equal(oneDay.fromAt, "2026-08-31T16:00:00.000Z");
+    assert.equal(oneDay.toAt, "2026-09-01T16:00:00.000Z");
+    assert.deepEqual(oneDay.seriesDates, ["2026-09-01"]);
+
+    const span = admin.parseAdminRange({ from: "2026-09-01", to: "2026-09-03" }, MANILA_NOW);
+    assert.equal(span.range, "custom");
+    assert.equal(span.from, "2026-09-01");
+    assert.equal(span.to, "2026-09-03");
+    assert.equal(span.toAt, "2026-09-03T16:00:00.000Z");
+
+    const inverted = admin.parseAdminRange({ from: "2026-09-10", to: "2026-09-01" }, MANILA_NOW);
+    assert.match(inverted.error, /on or after/);
+
+    const preset = admin.parseAdminRange({ range: "today", from: "2026-01-01", to: "2026-01-02" }, MANILA_NOW);
+    assert.equal(preset.range, "today");
+    assert.equal(preset.from, "2026-09-24");
+  });
+
+  test("an unknown dashboard range is rejected before any query", async () => {
+    const res = mockRes();
+    await admin.getDashboard(req({ range: "90d" }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(calls.length, 0);
+  });
+});
+
+describe("plan catalog caps stay aligned with planCatalogServiceV4", () => {
+  function catalogBlock(slug) {
+    const src = fs.readFileSync(path.join(__dirname, "../services/planCatalogServiceV4.js"), "utf8");
+    const parts = src.split("slug: '" + slug + "'");
+    assert.ok(parts.length >= 2);
+    return parts[1].split(/\n  \},\n/)[0];
+  }
+
+  function field(block, name) {
+    const match = block.match(new RegExp(name + ":\\s*(-?\\d+)"));
+    assert.ok(match, name + " in catalog block");
+    return Number(match[1]);
+  }
+
+  test("starter, growth, and business prices and caps match the live catalog", () => {
+    ["starter", "growth", "business"].forEach((slug) => {
+      const block = catalogBlock(slug);
+      const facts = admin.PLAN_FACTS[slug];
+      assert.equal(facts.jobs, field(block, "active_job_posts"));
+      assert.equal(facts.admins, field(block, "admin_users"));
+      assert.equal(facts.videos, field(block, "video_responses"));
+      assert.equal(facts.monthly, field(block, "priceMonthlyPHP"));
+      assert.equal(facts.annualMonthly, field(block, "effectiveMonthlyPHP"));
+    });
+    assert.equal(admin.PLAN_FACTS.growth.jobs, 15);
+    assert.equal(admin.PLAN_FACTS.growth.admins, 5);
+    assert.equal(admin.PLAN_FACTS.growth.videos, 100);
+  });
+});
+
+describe("GET /api/admin/applications", () => {
+  test("pages job_applicants and bounds date_applied to inclusive Manila dates", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      if (String(sql).indexOf("COUNT(*)::int AS total") !== -1) {
+        return { rows: [{ total: 40 }] };
+      }
+      return {
+        rows: [{
+          job_application_id: "APP-1",
+          date_applied: "2026-09-02T01:00:00.000Z",
+          email: "ada@example.com",
+          firstname: "Ada",
+          lastname: "Lovelace",
+          job_id: "JB-1",
+          job_title: "Engineer",
+          company_name: "Acme",
+          job_applicant_status_name: "Applied",
+          password: "must-not-leak",
+        }],
+      };
+    };
+
+    const res = mockRes();
+    await admin.listApplications(req({
+      q: "ada",
+      from: "2026-09-01",
+      to: "2026-09-03",
+      page: "2",
+      pageSize: "25",
+    }), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.total, 40);
+    assert.equal(res.body.data.page, 2);
+    assert.equal(res.body.data.pageSize, 25);
+    assert.deepEqual(res.body.data.items[0], {
+      application_id: "APP-1",
+      date_applied: "2026-09-02T01:00:00.000Z",
+      seeker_name: "Ada Lovelace",
+      seeker_email: "ada@example.com",
+      job_id: "JB-1",
+      job_title: "Engineer",
+      company_name: "Acme",
+      status: "Applied",
+    });
+    const listCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.match(listCall.sql, /job_applicants ja/);
+    assert.match(listCall.sql, /user_credentials uc/);
+    assert.doesNotMatch(listCall.sql, /password/i);
+    assert.doesNotMatch(listCall.sql, /UPDATE|DELETE/i);
+    assert.equal(listCall.params[0], "%ada%");
+    assert.equal(listCall.params[1], "2026-08-31T16:00:00.000Z");
+    assert.equal(listCall.params[2], "2026-09-03T16:00:00.000Z");
+    assert.equal(listCall.params[3], 25);
+    assert.equal(listCall.params[4], 25);
+  });
+});
+
+describe("GET /api/admin/jobs status words", () => {
+  test("accepts published as job_status_id 2", async () => {
+    const res = mockRes();
+    await admin.listJobs(req({ status: "Published" }), res);
+    assert.equal(res.statusCode, 200);
+    const listCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.equal(listCall.params[0], 2);
+    assert.match(listCall.sql, /j\.job_status_id = \$1/);
+  });
+
+  test("rejects an unknown status word before querying", async () => {
+    const res = mockRes();
+    await admin.listJobs(req({ status: "live" }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(calls.length, 0);
+  });
+});
+
+describe("GET /api/admin/users last_login", () => {
+  test("returns auth_identities.last_login_at and retries when that table is missing", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      if (String(sql).indexOf("auth_identities") !== -1) {
+        const error = new Error('relation "auth_identities" does not exist');
+        error.code = "42P01";
+        throw error;
+      }
+      if (String(sql).indexOf("COUNT(*)") !== -1) return { rows: [{ total: 1 }] };
+      return {
+        rows: [{
+          uid: "u1",
+          email: "ada@example.com",
+          role: 3,
+          firstname: "Ada",
+          lastname: "Lovelace",
+          created_date: "2026-01-02T00:00:00.000Z",
+          last_login: "2026-09-01T00:00:00.000Z",
+        }],
+      };
+    };
+
+    const res = mockRes();
+    await admin.listUsers(req({}), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.items[0].last_login, "2026-09-01T00:00:00.000Z");
+    assert.ok(calls.some((call) => call.sql.indexOf("auth_identities") !== -1));
+    assert.ok(calls.some((call) => call.sql.indexOf("NULL::timestamptz AS last_login") !== -1));
+    assert.equal(calls.some((call) => /password/i.test(call.sql)), false);
+  });
+});
+
+function subscriptionRow(overrides) {
+  return Object.assign({
+    company_id: "CO-1",
+    company_name: "Acme",
+    subscription_id: 2,
+    plan_slug: "starter",
+    canonical_slug: null,
+    billing_cycle: "monthly",
+    sub_status: "active",
+    is_paid: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+    period_start: "2026-09-01T00:00:00.000Z",
+    period_end: "2099-01-01T00:00:00.000Z",
+    payment_date: "2026-08-01T00:00:00.000Z",
+    subscription_row: {},
+  }, overrides);
+}
+
+describe("finance snapshot versus range", () => {
+  test("MRR and status counts ignore the range; revenue sums succeeded payments only", () => {
+    const clock = MANILA_NOW;
+    const subs = [
+      admin.normalizeSubscriptionRow(subscriptionRow({
+        company_id: "CO-1",
+        company_name: "Acme",
+        plan_slug: "starter",
+        billing_cycle: "monthly",
+      }), clock),
+      admin.normalizeSubscriptionRow(subscriptionRow({
+        company_id: "CO-2",
+        company_name: "Beta",
+        subscription_id: 3,
+        plan_slug: "growth",
+        billing_cycle: "annual",
+      }), clock),
+      admin.normalizeSubscriptionRow(subscriptionRow({
+        company_id: "CO-3",
+        company_name: "Trial Co",
+        subscription_id: 1,
+        plan_slug: "free_trial",
+        billing_cycle: "trial",
+        sub_status: "trialing",
+        is_paid: false,
+      }), clock),
+      admin.normalizeSubscriptionRow(subscriptionRow({
+        company_id: "CO-4",
+        company_name: "Late Co",
+        plan_slug: "starter",
+        sub_status: "past_due",
+        is_paid: false,
+      }), clock),
+      admin.normalizeSubscriptionRow(subscriptionRow({
+        company_id: "CO-5",
+        company_name: "Internal",
+        plan_slug: "growth",
+        billing_cycle: "monthly",
+        is_paid: false,
+        subscription_row: {
+          access_kind: "internal_complimentary",
+          access_granted_by: "ops@gethiredonline.app",
+          access_granted_at: "2026-09-01T00:00:00.000Z",
+        },
+      }), clock),
+    ];
+    assert.equal(subs[0].mrr_php, 1490);
+    assert.equal(subs[1].mrr_php, 2908);
+    assert.equal(subs[2].status, "trialing");
+    assert.equal(subs[2].mrr_php, 0);
+    assert.equal(subs[3].status, "past_due");
+    assert.equal(subs[4].status, "active");
+    assert.equal(subs[4].mrr_php, 0);
+
+    const narrow = admin.assembleFinance(subs, [
+      { id: "tx1", paid_at: "2026-09-02T00:00:00.000Z", company_id: "CO-2", company_name: "Beta", plan_label: "Growth", amount_php: 3490, status: "succeeded", external_id: "pay_1" },
+      { id: "tx2", paid_at: "2026-09-02T01:00:00.000Z", company_id: "CO-1", company_name: "Acme", plan_label: "Starter", amount_php: 1490, status: "failed", external_id: "pay_fail" },
+    ], { range: "custom", from: "2026-09-01", to: "2026-09-03" }, { page: 1, pageSize: 25, payPage: 1 });
+    const wide = admin.assembleFinance(subs, [
+      { id: "tx1", paid_at: "2026-09-02T00:00:00.000Z", company_id: "CO-2", company_name: "Beta", plan_label: "Growth", amount_php: 3490, status: "succeeded", external_id: "pay_1" },
+      { id: "tx3", paid_at: "2026-08-15T00:00:00.000Z", company_id: "CO-1", company_name: "Acme", plan_label: "Starter", amount_php: 1490, status: "succeeded", external_id: "pay_old" },
+    ], { range: "30d", from: "2026-08-25", to: "2026-09-24" }, { page: 1, pageSize: 25, payPage: 1 });
+
+    assert.equal(narrow.mrr_php, wide.mrr_php);
+    assert.equal(narrow.mrr_php, 1490 + 2908);
+    assert.equal(narrow.mrr_note, "Current monthly recurring (snapshot)");
+    assert.equal(narrow.paying_companies, 2);
+    assert.equal(narrow.active_subscriptions, 3);
+    assert.equal(narrow.trials, 1);
+    assert.equal(narrow.past_due, 1);
+    assert.equal(narrow.revenue_in_range_php, 3490);
+    assert.equal(wide.revenue_in_range_php, 3490 + 1490);
+    assert.equal(narrow.subscriptions.total, 5);
+    assert.equal(narrow.payments.total, 2);
+    assert.equal(narrow.currency, "PHP");
+    const growth = narrow.plan_breakdown.find((row) => row.slug === "growth");
+    assert.equal(growth.company_count, 2);
+    assert.equal(growth.label, "Growth");
+    const legacy = admin.normalizeSubscriptionRow(subscriptionRow({
+      company_id: "CO-9",
+      plan_slug: "legacy_gold",
+      subscription_id: 2,
+    }), clock);
+    assert.equal(legacy.plan_slug, "other");
+    assert.equal(legacy.plan_label, "Other");
+  });
+
+  test("subscription directory is not range-bound; payment SQL is", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      const text = String(sql);
+      if (text.indexOf("companies_subscription") !== -1) {
+        return { rows: [subscriptionRow({ company_name: "Acme" })] };
+      }
+      if (text.indexOf("MAX(paid_at)") !== -1) {
+        return { rows: [{ company_id: "CO-1", last_payment_at: "2026-08-01T00:00:00.000Z" }] };
+      }
+      if (text.indexOf("FROM gethired.payment_attempts") !== -1) {
+        return { rows: [] };
+      }
+      if (text.indexOf("payment_transactions") !== -1) {
+        return {
+          rows: [{
+            id: "tx1",
+            paid_at: "2026-09-02T04:00:00.000Z",
+            company_id: "CO-1",
+            company_name: "Acme",
+            gross_minor: 149000,
+            raw_status: "PAID",
+            method: "gcash",
+            external_id: "pay_1",
+            plan_version_id: "pricing_2026_09_21:starter",
+          }],
+        };
+      }
+      if (text.indexOf("invoices") !== -1) {
+        return {
+          rows: [{
+            id: "inv-dup",
+            paid_at: "2026-09-02T04:00:00.000Z",
+            company_id: "CO-1",
+            company_name: "Acme",
+            amount_php: 1490,
+            raw_status: "paid",
+            method: "gcash",
+            external_id: "pay_1",
+            plan_slug: "starter",
+          }],
+        };
+      }
+      return { rows: [] };
+    };
+
+    const res = mockRes();
+    await admin.getFinance(req({ range: "custom", from: "2026-09-01", to: "2026-09-07" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.mrr_php, 1490);
+    assert.equal(res.body.data.revenue_in_range_php, 1490);
+    assert.equal(res.body.data.payments.total, 1);
+    assert.equal(res.body.data.payments.items[0].status, "succeeded");
+    assert.equal(res.body.data.payments.items[0].amount_php, 1490);
+    assert.equal(res.body.data.subscriptions.total, 1);
+
+    const subCall = calls.find((call) => call.sql.indexOf("companies_subscription") !== -1);
+    assert.deepEqual(subCall.params, []);
+    assert.doesNotMatch(subCall.sql, /\$1/);
+    const payCall = calls.find((call) => call.sql.indexOf("FROM gethired.payment_transactions t") !== -1);
+    assert.ok(payCall);
+    assert.deepEqual(payCall.params, ["2026-08-31T16:00:00.000Z", "2026-09-07T16:00:00.000Z"]);
+    assert.doesNotMatch(sqlBlob(), /UPDATE|DELETE|INSERT/i);
+  });
+
+  test("missing billing tables return zeros instead of invented payments", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      const error = new Error("relation does not exist");
+      error.code = "42P01";
+      throw error;
+    };
+    const res = mockRes();
+    await admin.getFinance(req({ range: "7d" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.currency, "PHP");
+    assert.equal(res.body.data.mrr_php, 0);
+    assert.equal(res.body.data.revenue_in_range_php, 0);
+    assert.deepEqual(res.body.data.subscriptions.items, []);
+    assert.deepEqual(res.body.data.payments.items, []);
+    assert.equal(res.body.data.plan_breakdown.length, 5);
+  });
+});
+
+describe("GET /api/admin/companies/:companyId", () => {
+  test("returns 404 when the company row is missing", async () => {
+    const res = mockRes();
+    await admin.getCompany(req({}, { companyId: "CO-missing" }), res);
+    assert.equal(res.statusCode, 404);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].sql, /FROM gethired\.companies/);
+    assert.deepEqual(calls[0].params, ["CO-missing"]);
+  });
+
+  test("uses live Growth caps unless the subscription stores effective entitlements", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      const text = String(sql);
+      if (text.indexOf("company_slug") !== -1 && text.indexOf("FROM gethired.companies") !== -1 && text.indexOf("companies_subscription") === -1) {
+        return {
+          rows: [{
+            company_id: "CO-9",
+            company_name: "Growth Co",
+            company_slug: "growth-co",
+            created_at: "2026-02-01T00:00:00.000Z",
+          }],
+        };
+      }
+      if (text.indexOf("jobs_used") !== -1) {
+        return { rows: [{ jobs_used: 4, admins_used: 2, videos_used: 9 }] };
+      }
+      if (text.indexOf("company_employees") !== -1 && text.indexOf("firstname") !== -1) {
+        return {
+          rows: [{
+            firstname: "Grace",
+            lastname: "Hopper",
+            email: "grace@example.com",
+            phone_number: "09170000000",
+            role_name: "Owner",
+            is_owner_role: true,
+          }],
+        };
+      }
+      if (text.indexOf("companies_subscription") !== -1) {
+        return {
+          rows: [subscriptionRow({
+            company_id: "CO-9",
+            company_name: "Growth Co",
+            subscription_id: 3,
+            plan_slug: "growth",
+            billing_cycle: "monthly",
+            subscription_row: { effective_entitlements: { jobs: 6, users: 3, video: 100 } },
+          })],
+        };
+      }
+      if (text.indexOf("subscription_lifecycle_events") !== -1) {
+        return {
+          rows: [{
+            event_type: "renewed",
+            previous_status: "active",
+            new_status: "active",
+            plan_slug: "growth",
+            created_at: "2026-09-01T00:00:00.000Z",
+          }],
+        };
+      }
+      return { rows: [] };
+    };
+
+    const res = mockRes();
+    await admin.getCompany(req({}, { companyId: "CO-9" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.company_name, "Growth Co");
+    assert.equal(res.body.data.open_jobs_count, 4);
+    assert.equal(res.body.data.admins[0].email, "grace@example.com");
+    assert.equal(res.body.data.admins[0].phone, "09170000000");
+    assert.equal(res.body.data.subscription.plan_slug, "growth");
+    assert.deepEqual(res.body.data.subscription.entitlements, [
+      { label: "Jobs", used: 4, limit: 6 },
+      { label: "Admins", used: 2, limit: 3 },
+      { label: "Videos", used: 9, limit: 100 },
+    ]);
+    assert.equal(res.body.data.history[0].kind, "subscription");
+    const usage = calls.find((call) => call.sql.indexOf("jobs_used") !== -1);
+    assert.match(usage.sql, /job_status_id = 2/);
+    assert.equal(calls.some((call) => /password/i.test(call.sql)), false);
+  });
+
+  test("catalog Growth caps are 15/5/100 when no effective entitlements are stored", () => {
+    const row = subscriptionRow({
+      company_id: "CO-9",
+      subscription_id: 3,
+      plan_slug: "growth",
+      subscription_row: {},
+    });
+    const normalized = admin.normalizeSubscriptionRow(row, MANILA_NOW);
+    assert.equal(normalized.plan_slug, "growth");
+    assert.equal(normalized.mrr_php, 3490);
+    assert.deepEqual(admin.entitlementMeters(row, normalized.plan_slug, { jobs: 4, admins: 2, videos: 9 }), [
+      { label: "Jobs", used: 4, limit: 15 },
+      { label: "Admins", used: 2, limit: 5 },
+      { label: "Videos", used: 9, limit: 100 },
+    ]);
   });
 });
