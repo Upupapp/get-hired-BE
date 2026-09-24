@@ -157,7 +157,7 @@ describe("admin route gate", () => {
   test("every admin route uses verifyAuth and verifyRoles([0, 1])", () => {
     const src = fs.readFileSync(path.join(__dirname, "../routes/adminRoute.js"), "utf8");
     const lines = src.split("\n").filter((line) => line.indexOf("router.") === 0);
-    assert.equal(lines.length, 9);
+    assert.equal(lines.length, 11);
     lines.forEach((line) => {
       assert.match(line, /verifyAuth/);
       assert.match(line, /verifyRoles\(\[0, 1\]\)/);
@@ -170,6 +170,9 @@ describe("admin route gate", () => {
     assert.match(src, /router\.post\("\/admin\/jobs\/:jobId\/unpublish"/);
     assert.match(src, /router\.get\("\/admin\/companies"/);
     assert.match(src, /router\.get\("\/admin\/applications"/);
+    assert.match(src, /router\.get\("\/admin\/job-opening-alerts"/);
+    assert.match(src, /router\.get\("\/admin\/job-opening-alerts\/users\/:userUid"/);
+    assert.doesNotMatch(src, /router\.(post|put|patch|delete)\("\/admin\/job-opening-alerts/);
     assert.match(src, /router\.get\("\/admin\/finance"/);
     assert.match(src, /router\.get\("\/admin\/companies\/:companyId"/);
     const authSrc = fs.readFileSync(path.join(__dirname, "../middleware/verifyAuth.js"), "utf8");
@@ -1099,5 +1102,291 @@ describe("GET /api/admin/companies/:companyId", () => {
       { label: "Admins", used: 2, limit: 5 },
       { label: "Videos", used: 9, limit: 100 },
     ]);
+  });
+});
+
+function alertRow(overrides) {
+  return Object.assign({
+    id: "12",
+    user_uid: "seeker-1",
+    seeker_uid: "seeker-1",
+    email: "ada@example.com",
+    role: 3,
+    is_archive: false,
+    firstname: "Ada",
+    lastname: "Lovelace",
+    position: "Marketing Manager",
+    position_normalized: "marketing manager",
+    job_role_id: null,
+    active: true,
+    created_at: "2026-09-20T02:00:00.000Z",
+    updated_at: "2026-09-21T02:00:00.000Z",
+    instant_sent_at: "2026-09-20T02:05:00.000Z",
+    instant_claimed_at: "2026-09-20T02:04:00.000Z",
+    instant_message_id: "msg-instant-1",
+    instant_job_count: 4,
+    last_digest_week: "2026-09-23",
+    last_digest_sent_at: "2026-09-23T13:00:00.000Z",
+    last_digest_message_id: "msg-digest-1",
+    last_digest_job_count: 7,
+    password: "must-not-leak",
+  }, overrides);
+}
+
+function undefinedTable() {
+  const error = new Error('relation "gethired.job_opening_alert_subscriptions" does not exist');
+  error.code = "42P01";
+  return error;
+}
+
+describe("GET /api/admin/job-opening-alerts", () => {
+  test("pages subscriptions, defaults active to true, and searches seeker plus position", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      if (String(sql).indexOf("COUNT(*)::int AS total") !== -1) {
+        return { rows: [{ total: 40 }] };
+      }
+      return { rows: [alertRow()] };
+    };
+
+    const res = mockRes();
+    await admin.listJobOpeningAlerts(req({
+      q: "ada_100%",
+      page: "2",
+      pageSize: "25",
+      from: "2026-09-01",
+      to: "2026-09-07",
+    }), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.status, "success");
+    assert.equal(res.body.data.total, 40);
+    assert.equal(res.body.data.page, 2);
+    assert.equal(res.body.data.pageSize, 25);
+    assert.equal(res.body.data.joa_available, true);
+    assert.deepEqual(res.body.data.items[0], {
+      id: 12,
+      user_uid: "seeker-1",
+      seeker_email: "ada@example.com",
+      seeker_name: "Ada Lovelace",
+      seeker_role: 3,
+      seeker_archived: false,
+      position: "Marketing Manager",
+      position_normalized: "marketing manager",
+      job_role_id: null,
+      active: true,
+      created_at: "2026-09-20T02:00:00.000Z",
+      updated_at: "2026-09-21T02:00:00.000Z",
+      instant_sent_at: "2026-09-20T02:05:00.000Z",
+      instant_claimed_at: "2026-09-20T02:04:00.000Z",
+      instant_message_id: "msg-instant-1",
+      instant_job_count: 4,
+      last_digest_week: "2026-09-23",
+      last_digest_sent_at: "2026-09-23T13:00:00.000Z",
+      last_digest_message_id: "msg-digest-1",
+      last_digest_job_count: 7,
+    });
+    const listCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.match(listCall.sql, /job_opening_alert_subscriptions s/);
+    assert.match(listCall.sql, /user_credentials uc/);
+    assert.match(listCall.sql, /users u/);
+    assert.match(listCall.sql, /s\.active = \$2/);
+    assert.match(listCall.sql, /s\.created_at >= \$3/);
+    assert.match(listCall.sql, /s\.created_at < \$4/);
+    assert.match(listCall.sql, /uc\.email ILIKE/);
+    assert.match(listCall.sql, /s\.position ILIKE/);
+    assert.doesNotMatch(listCall.sql, /password/i);
+    assert.doesNotMatch(listCall.sql, /\b(INSERT|UPDATE|DELETE|DROP|ALTER)\b/i);
+    assert.doesNotMatch(listCall.sql, /LGUIDS|COM-26/);
+    assert.equal(listCall.params[0], "%ada\\_100\\%%");
+    assert.equal(listCall.params[1], true);
+    assert.equal(listCall.params[2], "2026-08-31T16:00:00.000Z");
+    assert.equal(listCall.params[3], "2026-09-07T16:00:00.000Z");
+    assert.equal(listCall.params[4], 25);
+    assert.equal(listCall.params[5], 25);
+  });
+
+  test("omitted active and range default to active rows in the last 7 days", async () => {
+    const res = mockRes();
+    const before = Date.now();
+    await admin.listJobOpeningAlerts(req({}), res);
+    const after = Date.now();
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.page, 1);
+    assert.equal(res.body.data.pageSize, 25);
+    assert.equal(res.body.data.joa_available, true);
+    const listCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.match(listCall.sql, /s\.active = \$1/);
+    assert.equal(listCall.params[0], true);
+    const from = new Date(listCall.params[1]).getTime();
+    const to = new Date(listCall.params[2]).getTime();
+    assert.equal(to - from, 7 * 24 * 60 * 60 * 1000);
+    assert.ok(to >= before && to <= after);
+    assert.equal(listCall.params[3], 25);
+    assert.equal(listCall.params[4], 0);
+  });
+
+  test("active=false, active=all, and user_uid change the predicates", async () => {
+    const inactive = mockRes();
+    await admin.listJobOpeningAlerts(req({ active: "false", range: "today", user_uid: "seeker-9" }), inactive);
+    assert.equal(inactive.statusCode, 200);
+    const inactiveCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.equal(inactiveCall.params[0], false);
+    assert.equal(inactiveCall.params[1], "seeker-9");
+    assert.match(inactiveCall.sql, /s\.user_uid = \$2/);
+    assert.match(inactiveCall.sql, /s\.created_at >= \$3/);
+
+    calls.length = 0;
+    const all = mockRes();
+    await admin.listJobOpeningAlerts(req({ active: "all", user: "seeker-4" }), all);
+    assert.equal(all.statusCode, 200);
+    const allCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.doesNotMatch(allCall.sql, /s\.active =/);
+    assert.equal(allCall.params[0], "seeker-4");
+    assert.match(allCall.sql, /s\.user_uid = \$1/);
+  });
+
+  test("caps pageSize at 100 and rejects a bad active value before querying", async () => {
+    const capped = mockRes();
+    await admin.listJobOpeningAlerts(req({ pageSize: "500", active: "true" }), capped);
+    assert.equal(capped.statusCode, 200);
+    assert.equal(capped.body.data.pageSize, 100);
+    const listCall = calls.find((call) => call.sql.indexOf("LIMIT") !== -1);
+    assert.equal(listCall.params[listCall.params.length - 2], 100);
+
+    calls.length = 0;
+    const bad = mockRes();
+    await admin.listJobOpeningAlerts(req({ active: "yes" }), bad);
+    assert.equal(bad.statusCode, 400);
+    assert.equal(calls.length, 0);
+  });
+
+  test("missing subscriptions table returns an empty list and joa_available false", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      throw undefinedTable();
+    };
+    const res = mockRes();
+    await admin.listJobOpeningAlerts(req({ page: "3", pageSize: "10" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.joa_available, false);
+    assert.deepEqual(res.body.data.items, []);
+    assert.equal(res.body.data.total, 0);
+    assert.equal(res.body.data.page, 3);
+    assert.equal(res.body.data.pageSize, 10);
+  });
+
+  test("a missing column is still an error", async () => {
+    dbQuery.query = async () => {
+      const error = new Error('column "instant_claimed_at" does not exist');
+      error.code = "42703";
+      throw error;
+    };
+    const res = mockRes();
+    await admin.listJobOpeningAlerts(req({}), res);
+    assert.equal(res.statusCode, 500);
+  });
+});
+
+describe("GET /api/admin/job-opening-alerts/users/:userUid", () => {
+  test("returns the seeker summary and every subscription, active and inactive", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      if (String(sql).indexOf("job_opening_alert_subscriptions") !== -1) {
+        return {
+          rows: [
+            alertRow({ id: 30, active: false, position: "Baker", position_normalized: "baker", created_at: "2026-09-22T00:00:00.000Z" }),
+            alertRow({ id: 11, active: true, created_at: "2026-09-01T00:00:00.000Z" }),
+          ],
+        };
+      }
+      return {
+        rows: [{
+          email: "ada@example.com",
+          role: 3,
+          is_archive: false,
+          created_date: "2026-01-02T00:00:00.000Z",
+          firstname: "Ada",
+          lastname: "Lovelace",
+        }],
+      };
+    };
+
+    const res = mockRes();
+    await admin.getJobOpeningAlertUser(req({}, { userUid: "seeker-1" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.joa_available, true);
+    assert.equal(res.body.data.user_uid, "seeker-1");
+    assert.equal(res.body.data.seeker_email, "ada@example.com");
+    assert.equal(res.body.data.seeker_name, "Ada Lovelace");
+    assert.equal(res.body.data.seeker_role, 3);
+    assert.equal(res.body.data.seeker_archived, false);
+    assert.equal(res.body.data.seeker_created_at, "2026-01-02T00:00:00.000Z");
+    assert.equal(res.body.data.active_count, 1);
+    assert.equal(res.body.data.total_count, 2);
+    assert.equal(res.body.data.subscriptions.length, 2);
+    assert.equal(res.body.data.subscriptions[0].id, 30);
+    assert.equal(res.body.data.subscriptions[0].active, false);
+    assert.equal(res.body.data.subscriptions[0].position, "Baker");
+    assert.equal(res.body.data.subscriptions[0].instant_claimed_at, "2026-09-20T02:04:00.000Z");
+    assert.equal(res.body.data.subscriptions[0].instant_message_id, "msg-instant-1");
+    assert.equal(res.body.data.subscriptions[0].last_digest_week, "2026-09-23");
+    assert.equal(res.body.data.subscriptions[0].last_digest_message_id, "msg-digest-1");
+    assert.equal(res.body.data.subscriptions[1].active, true);
+    assert.equal(res.body.data.subscriptions[0].seeker_email, undefined);
+    const subCall = calls.find((call) => call.sql.indexOf("job_opening_alert_subscriptions") !== -1);
+    assert.match(subCall.sql, /ORDER BY s\.created_at DESC NULLS LAST, s\.id DESC/);
+    assert.doesNotMatch(subCall.sql, /s\.active =/);
+    assert.doesNotMatch(subCall.sql, /LIMIT/);
+    assert.equal(subCall.params[0], "seeker-1");
+    assert.equal(calls.some((call) => /password/i.test(call.sql)), false);
+    assert.equal(calls.some((call) => /\b(INSERT|UPDATE|DELETE)\b/i.test(call.sql)), false);
+  });
+
+  test("missing subscriptions table keeps the seeker summary and joa_available false", async () => {
+    dbQuery.query = async (sql, params) => {
+      calls.push({ sql: String(sql), params: params || [] });
+      if (String(sql).indexOf("job_opening_alert_subscriptions") !== -1) throw undefinedTable();
+      return {
+        rows: [{
+          email: "ada@example.com",
+          role: 3,
+          is_archive: true,
+          created_date: "2026-01-02T00:00:00.000Z",
+          firstname: "Ada",
+          lastname: "Lovelace",
+        }],
+      };
+    };
+    const res = mockRes();
+    await admin.getJobOpeningAlertUser(req({}, { userUid: "seeker-1" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.joa_available, false);
+    assert.equal(res.body.data.seeker_email, "ada@example.com");
+    assert.equal(res.body.data.seeker_archived, true);
+    assert.equal(res.body.data.active_count, 0);
+    assert.equal(res.body.data.total_count, 0);
+    assert.deepEqual(res.body.data.subscriptions, []);
+  });
+
+  test("unknown seeker still returns an empty subscription list", async () => {
+    const res = mockRes();
+    await admin.getJobOpeningAlertUser(req({}, { userUid: "missing-seeker" }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.data.joa_available, true);
+    assert.equal(res.body.data.seeker_email, null);
+    assert.equal(res.body.data.seeker_name, null);
+    assert.equal(res.body.data.seeker_role, null);
+    assert.equal(res.body.data.active_count, 0);
+    assert.equal(res.body.data.total_count, 0);
+    assert.deepEqual(res.body.data.subscriptions, []);
+  });
+
+  test("rejects an empty user id before querying", async () => {
+    const res = mockRes();
+    await admin.getJobOpeningAlertUser(req({}, { userUid: "   " }), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(calls.length, 0);
   });
 });

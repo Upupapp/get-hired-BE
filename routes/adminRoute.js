@@ -10,6 +10,8 @@ import {
   unpublishJob,
   listCompanies,
   listApplications,
+  listJobOpeningAlerts,
+  getJobOpeningAlertUser,
   getFinance,
   getCompany,
 } from "../controllers/adminController";
@@ -26,6 +28,9 @@ router.get("/admin/jobs", verifyAuth, verifyRoles([0, 1]), listJobs);
 router.post("/admin/jobs/:jobId/unpublish", verifyAuth, verifyRoles([0, 1]), unpublishJob);
 router.get("/admin/companies", verifyAuth, verifyRoles([0, 1]), listCompanies);
 router.get("/admin/applications", verifyAuth, verifyRoles([0, 1]), listApplications);
+// Read-only. No unsubscribe or resend. Same role gate as the other admin lists.
+router.get("/admin/job-opening-alerts", verifyAuth, verifyRoles([0, 1]), listJobOpeningAlerts);
+router.get("/admin/job-opening-alerts/users/:userUid", verifyAuth, verifyRoles([0, 1]), getJobOpeningAlertUser);
 router.get("/admin/finance", verifyAuth, verifyRoles([0, 1]), getFinance);
 router.get("/admin/companies/:companyId", verifyAuth, verifyRoles([0, 1]), getCompany);
 
