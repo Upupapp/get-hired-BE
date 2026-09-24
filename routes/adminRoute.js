@@ -9,6 +9,9 @@ import {
   listJobs,
   unpublishJob,
   listCompanies,
+  listApplications,
+  getFinance,
+  getCompany,
 } from "../controllers/adminController";
 
 const router = express.Router();
@@ -22,5 +25,8 @@ router.get("/admin/userprofile", verifyAuth, verifyRoles([0, 1]), getUserProfile
 router.get("/admin/jobs", verifyAuth, verifyRoles([0, 1]), listJobs);
 router.post("/admin/jobs/:jobId/unpublish", verifyAuth, verifyRoles([0, 1]), unpublishJob);
 router.get("/admin/companies", verifyAuth, verifyRoles([0, 1]), listCompanies);
+router.get("/admin/applications", verifyAuth, verifyRoles([0, 1]), listApplications);
+router.get("/admin/finance", verifyAuth, verifyRoles([0, 1]), getFinance);
+router.get("/admin/companies/:companyId", verifyAuth, verifyRoles([0, 1]), getCompany);
 
 export default router;

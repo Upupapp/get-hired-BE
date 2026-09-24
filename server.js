@@ -38,6 +38,8 @@ import googleAuthRoutes from "./routes/googleAuthRoutes";
 import linkedinAuthRoutes from "./routes/linkedinAuthRoutes";
 import privacyRoutes from "./routes/privacyRoutes";
 import jobOpeningAlertRoutes from "./routes/jobOpeningAlertRoutes";
+import pageviewRoutes from "./routes/pageviewRoutes";
+import { isAllowedPageviewOrigin } from "./helpers/pageviewIngest";
 import { startJobOpeningAlertScheduler } from "./services/jobOpeningAlertScheduler";
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -74,7 +76,11 @@ const globalLimiter = rateLimit({
   skip: function(req) {
     // Authenticated sessions bypass the global cap; per-endpoint tiers
     // (writeLimiter, sensitiveLimiter) still apply to their routes.
-    return !!(req.headers && req.headers['authorization']);
+    if (req.headers && req.headers['authorization']) return true;
+    // Pageview beacons have their own 60/min limiter and must not share
+    // this unauthenticated ceiling.
+    var path = req.path || "";
+    return path === "/api/public/pageview" || path === "/public/pageview";
   },
 });
 
@@ -119,7 +125,8 @@ const writeLimiter = rateLimit({
   message: { message: "Too many requests. Please try again later." },
   skip: (req) =>
     req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS" ||
-    req.path === "/payment/paymongowebhook",
+    req.path === "/payment/paymongowebhook" ||
+    req.path === "/public/pageview" || req.path === "/api/public/pageview",
 });
 
 // Tier 4 — Sensitive endpoints: password change, password reset link,
@@ -136,7 +143,14 @@ const sensitiveLimiter = rateLimit({
 
 const app = express();
 app.use(compression());
-app.use(cors({ origin: env.app_url }));
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (env.app_url && origin === env.app_url) return callback(null, true);
+    if (isAllowedPageviewOrigin(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+}));
 // BUGFIX: the applicant Video CV upload sends the video as a base64 string
 // inside a JSON body (see saveVideoCV / applicant.service.ts), not a
 // multipart stream -- base64 inflates the raw file size by ~33%, so even a
@@ -272,6 +286,9 @@ app.use("/api", subscriptionLifecycleRoutesV4);
 app.use("/api", subscriptionUpgradeRecommendationRoutesV4);
 app.use("/api", recruiterDashboardAnalyticsRoutes);
 app.use("/api", jobOpeningAlertRoutes);
+// Public pageview beacon. No auth. Must be mounted before billingRoutes,
+// whose router.use(verifyAuth) rejects later routes that have no auth.
+app.use("/api", pageviewRoutes);
 app.use("/api", paymongoBillingRoutes);
 app.use("/api", billingRoutes);
 app.use("/api", publicJobPreviewRoutes);
